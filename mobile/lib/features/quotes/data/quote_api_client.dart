@@ -1,0 +1,166 @@
+import 'package:rico_investidor/core/network/api_client.dart';
+import 'package:rico_investidor/features/quotes/models/stock_compare.dart';
+import 'package:rico_investidor/features/quotes/models/stock_financials.dart';
+import 'package:rico_investidor/features/quotes/models/stock_quote_detail.dart';
+import 'package:rico_investidor/features/quotes/models/stock_screener.dart';
+import 'package:rico_investidor/models/asset_item.dart';
+import 'package:rico_investidor/models/market_category.dart';
+
+class MarketQuoteDto {
+  const MarketQuoteDto({
+    required this.symbol,
+    required this.name,
+    required this.price,
+    required this.changePercent,
+    required this.category,
+    this.provider = 'brapi',
+  });
+
+  final String symbol;
+  final String name;
+  final double price;
+  final double changePercent;
+  final String category;
+  final String provider;
+
+  factory MarketQuoteDto.fromJson(Map<String, dynamic> json) {
+    return MarketQuoteDto(
+      symbol: json['symbol'] as String,
+      name: json['name'] as String,
+      price: (json['price'] as num).toDouble(),
+      changePercent: (json['change_percent'] as num).toDouble(),
+      category: json['category'] as String? ?? 'acoes_br',
+      provider: json['provider'] as String? ?? 'brapi',
+    );
+  }
+
+  AssetItem toAssetItem() {
+    return AssetItem(
+      symbol: symbol,
+      name: name,
+      category: _parseCategory(category),
+      price: price,
+      changePercent: changePercent,
+    );
+  }
+
+  MarketCategory _parseCategory(String slug) {
+    return switch (slug) {
+      'bdr' => MarketCategory.bdr,
+      'etf' => MarketCategory.etf,
+      'fiis' => MarketCategory.fiis,
+      _ => MarketCategory.acoesBr,
+    };
+  }
+}
+
+class QuoteListResponse {
+  const QuoteListResponse({required this.items, required this.count});
+
+  final List<MarketQuoteDto> items;
+  final int count;
+
+  factory QuoteListResponse.fromJson(Map<String, dynamic> json) {
+    final raw = json['items'] as List<dynamic>? ?? const [];
+    return QuoteListResponse(
+      items: raw.map((e) => MarketQuoteDto.fromJson(e as Map<String, dynamic>)).toList(),
+      count: json['count'] as int? ?? raw.length,
+    );
+  }
+}
+
+class QuoteApiClient {
+  QuoteApiClient({ApiClient? client}) : _client = client ?? apiClient;
+
+  final ApiClient _client;
+
+  Future<MarketQuoteDto> getQuote(String ticker) {
+    return _client.getJson(
+      '/v1/quotes/$ticker',
+      fromJson: MarketQuoteDto.fromJson,
+    );
+  }
+
+  Future<StockQuoteDetailDto> getDetail(String ticker) {
+    return _client.getJson(
+      '/v1/quotes/$ticker/detail',
+      fromJson: StockQuoteDetailDto.fromJson,
+    );
+  }
+
+  Future<StockCandlesResponseDto> getCandles(String ticker, {String? range, int? limit}) {
+    final query = <String, String>{};
+    if (range != null) query['range'] = range;
+    if (limit != null) query['limit'] = '$limit';
+
+    return _client.getJson(
+      '/v1/quotes/$ticker/candles',
+      query: query.isEmpty ? null : query,
+      fromJson: StockCandlesResponseDto.fromJson,
+    );
+  }
+
+  Future<StockFinancialsDto> getFinancials(String ticker, {int limit = 8}) {
+    return _client.getJson(
+      '/v1/quotes/$ticker/financials',
+      query: {'limit': '$limit'},
+      fromJson: StockFinancialsDto.fromJson,
+    );
+  }
+
+  Future<StockCompareResponseDto> compare(List<String> tickers) {
+    return _client.getJson(
+      '/v1/quotes/compare',
+      query: {'tickers': tickers.join(',')},
+      fromJson: StockCompareResponseDto.fromJson,
+    );
+  }
+
+  Future<StockScreenerResponseDto> screener(Map<String, String> query) {
+    return _client.getJson(
+      '/v1/quotes/screener',
+      query: query,
+      fromJson: StockScreenerResponseDto.fromJson,
+    );
+  }
+
+  Future<QuoteListResponse> featured() {
+    return _client.getJson(
+      '/v1/quotes/featured',
+      fromJson: QuoteListResponse.fromJson,
+    );
+  }
+
+  Future<QuoteListResponse> search(String query, {int limit = 20}) {
+    return _client.getJson(
+      '/v1/quotes/search',
+      query: {'q': query, 'limit': '$limit'},
+      fromJson: QuoteListResponse.fromJson,
+    );
+  }
+
+  Future<QuoteListResponse> listByCategory(MarketCategory category, {int limit = 30}) {
+    return _client.getJson(
+      '/v1/quotes/market/${_categorySlug(category)}',
+      query: {'limit': '$limit'},
+      fromJson: QuoteListResponse.fromJson,
+    );
+  }
+
+  Future<QuoteListResponse> batch(List<String> tickers) {
+    return _client.getJson(
+      '/v1/quotes/batch',
+      query: {'tickers': tickers.join(',')},
+      fromJson: QuoteListResponse.fromJson,
+    );
+  }
+
+  String _categorySlug(MarketCategory category) {
+    return switch (category) {
+      MarketCategory.bdr => 'bdr',
+      MarketCategory.etf => 'etf',
+      MarketCategory.acoesBr => 'acoes_br',
+      _ => 'acoes_br',
+    };
+  }
+}
