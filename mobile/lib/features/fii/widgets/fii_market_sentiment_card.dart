@@ -9,16 +9,19 @@ class FiiMarketSentimentCard extends StatelessWidget {
     super.key,
     required this.history,
     required this.currentPrice,
+    this.candles = const [],
   });
 
   final List<FiiHistoryPoint> history;
   final double? currentPrice;
+  final List<FiiCandleBar> candles;
 
   @override
   Widget build(BuildContext context) {
     final sentiment = computeFiiMarketSentiment(
       history: history,
       currentPrice: currentPrice,
+      candles: candles,
     );
 
     if (sentiment == null) return const SizedBox.shrink();

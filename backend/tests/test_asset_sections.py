@@ -1,4 +1,4 @@
-from app.clients.bolsai.models import FiiCandleBar
+from app.domain.fii.models import FiiCandleBar
 from app.clients.brapi.models import (
     MarketQuote,
     StockDividendsResponse,

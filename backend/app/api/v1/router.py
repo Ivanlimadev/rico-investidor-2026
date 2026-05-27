@@ -1,20 +1,32 @@
 from fastapi import APIRouter
 
+from app.api.v1.crypto import router as crypto_router
+from app.api.v1.currency import router as currency_router
+from app.api.v1.home import router as home_router
+from app.api.v1.auth import router as auth_router
 from app.api.v1.assets import router as assets_router
 from app.api.v1.fiis import router as fiis_router
 from app.api.v1.macro import router as macro_router
 from app.api.v1.meta import router as meta_router
 from app.api.v1.open_finance import router as open_finance_router
+from app.api.v1.indices import router as indices_router
 from app.api.v1.quotes import router as quotes_router
+from app.api.v1.treasury import router as treasury_router
 from app.providers.fii_providers import fii_provider_rules
 from app.providers.registry import AssetClass, provider_for
 
 router = APIRouter(prefix="/v1")
+router.include_router(home_router)
+router.include_router(currency_router)
+router.include_router(crypto_router)
+router.include_router(auth_router)
 router.include_router(assets_router)
 router.include_router(fiis_router)
 router.include_router(macro_router)
 router.include_router(meta_router)
 router.include_router(quotes_router)
+router.include_router(treasury_router)
+router.include_router(indices_router)
 router.include_router(open_finance_router)
 
 
@@ -27,5 +39,5 @@ async def providers_meta():
             "bdr": provider_for(AssetClass.BDR).value,
         },
         "fii": fii_provider_rules(),
-        "note": "FIIs: Brapi (core) + Bolsai (imóveis, inquilinos, screener). Ações/BDRs/ETFs: Brapi.",
+        "note": "FIIs, ações, BDRs e ETFs: Brapi.",
     }

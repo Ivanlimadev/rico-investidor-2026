@@ -18,6 +18,28 @@ String formatBrl(double value) {
   return negative ? '- $formatted' : formatted;
 }
 
+String formatCurrencyRate(double value, String pair) {
+  final normalized = pair.trim().toUpperCase();
+  final decimals = normalized.startsWith('JPY-') ? 5 : 4;
+  final negative = value < 0;
+  final abs = value.abs();
+  final fixed = abs.toStringAsFixed(decimals);
+  final parts = fixed.split('.');
+  final integer = parts[0];
+  final fraction = parts[1];
+
+  final buffer = StringBuffer();
+  for (var i = 0; i < integer.length; i++) {
+    if (i > 0 && (integer.length - i) % 3 == 0) {
+      buffer.write('.');
+    }
+    buffer.write(integer[i]);
+  }
+
+  final formatted = 'R\$ $buffer,$fraction';
+  return negative ? '- $formatted' : formatted;
+}
+
 String formatCompactBrl(double value) {
   final abs = value.abs();
   final prefix = value < 0 ? '- ' : '';

@@ -1,4 +1,5 @@
 import 'package:rico_investidor/core/network/api_client.dart';
+import 'package:rico_investidor/core/utils/asset_logo_url.dart';
 import 'package:rico_investidor/features/quotes/models/stock_catalog.dart';
 import 'package:rico_investidor/features/quotes/models/stock_compare.dart';
 import 'package:rico_investidor/features/quotes/models/stock_financials.dart';
@@ -18,6 +19,9 @@ class MarketQuoteDto {
     required this.changePercent,
     required this.category,
     this.provider = 'brapi',
+    this.logoUrl,
+    this.dividendYield12m,
+    this.priceToBook,
   });
 
   final String symbol;
@@ -26,8 +30,17 @@ class MarketQuoteDto {
   final double changePercent;
   final String category;
   final String provider;
+  final String? logoUrl;
+  final double? dividendYield12m;
+  final double? priceToBook;
 
   factory MarketQuoteDto.fromJson(Map<String, dynamic> json) {
+    double? numVal(String key) {
+      final value = json[key];
+      if (value == null) return null;
+      return (value as num).toDouble();
+    }
+
     return MarketQuoteDto(
       symbol: json['symbol'] as String,
       name: json['name'] as String,
@@ -35,6 +48,9 @@ class MarketQuoteDto {
       changePercent: (json['change_percent'] as num).toDouble(),
       category: json['category'] as String? ?? 'acoes_br',
       provider: json['provider'] as String? ?? 'brapi',
+      logoUrl: json['logo_url'] as String?,
+      dividendYield12m: numVal('dividend_yield_12m'),
+      priceToBook: numVal('price_to_book'),
     );
   }
 
@@ -45,6 +61,9 @@ class MarketQuoteDto {
       category: _parseCategory(category),
       price: price,
       changePercent: changePercent,
+      logoUrl: resolveAssetLogoUrl(symbol, logoUrl, isFii: false),
+      dividendYield12m: dividendYield12m,
+      priceToBook: priceToBook,
     );
   }
 
@@ -52,6 +71,7 @@ class MarketQuoteDto {
     return switch (slug) {
       'bdr' => MarketCategory.bdr,
       'etf' => MarketCategory.etf,
+      'etf_intl' => MarketCategory.etfInternacional,
       'fiis' => MarketCategory.fiis,
       _ => MarketCategory.acoesBr,
     };
@@ -85,9 +105,17 @@ class QuoteApiClient {
     );
   }
 
-  Future<StockQuoteDetailDto> getDetail(String ticker) {
+  Future<StockQuoteDetailDto> getDetail(
+    String ticker, {
+    int candleLimit = 252,
+    int dividendLimit = 120,
+  }) {
     return _client.getJson(
       '/v1/quotes/$ticker/detail',
+      query: {
+        'candle_limit': '$candleLimit',
+        'dividend_limit': '$dividendLimit',
+      },
       fromJson: StockQuoteDetailDto.fromJson,
     );
   }
@@ -220,6 +248,7 @@ class QuoteApiClient {
     return switch (category) {
       MarketCategory.bdr => 'bdr',
       MarketCategory.etf => 'etf',
+      MarketCategory.etfInternacional => 'etf_intl',
       MarketCategory.acoesBr => 'acoes_br',
       _ => 'acoes_br',
     };

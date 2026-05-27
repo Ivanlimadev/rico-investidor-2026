@@ -50,7 +50,7 @@ String formatReferenceMonth(String? raw) {
   return '${names[month]}/${parts[0]}';
 }
 
-/// Data COM aproximada: último dia útil do mês de referência (Bolsai usa dia 1).
+/// Data COM aproximada: último dia útil do mês de referência.
 String paymentComDate(FiiDistributionPayment payment) {
   final ref = _parseDate(payment.referenceDate);
   if (ref == null) return '—';
@@ -61,7 +61,7 @@ String paymentComDate(FiiDistributionPayment payment) {
   );
 }
 
-/// Bolsai não informa payment_date em FIIs — usa API ou estimativa (~14 do mês seguinte).
+/// Quando a API não informa payment_date, estima ~14 do mês seguinte.
 PaymentDateInfo paymentDateInfo(FiiDistributionPayment payment) {
   if (payment.paymentDate != null && payment.paymentDate!.isNotEmpty) {
     return PaymentDateInfo(

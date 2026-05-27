@@ -16,6 +16,7 @@ class FiiQuoteLineChart extends StatefulWidget {
     this.initialPeriod = FiiQuotePeriod.year1,
     this.showPeriodSelector = true,
     this.onPeriodChanged,
+    this.initialCandles = const [],
   });
 
   final String ticker;
@@ -25,6 +26,7 @@ class FiiQuoteLineChart extends StatefulWidget {
   final FiiQuotePeriod initialPeriod;
   final bool showPeriodSelector;
   final ValueChanged<FiiQuotePeriod>? onPeriodChanged;
+  final List<FiiCandleBar> initialCandles;
 
   @override
   State<FiiQuoteLineChart> createState() => _FiiQuoteLineChartState();
@@ -42,10 +44,34 @@ class _FiiQuoteLineChartState extends State<FiiQuoteLineChart> {
   @override
   void initState() {
     super.initState();
+    if (_seedFromInitialCandles(widget.initialPeriod)) {
+      return;
+    }
     _loadPeriod(reset: true);
   }
 
+  bool _seedFromInitialCandles(FiiQuotePeriod period) {
+    if (widget.initialCandles.isEmpty) return false;
+
+    final needed = limitForQuotePeriod(period);
+    if (widget.initialCandles.length < needed) return false;
+
+    final sorted = sortedQuoteBars(widget.initialCandles);
+    if (sorted.isEmpty) return false;
+
+    _bars = sorted;
+    _loading = false;
+    _selectedIndex = sorted.length - 1;
+    _canLoadMore = period == FiiQuotePeriod.max && _bars.length >= 2;
+    return true;
+  }
+
   Future<void> _loadPeriod({required bool reset}) async {
+    if (reset && _seedFromInitialCandles(_period)) {
+      if (mounted) setState(() {});
+      return;
+    }
+
     setState(() {
       _loading = true;
       _error = null;

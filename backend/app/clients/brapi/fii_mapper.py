@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import UTC, datetime
 
-from app.clients.bolsai.models import (
+from app.domain.fii.models import (
     FiiAssetComposition,
     FiiCandleBar,
     FiiCandlesResponse,
@@ -66,39 +66,40 @@ def map_fees_paid(report: dict) -> FiiFeesPaid | None:
     return FiiFeesPaid(admin=round(admin_rate * 100, 4))
 
 
-def merge_fii_detail(
+def map_fii_detail_from_brapi(
     *,
     ticker: str,
     indicators: dict,
     report: dict | None,
-    bolsai: FiiDetail,
 ) -> FiiDetail:
-    detail = bolsai.model_copy(deep=True)
-    detail.ticker = ticker
-    detail.name = indicators.get("name") or detail.name
-    detail.reference_date = (
-        normalize_reference_date(report.get("referenceDate") if report else None)
-        or normalize_reference_date(indicators.get("asOfDate"))
-        or detail.reference_date
-    )
-    detail.close_price = indicators.get("price") or detail.close_price
-    detail.book_value_per_share = indicators.get("navPerShare") or detail.book_value_per_share
-    detail.pvp = indicators.get("priceToNav") or detail.pvp
+    """Detalhe FII montado só com indicadores + relatório CVM da Brapi."""
     dy = indicators.get("dividendYield12m")
-    detail.dividend_yield_ttm = pct_from_ratio(dy) if dy is not None else detail.dividend_yield_ttm
-    detail.net_asset_value = indicators.get("equity") or detail.net_asset_value
-    detail.shares_outstanding = indicators.get("sharesOutstanding") or detail.shares_outstanding
-    detail.total_shareholders = indicators.get("totalInvestors") or detail.total_shareholders
-    detail.segment = indicators.get("segmentoAtuacao") or indicators.get("segmentType") or detail.segment
-    detail.management_type = indicators.get("tipoGestao") or detail.management_type
-    detail.administrator = indicators.get("administratorName") or detail.administrator
-    detail.administrator_cnpj = indicators.get("administratorCnpj") or detail.administrator_cnpj
-    detail.mandate = indicators.get("mandate") or detail.mandate
-    detail.fund_type = indicators.get("segmentType") or detail.fund_type
-    detail.website = indicators.get("administratorWebsite") or detail.website
-    detail.email = indicators.get("administratorEmail") or detail.email
+    detail = FiiDetail(
+        ticker=ticker,
+        name=indicators.get("name") or ticker,
+        reference_date=normalize_reference_date(indicators.get("asOfDate")),
+        close_price=indicators.get("price"),
+        book_value_per_share=indicators.get("navPerShare"),
+        pvp=indicators.get("priceToNav"),
+        dividend_yield_ttm=pct_from_ratio(dy) if dy is not None else None,
+        net_asset_value=indicators.get("equity"),
+        shares_outstanding=indicators.get("sharesOutstanding"),
+        total_shareholders=indicators.get("totalInvestors"),
+        segment=indicators.get("segmentoAtuacao") or indicators.get("segmentType"),
+        management_type=indicators.get("tipoGestao"),
+        administrator=indicators.get("administratorName"),
+        administrator_cnpj=indicators.get("administratorCnpj"),
+        mandate=indicators.get("mandate"),
+        fund_type=indicators.get("segmentType"),
+        website=indicators.get("administratorWebsite"),
+        email=indicators.get("administratorEmail"),
+        provider="brapi",
+    )
 
     if report:
+        detail.reference_date = (
+            normalize_reference_date(report.get("referenceDate")) or detail.reference_date
+        )
         composition = map_asset_composition(report)
         if composition:
             detail.asset_composition = composition
@@ -106,7 +107,6 @@ def merge_fii_detail(
         if fees:
             detail.fees_paid_last_month = fees
 
-    detail.provider = "brapi+bolsai"
     return detail
 
 

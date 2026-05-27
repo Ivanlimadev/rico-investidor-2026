@@ -5,16 +5,16 @@ import 'package:rico_investidor/features/dividends/dividends_screen.dart';
 import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/home/widgets/portfolio_allocation_card.dart';
 import 'package:rico_investidor/features/home/widgets/portfolio_summary_row.dart';
-import 'package:rico_investidor/core/theme/app_colors.dart';
-import 'package:rico_investidor/core/utils/currency_format.dart';
 import 'package:rico_investidor/features/open_finance/widgets/connect_investments_card.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/fii/utils/fii_ticker.dart';
 import 'package:rico_investidor/features/portfolio/add_asset_screen.dart';
+import 'package:rico_investidor/features/portfolio/widgets/portfolio_holding_card.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/market_category.dart';
 import 'package:rico_investidor/models/portfolio_holding.dart';
 import 'package:rico_investidor/navigation/open_asset_detail.dart';
+import 'package:rico_investidor/services/portfolio_price_service.dart';
 import 'package:rico_investidor/state/portfolio_state.dart';
 
 class PortfolioTabScreen extends StatefulWidget {
@@ -38,10 +38,13 @@ class PortfolioTabScreen extends StatefulWidget {
 class _PortfolioTabScreenState extends State<PortfolioTabScreen> {
   bool _refreshing = false;
 
+  late final PortfolioPriceService _priceService = PortfolioPriceService(
+    quoteRepository: widget.quoteRepository,
+  );
+
   Future<void> _refreshPrices() async {
     setState(() => _refreshing = true);
-    await widget.fiiRepository.refreshPortfolioFiiPrices(widget.portfolio);
-    await widget.quoteRepository.refreshPortfolioStockPrices(widget.portfolio);
+    await _priceService.refreshAll(widget.portfolio);
     if (!mounted) return;
     setState(() => _refreshing = false);
     widget.onPortfolioChanged();
@@ -67,7 +70,7 @@ class _PortfolioTabScreenState extends State<PortfolioTabScreen> {
         actions: [
           const ShellHomeButton(),
           IconButton(
-            tooltip: 'Atualizar cotações FIIs',
+            tooltip: 'Atualizar cotações',
             onPressed: _refreshing ? null : _refreshPrices,
             icon: _refreshing
                 ? const SizedBox(
@@ -127,8 +130,9 @@ class _PortfolioTabScreenState extends State<PortfolioTabScreen> {
               for (final holding in holdings)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-                  child: _HoldingCard(
+                  child: PortfolioHoldingCard(
                     holding: holding,
+                    showDayChange: true,
                     onTap: () => openAssetDetail(
                       context,
                       asset: _assetFromHolding(holding),
@@ -151,7 +155,7 @@ AssetItem _assetFromHolding(PortfolioHolding holding) {
     name: holding.name,
     category: isFiiTicker(holding.symbol) ? MarketCategory.fiis : MarketCategory.acoesBr,
     price: holding.currentPrice,
-    changePercent: 0,
+    changePercent: holding.changePercent,
   );
 }
 
@@ -193,87 +197,6 @@ class _EmptyPortfolioTab extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _HoldingCard extends StatelessWidget {
-  const _HoldingCard({required this.holding, required this.onTap});
-
-  final PortfolioHolding holding;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final profitColor = holding.profit >= 0 ? AppColors.positive : AppColors.negative;
-
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(holding.symbol, style: Theme.of(context).textTheme.titleMedium),
-                        Text(holding.name, style: Theme.of(context).textTheme.bodySmall),
-                      ],
-                    ),
-                  ),
-                  Text(
-                    formatBrl(holding.marketValue),
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  _InfoChip(
-                    label: 'Qtd',
-                    value: holding.quantity.toStringAsFixed(
-                      holding.quantity.truncateToDouble() == holding.quantity ? 0 : 2,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  _InfoChip(label: 'PM', value: formatBrl(holding.averagePrice)),
-                  const Spacer(),
-                  Text(
-                    '${holding.profit >= 0 ? '+' : ''}${holding.profitPercent.toStringAsFixed(2)}%',
-                    style: TextStyle(color: profitColor, fontWeight: FontWeight.w600),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _InfoChip extends StatelessWidget {
-  const _InfoChip({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text('$label: $value', style: Theme.of(context).textTheme.bodySmall),
     );
   }
 }

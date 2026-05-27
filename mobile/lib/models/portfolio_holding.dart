@@ -6,6 +6,7 @@ class PortfolioHolding {
     required this.quantity,
     required this.averagePrice,
     required this.currentPrice,
+    this.changePercent = 0,
   });
 
   final String id;
@@ -14,6 +15,7 @@ class PortfolioHolding {
   final double quantity;
   final double averagePrice;
   final double currentPrice;
+  final double changePercent;
 
   double get invested => quantity * averagePrice;
   double get marketValue => quantity * currentPrice;
@@ -24,6 +26,7 @@ class PortfolioHolding {
     double? quantity,
     double? averagePrice,
     double? currentPrice,
+    double? changePercent,
   }) {
     return PortfolioHolding(
       id: id,
@@ -32,6 +35,29 @@ class PortfolioHolding {
       quantity: quantity ?? this.quantity,
       averagePrice: averagePrice ?? this.averagePrice,
       currentPrice: currentPrice ?? this.currentPrice,
+      changePercent: changePercent ?? this.changePercent,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'symbol': symbol,
+        'name': name,
+        'quantity': quantity,
+        'average_price': averagePrice,
+        'current_price': currentPrice,
+        'change_percent': changePercent,
+      };
+
+  factory PortfolioHolding.fromJson(Map<String, dynamic> json) {
+    return PortfolioHolding(
+      id: json['id'] as String,
+      symbol: json['symbol'] as String,
+      name: json['name'] as String,
+      quantity: (json['quantity'] as num).toDouble(),
+      averagePrice: (json['average_price'] as num).toDouble(),
+      currentPrice: (json['current_price'] as num).toDouble(),
+      changePercent: (json['change_percent'] as num?)?.toDouble() ?? 0,
     );
   }
 }

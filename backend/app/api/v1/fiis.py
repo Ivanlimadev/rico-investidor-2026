@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Query, Request
+from fastapi.responses import Response
 
 from app.services.fii_service import fii_service
+from app.services.logo_service import logo_service
 
-router = APIRouter(prefix="/fiis", tags=["FIIs (Bolsai)"])
+router = APIRouter(prefix="/fiis", tags=["FIIs (Brapi)"])
 
 
 @router.get("")
@@ -10,7 +12,7 @@ async def list_fiis(
     limit: int = Query(default=500, ge=1, le=5000),
     offset: int = Query(default=0, ge=0),
 ):
-    """Lista FIIs paginada — fonte: Bolsai."""
+    """Lista FIIs paginada — fonte: Brapi."""
     return await fii_service.list_fiis(limit=limit, offset=offset)
 
 
@@ -32,9 +34,20 @@ async def count_fiis():
 
 @router.get("/screener")
 async def screener_fiis(request: Request):
-    """Screener Pro — filtra e ordena FIIs (repassa query params à Bolsai)."""
+    """Screener — filtra e ordena FIIs via Brapi."""
     params = dict(request.query_params)
     return await fii_service.screen_fiis(params)
+
+
+@router.get("/{ticker}/logo.png")
+async def get_fii_logo_png(ticker: str):
+    """Logo PNG do FII — proxy cacheado (icones-b3)."""
+    data = await logo_service.get_png(ticker)
+    return Response(
+        content=data,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @router.get("/{ticker}/distributions")
@@ -42,7 +55,7 @@ async def get_fii_distributions(
     ticker: str,
     years: int = Query(default=5, ge=1, le=20),
 ):
-    """Distribuições — fonte: Bolsai."""
+    """Distribuições — fonte: Brapi."""
     return await fii_service.get_distributions(ticker, years=years)
 
 
@@ -53,7 +66,7 @@ async def get_fii_candles(
     start: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
     end: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
 ):
-    """Candles diários OHLC — fonte: Bolsai /stocks (pregão B3)."""
+    """Candles diários OHLC — fonte: Brapi."""
     return await fii_service.get_candles(ticker, limit=limit, start=start, end=end)
 
 
@@ -62,17 +75,17 @@ async def get_fii_history(
     ticker: str,
     limit: int = Query(default=24, ge=1, le=120),
 ):
-    """Histórico mensal — fonte: Bolsai."""
+    """Histórico mensal — fonte: Brapi."""
     return await fii_service.get_history(ticker, limit=limit)
 
 
 @router.get("/{ticker}/tenants")
 async def get_fii_tenants(ticker: str):
-    """Concentração de receita por setor de inquilino — fonte: Bolsai."""
+    """Inquilinos — indisponível na Brapi (retorna vazio)."""
     return await fii_service.get_tenants(ticker)
 
 
 @router.get("/{ticker}")
 async def get_fii(ticker: str):
-    """Detalhe do FII — fonte: Bolsai."""
+    """Detalhe do FII — fonte: Brapi."""
     return await fii_service.get_fii(ticker)

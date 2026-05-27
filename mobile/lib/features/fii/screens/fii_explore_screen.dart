@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
+import 'package:rico_investidor/core/widgets/asset_card_header.dart';
 import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/fii/utils/fii_format.dart';
 import 'package:rico_investidor/features/fii/utils/fii_screener_presets.dart';
@@ -134,15 +135,23 @@ class FiiScreenerTile extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(item.ticker, style: Theme.of(context).textTheme.titleMedium),
-                  const Spacer(),
-                  if (item.closePrice != null)
-                    Text(formatBrl(item.closePrice!), style: Theme.of(context).textTheme.titleSmall),
+                  Expanded(
+                    child: AssetCardHeader(
+                      symbol: item.ticker,
+                      name: item.name,
+                      logoSize: kAssetLogoSizeCompact,
+                      trailing: item.closePrice != null
+                          ? Text(
+                              formatBrl(item.closePrice!),
+                              style: Theme.of(context).textTheme.titleSmall,
+                            )
+                          : null,
+                    ),
+                  ),
                 ],
               ),
-              const SizedBox(height: 4),
-              Text(item.name, maxLines: 2, overflow: TextOverflow.ellipsis),
               const SizedBox(height: 10),
               Wrap(
                 spacing: 12,

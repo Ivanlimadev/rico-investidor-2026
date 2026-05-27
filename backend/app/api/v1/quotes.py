@@ -1,8 +1,13 @@
 from fastapi import APIRouter, Query
+from fastapi.responses import Response
 
+from app.core.exceptions import AppError
+from app.services.logo_service import logo_service
 from app.services.quote_service import quote_service
 
 router = APIRouter(prefix="/quotes", tags=["Cotações (Brapi)"])
+
+_MAX_BATCH_TICKERS = 60
 
 
 @router.get("/featured")
@@ -22,10 +27,15 @@ async def search_quotes(
 
 @router.get("/batch")
 async def batch_quotes(
-    tickers: str = Query(..., min_length=1, description="Tickers separados por vírgula"),
+    tickers: str = Query(..., min_length=1, max_length=600, description="Tickers separados por vírgula"),
 ):
-    """Até 20 tickers por requisição — fonte: Brapi."""
+    """Até 60 tickers por requisição — fonte: Brapi."""
     symbols = [part.strip() for part in tickers.split(",") if part.strip()]
+    if len(symbols) > _MAX_BATCH_TICKERS:
+        raise AppError(
+            f"Máximo de {_MAX_BATCH_TICKERS} tickers por requisição",
+            status_code=400,
+        )
     return await quote_service.get_quotes_batch(symbols)
 
 
@@ -36,7 +46,7 @@ async def list_market_quotes(
     page: int = Query(default=1, ge=1),
 ):
     """
-    Lista por categoria do app: `acoes_br`, `bdr`, `etf`.
+    Lista por categoria do app: `acoes_br`, `bdr`, `etf`, `etf_intl`.
     FIIs: use /v1/fiis.
     """
     return await quote_service.list_by_category(category_slug, limit=limit, page=page)
@@ -44,7 +54,7 @@ async def list_market_quotes(
 
 @router.get("/catalog")
 async def get_stock_catalog(
-    category: str = Query(default="acoes_br", pattern="^(acoes_br|bdr|etf)$"),
+    category: str = Query(default="acoes_br", pattern="^(acoes_br|bdr|etf|etf_intl)$"),
 ):
     """Catálogo B3 cacheado — símbolos, nomes e setores para busca offline."""
     return await quote_service.get_stock_catalog(category)
@@ -85,6 +95,17 @@ async def screener_quotes(
         max_return_on_equity=max_return_on_equity,
         min_price_to_book=min_price_to_book,
         max_price_to_book=max_price_to_book,
+    )
+
+
+@router.get("/{ticker}/logo.png")
+async def get_stock_logo_png(ticker: str):
+    """Logo PNG do ativo — proxy cacheado (icones-b3)."""
+    data = await logo_service.get_png(ticker)
+    return Response(
+        content=data,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=86400"},
     )
 
 

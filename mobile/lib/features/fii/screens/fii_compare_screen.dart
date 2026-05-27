@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
+import 'package:rico_investidor/core/widgets/asset_card_header.dart';
+import 'package:rico_investidor/core/widgets/asset_logo.dart';
 import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/fii/utils/fii_format.dart';
 import 'package:rico_investidor/models/fii_models.dart';
@@ -153,10 +155,21 @@ class _CompareTable extends StatelessWidget {
                   flex: 3,
                   child: Padding(
                     padding: const EdgeInsets.all(10),
-                    child: Text(
-                      d.ticker,
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-                    ),
+                    child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      AssetLogo(
+                        symbol: d.ticker,
+                        size: kAssetLogoSizeCompact,
+                        borderRadius: kAssetLogoBorderRadius,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        d.ticker,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
                   ),
                 ),
             ],

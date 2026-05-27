@@ -1,0 +1,70 @@
+import asyncio
+from unittest.mock import AsyncMock
+
+from app.domain.crypto.models import (
+    CryptoAvailableResponse,
+    CryptoListResponse,
+    CryptoQuote,
+)
+from app.services.crypto_service import CryptoService
+
+
+def test_explore_paginates_and_fetches_rates():
+    client = AsyncMock()
+    client.get_crypto_rates.side_effect = [
+        CryptoListResponse(
+            items=[
+                CryptoQuote(symbol="BTC", name="Bitcoin", price=377479.0, change_percent=-1.359, provider="binance"),
+                CryptoQuote(symbol="ETH", name="Ethereum", price=19200.0, change_percent=1.2, provider="binance"),
+            ],
+            count=2,
+            provider="binance",
+        ),
+        CryptoListResponse(
+            items=[
+                CryptoQuote(symbol="DOGE", name="Dogecoin", price=1.5, change_percent=0.5, provider="binance"),
+            ],
+            count=1,
+            provider="binance",
+        ),
+    ]
+
+    service = CryptoService(client=client)
+    service.list_available = AsyncMock(  # type: ignore[method-assign]
+        return_value=CryptoAvailableResponse(coins=["BTC", "ETH", "DOGE"], count=3, provider="binance")
+    )
+
+    page1 = asyncio.run(service.explore(page=1, limit=2))
+    assert page1.total == 3
+    assert page1.total_pages == 2
+    assert page1.page == 1
+    assert len(page1.items) == 2
+    assert page1.items[0].symbol == "BTC"
+    assert page1.items[0].price == 377479.0
+
+    page2 = asyncio.run(service.explore(page=2, limit=2))
+    assert page2.page == 2
+    assert len(page2.items) == 1
+    assert page2.items[0].symbol == "DOGE"
+
+
+def test_explore_filters_major_group():
+    service = CryptoService(client=AsyncMock())
+    service.list_available = AsyncMock(  # type: ignore[method-assign]
+        return_value=CryptoAvailableResponse(coins=["BTC", "ETH", "SHIB"], count=3, provider="binance")
+    )
+    service._client.get_crypto_rates = AsyncMock(  # type: ignore[attr-defined]
+        return_value=CryptoListResponse(
+            items=[
+                CryptoQuote(symbol="BTC", name="Bitcoin", price=377479.0, provider="binance"),
+                CryptoQuote(symbol="ETH", name="Ethereum", price=19200.0, provider="binance"),
+            ],
+            count=2,
+            provider="binance",
+        )
+    )
+
+    result = asyncio.run(service.explore(group="major", limit=10))
+
+    assert result.total == 2
+    assert {item.symbol for item in result.items} == {"BTC", "ETH"}

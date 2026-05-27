@@ -36,6 +36,7 @@ class StockCatalogItemDto {
       category: _parseCategory(category),
       price: 0,
       changePercent: 0,
+      logoUrl: logoUrl,
     );
   }
 

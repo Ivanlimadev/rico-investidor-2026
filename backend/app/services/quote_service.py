@@ -1,4 +1,5 @@
 from app.clients.brapi.client import BrapiClient
+from app.clients.brapi.stock_mapper import STOCK_DETAIL_MODULES, map_enriched_market_quote
 from app.clients.brapi.models import (
     MarketQuote,
     MarketQuoteBatchResponse,
@@ -12,7 +13,7 @@ from app.clients.brapi.models import (
     StockPerformanceResponse,
     StockCatalogResponse,
 )
-from app.clients.bolsai.models import FiiCandlesResponse
+from app.domain.fii.models import FiiCandlesResponse
 from app.config import settings
 from app.core.cache import TtlCache
 from app.core.exceptions import UpstreamError
@@ -22,12 +23,13 @@ from app.domain.quotes.category_map import (
     FEATURED_STOCK_TICKERS,
     category_to_slug,
     infer_category,
+    is_international_etf,
 )
 from app.providers.registry import AssetClass, DataProvider, provider_for
 
 
 class QuoteService:
-    """Cotações B3 via Brapi — ações, BDRs e ETFs BR (FIIs continuam na Bolsai)."""
+    """Cotações B3 via Brapi — ações, BDRs, ETFs BR e FIIs."""
 
     def __init__(self, client: BrapiClient | None = None) -> None:
         self._client = client or BrapiClient()
@@ -58,6 +60,10 @@ class QuoteService:
         )
         catalog_ttl = settings.quote_cache_ttl_seconds * 24
         self._catalog_cache: TtlCache[StockCatalogResponse] = TtlCache(catalog_ttl)
+        self._catalog_total_cache: TtlCache[int] = TtlCache(catalog_ttl)
+        self._featured_cache: TtlCache[MarketQuoteBatchResponse] = TtlCache(
+            settings.quote_cache_ttl_seconds,
+        )
 
     @staticmethod
     def provider() -> DataProvider:
@@ -157,9 +163,55 @@ class QuoteService:
         if cached:
             return cached
 
-        result = await self._client.load_stock_catalog(category_slug)
+        source_slug = "etf" if category_slug == "etf_intl" else category_slug
+        result = await self._client.load_stock_catalog(source_slug)
+        if category_slug == "etf_intl":
+            items = [item for item in result.items if is_international_etf(item.symbol)]
+            result = StockCatalogResponse(
+                quote_type=result.quote_type,
+                items=items,
+                count=len(items),
+                total=len(items),
+                sectors=sorted({item.sector for item in items if item.sector}),
+            )
+        elif category_slug == "etf":
+            items = [item for item in result.items if not is_international_etf(item.symbol)]
+            result = StockCatalogResponse(
+                quote_type=result.quote_type,
+                items=items,
+                count=len(items),
+                total=len(items),
+                sectors=sorted({item.sector for item in items if item.sector}),
+            )
+
         self._catalog_cache.set(cache_key, result)
         return result
+
+    def get_cached_catalog_total(self, category_slug: str) -> int | None:
+        cached = self._catalog_cache.get(f"catalog:{category_slug}")
+        if cached:
+            return cached.total or cached.count
+        return None
+
+    async def get_stock_catalog_total(self, category_slug: str) -> int:
+        cached_total = self.get_cached_catalog_total(category_slug)
+        if cached_total is not None:
+            return cached_total
+
+        count_key = f"total:{category_slug}"
+        cached_count = self._catalog_total_cache.get(count_key)
+        if cached_count is not None:
+            return cached_count
+
+        if category_slug in {"etf", "etf_intl"}:
+            catalog = await self.get_stock_catalog(category_slug)
+            total = catalog.total or catalog.count
+            self._catalog_total_cache.set(count_key, total)
+            return total
+
+        total = await self._client.fetch_stock_list_total(category_slug)
+        self._catalog_total_cache.set(count_key, total)
+        return total
 
     async def list_by_category(
         self,
@@ -191,23 +243,53 @@ class QuoteService:
                 if infer_category(item.symbol, "stock") == AssetClass.STOCK_BR
             ]
         elif asset_class == AssetClass.ETF_BR:
-            items = [
-                item
-                for item in raw_items
-                if infer_category(item.symbol, "stock") == AssetClass.ETF_BR
-            ]
+            if category_slug == "etf_intl":
+                items = [
+                    item
+                    for item in raw_items
+                    if infer_category(item.symbol, "stock") == AssetClass.ETF_BR
+                    and is_international_etf(item.symbol)
+                ]
+            else:
+                items = [
+                    item
+                    for item in raw_items
+                    if infer_category(item.symbol, "stock") == AssetClass.ETF_BR
+                    and not is_international_etf(item.symbol)
+                ]
         else:
             items = raw_items
 
         for item in items:
-            item.category = category_to_slug(asset_class)
+            item.category = category_slug if category_slug == "etf_intl" else category_to_slug(asset_class)
 
         result = MarketQuoteListResponse(items=items[:limit], count=min(len(items), limit))
         self._list_cache.set(cache_key, result)
         return result
 
     async def featured_stocks(self) -> MarketQuoteBatchResponse:
-        return await self.get_quotes_batch(list(FEATURED_STOCK_TICKERS))
+        cached = self._featured_cache.get("featured")
+        if cached:
+            return cached
+
+        try:
+            raw_items = await self._client.get_quotes_with_modules(
+                list(FEATURED_STOCK_TICKERS),
+                modules=STOCK_DETAIL_MODULES,
+            )
+            items = [
+                map_enriched_market_quote(item)
+                for item in raw_items
+                if item.get("symbol")
+            ]
+        except UpstreamError:
+            items = await self._client.get_quotes(list(FEATURED_STOCK_TICKERS))
+
+        by_symbol = {item.symbol: item for item in items}
+        ordered = [by_symbol[ticker] for ticker in FEATURED_STOCK_TICKERS if ticker in by_symbol]
+        result = MarketQuoteBatchResponse(items=ordered, count=len(ordered))
+        self._featured_cache.set("featured", result)
+        return result
 
     async def get_stock_detail(
         self,

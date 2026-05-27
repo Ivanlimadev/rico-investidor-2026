@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 
-from app.clients.bolsai.models import FiiCandleBar, FiiDistributionPayment, FiiDistributionYearSummary
+from app.domain.fii.models import FiiCandleBar, FiiDistributionPayment, FiiDistributionYearSummary
 
 
 class MarketQuote(BaseModel):
@@ -10,6 +10,9 @@ class MarketQuote(BaseModel):
     change_percent: float
     category: str
     provider: str = "brapi"
+    logo_url: str | None = None
+    dividend_yield_12m: float | None = None
+    price_to_book: float | None = None
 
 
 class MarketQuoteListResponse(BaseModel):

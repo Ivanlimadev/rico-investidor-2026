@@ -128,14 +128,9 @@ class _FlagFrame extends StatelessWidget {
         ),
         boxShadow: [
           BoxShadow(
-            color: accent.withValues(alpha: 0.35),
-            blurRadius: 12,
-            spreadRadius: 0,
-          ),
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.45),
-            blurRadius: 6,
-            offset: const Offset(0, 3),
+            color: accent.withValues(alpha: 0.28),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
@@ -178,7 +173,7 @@ class _WarmGlyphIcon extends StatelessWidget {
             ),
             border: Border.all(color: accent.withValues(alpha: 0.65), width: 1.6),
             boxShadow: [
-              BoxShadow(color: accent.withValues(alpha: 0.3), blurRadius: 10),
+              BoxShadow(color: accent.withValues(alpha: 0.22), blurRadius: 6),
             ],
           ),
           child: Icon(icon, color: color, size: size * 0.48),
@@ -218,9 +213,11 @@ class _BrazilFlag extends StatelessWidget {
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(size * 0.12),
-      child: CustomPaint(
-        size: Size(size, size * 0.7),
-        painter: const _BrazilFlagPainter(),
+      child: RepaintBoundary(
+        child: CustomPaint(
+          size: Size(size, size * 0.7),
+          painter: const _BrazilFlagPainter(),
+        ),
       ),
     );
   }
@@ -279,9 +276,11 @@ class _UsFlag extends StatelessWidget {
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(size * 0.12),
-      child: CustomPaint(
-        size: Size(size, size * 0.7),
-        painter: const _UsFlagPainter(),
+      child: RepaintBoundary(
+        child: CustomPaint(
+          size: Size(size, size * 0.7),
+          painter: const _UsFlagPainter(),
+        ),
       ),
     );
   }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
+import 'package:rico_investidor/core/widgets/asset_card_header.dart';
+import 'package:rico_investidor/core/widgets/asset_logo.dart';
 import 'package:rico_investidor/features/fii/utils/fii_format.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/quotes/models/stock_compare.dart';
@@ -217,6 +219,13 @@ class _StockCompareTable extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            AssetLogo(
+                              symbol: item.quote.symbol,
+                              logoUrl: item.profile.logoUrl,
+                              size: kAssetLogoSizeCompact,
+                              borderRadius: kAssetLogoBorderRadius,
+                            ),
+                            const SizedBox(height: 8),
                             Text(
                               item.quote.symbol,
                               style: Theme.of(context).textTheme.titleSmall?.copyWith(

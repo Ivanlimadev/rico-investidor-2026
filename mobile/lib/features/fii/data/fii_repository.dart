@@ -1,3 +1,4 @@
+import 'package:rico_investidor/core/cache/session_cache.dart';
 import 'package:rico_investidor/features/fii/data/fii_api_client.dart';
 import 'package:rico_investidor/features/fii/utils/fii_related.dart';
 import 'package:rico_investidor/features/fii/utils/fii_screener_presets.dart';
@@ -14,10 +15,24 @@ class FiiRepository {
 
   List<FiiSummary>? _catalog;
   int? _totalCount;
+  Future<int>? _totalCountFuture;
+  final _featuredCache = SessionCache<List<FiiScreenerItem>>(ttl: const Duration(minutes: 5));
+  Future<List<FiiScreenerItem>>? _featuredFuture;
   final Map<String, FiiDetail> _detailCache = {};
+  final Map<String, SessionCache<FiiDistributions>> _distributionsCache = {};
+  final Map<String, SessionCache<FiiHistoryResponse>> _historyCache = {};
+  final Map<String, SessionCache<FiiCandlesResponse>> _candlesCache = {};
 
-  Future<int> totalCount() async {
-    if (_totalCount != null) return _totalCount!;
+  SessionCache<T> _cacheFor<T>(Map<String, SessionCache<T>> store, String key) {
+    return store.putIfAbsent(key, () => SessionCache<T>(ttl: const Duration(minutes: 10)));
+  }
+
+  Future<int> totalCount() {
+    if (_totalCount != null) return Future.value(_totalCount!);
+    return _totalCountFuture ??= _fetchTotalCount();
+  }
+
+  Future<int> _fetchTotalCount() async {
     try {
       final response = await _api.countFiis();
       _totalCount = response.total;
@@ -82,12 +97,26 @@ class FiiRepository {
     return detail;
   }
 
-  Future<FiiDistributions> getDistributions(String ticker, {int years = 5}) {
-    return _api.getDistributions(ticker, years: years);
+  Future<FiiDistributions> getDistributions(String ticker, {int years = 5}) async {
+    final key = '${normalizeFiiTicker(ticker)}:$years';
+    final cache = _cacheFor(_distributionsCache, key);
+    final cached = cache.get();
+    if (cached != null) return cached;
+
+    final result = await _api.getDistributions(ticker, years: years);
+    cache.set(result);
+    return result;
   }
 
-  Future<FiiHistoryResponse> getHistory(String ticker, {int limit = 24}) {
-    return _api.getHistory(ticker, limit: limit);
+  Future<FiiHistoryResponse> getHistory(String ticker, {int limit = 24}) async {
+    final key = '${normalizeFiiTicker(ticker)}:$limit';
+    final cache = _cacheFor(_historyCache, key);
+    final cached = cache.get();
+    if (cached != null) return cached;
+
+    final result = await _api.getHistory(ticker, limit: limit);
+    cache.set(result);
+    return result;
   }
 
   Future<FiiCandlesResponse> getCandles(
@@ -95,8 +124,15 @@ class FiiRepository {
     int limit = 252,
     String? start,
     String? end,
-  }) {
-    return _api.getCandles(ticker, limit: limit, start: start, end: end);
+  }) async {
+    final key = '${normalizeFiiTicker(ticker)}:$limit:${start ?? ''}:${end ?? ''}';
+    final cache = _cacheFor(_candlesCache, key);
+    final cached = cache.get();
+    if (cached != null) return cached;
+
+    final result = await _api.getCandles(ticker, limit: limit, start: start, end: end);
+    cache.set(result);
+    return result;
   }
 
   Future<FiiTenantsResponse> getTenants(String ticker) {
@@ -107,12 +143,24 @@ class FiiRepository {
     return _api.screener(params);
   }
 
-  Future<List<FiiScreenerItem>> featuredFiis() async {
-    try {
-      final response = await screener(fiiFeaturedScreenerParams);
-      if (response.data.isNotEmpty) return response.data;
-    } catch (_) {}
-    return featuredFiisOfflineFallback;
+  Future<List<FiiScreenerItem>> featuredFiis() {
+    final cached = _featuredCache.get();
+    if (cached != null) return Future.value(cached);
+    return _featuredFuture ??= _loadFeaturedFiis();
+  }
+
+  Future<List<FiiScreenerItem>> _loadFeaturedFiis() async {
+    final response = await screener(fiiFeaturedScreenerParams);
+    if (response.data.isEmpty) {
+      throw StateError('Nenhum FII em destaque');
+    }
+    _featuredCache.set(response.data);
+    return response.data;
+  }
+
+  void invalidateFeatured() {
+    _featuredCache.clear();
+    _featuredFuture = null;
   }
 
   Future<List<FiiScreenerItem>> relatedFiis(FiiDetail detail, {int limit = relatedFiisLimit}) async {
@@ -170,20 +218,7 @@ class FiiRepository {
   }
 
   Future<void> refreshPortfolioFiiPrices(PortfolioState portfolio) async {
-    for (final holding in portfolio.holdings) {
-      if (!isFiiTicker(holding.symbol)) continue;
-      try {
-        final detail = await getDetail(holding.symbol);
-        if (detail.closePrice != null && detail.closePrice! > 0) {
-          final index = portfolio.holdings.indexWhere((h) => h.symbol == holding.symbol);
-          if (index >= 0) {
-            portfolio.holdings[index] = portfolio.holdings[index].copyWith(
-              currentPrice: detail.closePrice,
-            );
-          }
-        }
-      } catch (_) {}
-    }
+    // Preços de FIIs são atualizados via batch em QuoteRepository.refreshPortfolioPrices.
   }
 
   Future<AssetItem?> resolveAsset(String symbol) async {
@@ -203,19 +238,32 @@ class FiiRepository {
     }
   }
 
-  AssetItem summaryToAsset(FiiSummary summary) {
-    return AssetItem(
-      symbol: summary.ticker,
-      name: summary.name,
-      category: MarketCategory.fiis,
-      price: 0,
-      changePercent: 0,
-    );
+  Future<AssetItem> summaryToAsset(FiiSummary summary) async {
+    try {
+      final detail = await getDetail(summary.ticker);
+      return AssetItem(
+        symbol: detail.ticker,
+        name: detail.name,
+        category: MarketCategory.fiis,
+        price: detail.closePrice ?? 0,
+        changePercent: 0,
+      );
+    } catch (_) {
+      return AssetItem(
+        symbol: summary.ticker,
+        name: summary.name,
+        category: MarketCategory.fiis,
+        price: 0,
+        changePercent: 0,
+      );
+    }
   }
 
   void invalidate() {
     _catalog = null;
     _totalCount = null;
+    _totalCountFuture = null;
+    invalidateFeatured();
     _detailCache.clear();
   }
 }

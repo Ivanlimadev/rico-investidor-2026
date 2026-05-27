@@ -7,6 +7,9 @@ class AssetItem {
     required this.category,
     required this.price,
     required this.changePercent,
+    this.logoUrl,
+    this.dividendYield12m,
+    this.priceToBook,
   });
 
   final String symbol;
@@ -14,6 +17,9 @@ class AssetItem {
   final MarketCategory category;
   final double price;
   final double changePercent;
+  final String? logoUrl;
+  final double? dividendYield12m;
+  final double? priceToBook;
 
   bool get isPositive => changePercent >= 0;
 }

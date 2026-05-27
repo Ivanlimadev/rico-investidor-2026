@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
+import 'package:rico_investidor/core/widgets/asset_card_header.dart';
+import 'package:rico_investidor/core/widgets/asset_logo.dart';
 import 'package:rico_investidor/features/fii/widgets/fii_history_charts.dart';
+import 'package:rico_investidor/core/widgets/asset_returns_card.dart';
 import 'package:rico_investidor/features/quotes/widgets/stock_corporate_actions_card.dart';
 import 'package:rico_investidor/features/quotes/widgets/stock_dividends_summary_card.dart';
 import 'package:rico_investidor/features/quotes/widgets/stock_recent_dividends_card.dart';
@@ -41,13 +44,33 @@ class StockDetailScreen extends StatefulWidget {
 
 class _StockDetailScreenState extends State<StockDetailScreen> {
   late Future<StockQuoteDetailDto> _loadFuture;
+  StockQuoteDetailDto? _extendedDetail;
 
   @override
   void initState() {
     super.initState();
-    _loadFuture = widget.initialDetail != null
-        ? Future.value(widget.initialDetail)
-        : widget.repository.getStockDetail(widget.ticker);
+    if (widget.initialDetail != null) {
+      _loadFuture = Future.value(widget.initialDetail);
+      _loadExtendedDetail();
+      return;
+    }
+
+    _loadFuture = widget.repository.getStockDetail(widget.ticker).then((detail) {
+      _loadExtendedDetail();
+      return detail;
+    });
+  }
+
+  Future<void> _loadExtendedDetail() async {
+    try {
+      final extended = await widget.repository.getStockDetail(
+        widget.ticker,
+        candleLimit: 1260,
+        dividendLimit: 500,
+      );
+      if (!mounted) return;
+      setState(() => _extendedDetail = extended);
+    } catch (_) {}
   }
 
   @override
@@ -93,6 +116,8 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
 
           final detail = snapshot.data!;
           final quote = detail.quote;
+          final candles = _extendedDetail?.candles ?? detail.candles;
+          final dividendPayments = _extendedDetail?.dividends.payments ?? detail.dividends.payments;
           final dy = detail.fundamentals.dividendYield12m;
           final isPositive = quote.changePercent >= 0;
           final changeColor = isPositive ? AppColors.positive : AppColors.negative;
@@ -146,21 +171,13 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          if (logoUrl != null && logoUrl.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(right: 12, top: 2),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: Image.network(
-                                  logoUrl,
-                                  width: 40,
-                                  height: 40,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) =>
-                                      const SizedBox.shrink(),
-                                ),
-                              ),
-                            ),
+                          AssetLogo(
+                            symbol: widget.ticker,
+                            logoUrl: logoUrl,
+                            size: kAssetLogoSizeList,
+                            borderRadius: kAssetLogoBorderRadius,
+                          ),
+                          const SizedBox(width: 12),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -243,6 +260,14 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                   ),
                 ),
               ),
+              if (candles.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                AssetReturnsCard(
+                  currentPrice: quote.price,
+                  candles: candles,
+                  payments: dividendPayments,
+                ),
+              ],
               const SizedBox(height: 16),
               StockFundamentalsCard(
                 fundamentals: detail.fundamentals,
@@ -256,6 +281,7 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
               StockQuoteChartCard(
                 ticker: widget.ticker,
                 repository: widget.repository,
+                initialCandles: candles,
               ),
               const SizedBox(height: 16),
               StockAboutCard(profile: detail.profile),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:rico_investidor/features/fii/utils/fii_data_freshness.dart';
 import 'package:rico_investidor/features/fii/utils/fii_fund_costs.dart';
 import 'package:rico_investidor/models/fii_models.dart';
 
@@ -66,7 +67,7 @@ class FiiFundCostsCard extends StatelessWidget {
                 if (detail.referenceDate != null) ...[
                   const SizedBox(height: 8),
                   Text(
-                    'Referência do fundo: ${detail.referenceDate}',
+                    cvmReportReferenceLabel(detail.referenceDate),
                     style: theme.textTheme.bodySmall?.copyWith(
                       fontStyle: FontStyle.italic,
                     ),

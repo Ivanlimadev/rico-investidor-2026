@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
+import 'package:rico_investidor/core/widgets/asset_card_header.dart';
+import 'package:rico_investidor/core/widgets/asset_logo.dart';
 import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/fii/utils/fii_format.dart';
 import 'package:rico_investidor/features/fii/utils/fii_related.dart';
@@ -209,6 +211,12 @@ class _RelatedMiniCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      AssetLogo(
+                        symbol: item.ticker,
+                        size: kAssetLogoSizeCompact,
+                        borderRadius: kAssetLogoBorderRadius,
+                      ),
+                      const SizedBox(height: 8),
                       Row(
                         children: [
                           Expanded(

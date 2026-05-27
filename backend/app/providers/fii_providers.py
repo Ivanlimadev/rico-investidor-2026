@@ -14,22 +14,13 @@ class FiiCapability(str, Enum):
     TOP_PROPERTIES = "top_properties"
 
 
-_BOLSAI_CAPABILITIES = {
-    FiiCapability.SCREENER,
-    FiiCapability.TENANTS,
-    FiiCapability.TOP_PROPERTIES,
-}
-
-
 def fii_provider_for(capability: FiiCapability) -> DataProvider:
-    if capability in _BOLSAI_CAPABILITIES:
-        return DataProvider.BOLSAI
     return DataProvider.BRAPI
 
 
 def fii_provider_rules() -> dict[str, str]:
     return {
-        capability.value: fii_provider_for(capability).value
+        capability.value: DataProvider.BRAPI.value
         for capability in FiiCapability
     }
 

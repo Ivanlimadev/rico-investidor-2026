@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import UTC, datetime
 
-from app.clients.bolsai.models import (
+from app.domain.fii.models import (
     FiiCandleBar,
     FiiCandlesResponse,
     FiiDistributionPayment,
@@ -87,6 +87,21 @@ def map_catalog_item(item: dict, *, target_class: AssetClass | None = None) -> S
     )
 
 
+def map_list_market_quote(item: dict) -> MarketQuote:
+    symbol = str(item["stock"]).upper()
+    name = item.get("name") or symbol
+    price = float(item.get("close") or 0)
+    change = float(item.get("change") or 0)
+    asset_class = infer_category(symbol, item.get("type"))
+    return MarketQuote(
+        symbol=symbol,
+        name=name,
+        price=price,
+        change_percent=change,
+        category=category_to_slug(asset_class),
+    )
+
+
 def map_screener_item(item: dict) -> StockScreenerItem:
     symbol = str(item["stock"]).upper()
     name = item.get("name") or symbol
@@ -155,6 +170,26 @@ def is_intraday_interval(interval: str) -> bool:
     return normalize_candle_interval(interval) in INTRADAY_INTERVALS
 
 
+def b3_icon_png_url(symbol: str) -> str:
+    return (
+        "https://raw.githubusercontent.com/thefintz/icones-b3/main/icones/"
+        f"{symbol.upper().strip()}.png"
+    )
+
+
+def brapi_icon_svg_url(symbol: str) -> str:
+    return f"https://icons.brapi.dev/icons/{symbol.upper().strip()}.svg"
+
+
+def resolve_logo_url(symbol: str, *candidates: str | None) -> str:
+    for value in candidates:
+        if value and str(value).strip():
+            cleaned = str(value).strip()
+            if not cleaned.lower().endswith(".svg"):
+                return cleaned
+    return b3_icon_png_url(symbol)
+
+
 def map_market_quote(item: dict) -> MarketQuote:
     symbol = str(item["symbol"]).upper()
     name = item.get("longName") or item.get("shortName") or symbol
@@ -167,6 +202,19 @@ def map_market_quote(item: dict) -> MarketQuote:
         price=price,
         change_percent=change,
         category=category_to_slug(asset_class),
+        logo_url=resolve_logo_url(symbol, item.get("logourl")),
+    )
+
+
+def map_enriched_market_quote(item: dict) -> MarketQuote:
+    fundamentals = map_stock_fundamentals(item)
+    profile = map_stock_profile(item)
+    return map_market_quote(item).model_copy(
+        update={
+            "logo_url": resolve_logo_url(item.get("symbol", ""), profile.logo_url, item.get("logourl")),
+            "dividend_yield_12m": fundamentals.dividend_yield_12m,
+            "price_to_book": fundamentals.price_to_book,
+        }
     )
 
 

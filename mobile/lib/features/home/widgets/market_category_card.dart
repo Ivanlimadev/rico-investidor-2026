@@ -8,12 +8,14 @@ class MarketCategoryCard extends StatelessWidget {
   const MarketCategoryCard({
     super.key,
     required this.category,
-    required this.assetCount,
     required this.onTap,
+    this.assetCount,
+    this.isDemo = false,
   });
 
   final MarketCategory category;
-  final int assetCount;
+  final int? assetCount;
+  final bool isDemo;
   final VoidCallback onTap;
 
   @override
@@ -39,13 +41,8 @@ class MarketCategoryCard extends StatelessWidget {
             ),
             boxShadow: [
               BoxShadow(
-                color: visual.accentColor.withValues(alpha: 0.22),
-                blurRadius: 16,
-                offset: const Offset(0, 4),
-              ),
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.35),
-                blurRadius: 8,
+                color: visual.accentColor.withValues(alpha: 0.18),
+                blurRadius: 10,
                 offset: const Offset(0, 3),
               ),
             ],
@@ -55,11 +52,13 @@ class MarketCategoryCard extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                MarketCategoryIcon(
-                  kind: visual.iconKind,
-                  size: 46,
-                  iconColor: visual.iconAccent,
-                  accentColor: visual.accentColor,
+                RepaintBoundary(
+                  child: MarketCategoryIcon(
+                    kind: visual.iconKind,
+                    size: 46,
+                    iconColor: visual.iconAccent,
+                    accentColor: visual.accentColor,
+                  ),
                 ),
                 const SizedBox(height: 9),
                 Text(
@@ -72,21 +71,15 @@ class MarketCategoryCard extends StatelessWidget {
                     height: 1.1,
                     fontSize: 11.5,
                     color: const Color(0xFFFFF5EE),
-                    shadows: [
-                      Shadow(
-                        color: visual.accentColor.withValues(alpha: 0.35),
-                        blurRadius: 8,
-                      ),
-                    ],
                   ),
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  '$assetCount ativos',
+                  isDemo ? 'Demo' : '${assetCount ?? 0} ativos',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     fontSize: 9.5,
                     fontWeight: FontWeight.w600,
-                    color: const Color(0xFFFFE0CC).withValues(alpha: 0.55),
+                    color: const Color(0xFFFFE0CC).withValues(alpha: isDemo ? 0.75 : 0.55),
                   ),
                 ),
               ],

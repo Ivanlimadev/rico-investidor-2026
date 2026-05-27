@@ -17,7 +17,7 @@ class FiiListResponse(BaseModel):
     count: int
     total: int
     fiis: list[FiiListItem]
-    provider: str = "bolsai"
+    provider: str = "brapi"
 
 
 class FiiAssetComposition(BaseModel):
@@ -83,7 +83,7 @@ class FiiDetail(BaseModel):
     leased_pct: float | None = None
     top_properties: list[FiiProperty] = Field(default_factory=list)
     property_reference_date: str | None = None
-    provider: str = "bolsai"
+    provider: str = "brapi"
 
     @field_validator("top_properties", mode="before")
     @classmethod
@@ -115,7 +115,7 @@ class FiiDistributions(BaseModel):
     total_payments: int | None = None
     annual_summary: list[FiiDistributionYearSummary] = Field(default_factory=list)
     payments: list[FiiDistributionPayment] = Field(default_factory=list)
-    provider: str = "bolsai"
+    provider: str = "brapi"
 
     @field_validator("annual_summary", "payments", mode="before")
     @classmethod
@@ -139,7 +139,7 @@ class FiiHistoryResponse(BaseModel):
     name: str
     count: int
     history: list[FiiHistoryPoint]
-    provider: str = "bolsai"
+    provider: str = "brapi"
 
     @field_validator("history", mode="before")
     @classmethod
@@ -160,7 +160,7 @@ class FiiCandlesResponse(BaseModel):
     ticker: str
     count: int
     candles: list[FiiCandleBar] = Field(default_factory=list)
-    provider: str = "bolsai"
+    provider: str = "brapi"
     interval: str | None = None
     range: str | None = None
 
@@ -181,7 +181,7 @@ class FiiTenantsResponse(BaseModel):
     count: int | None = None
     top_sector_pct: float | None = None
     sectors: list[FiiTenantSector] = Field(default_factory=list)
-    provider: str = "bolsai"
+    provider: str = "brapi"
 
     @field_validator("sectors", mode="before")
     @classmethod
@@ -194,7 +194,7 @@ class FiiSearchResponse(BaseModel):
     count: int
     total: int
     fiis: list[FiiListItem]
-    provider: str = "bolsai"
+    provider: str = "brapi"
 
 
 class FiiScreenerItem(BaseModel):
@@ -219,7 +219,7 @@ class FiiScreenerItem(BaseModel):
     leased_pct: float | None = None
     property_count: int | None = None
     total_area_sqm: float | None = None
-    provider: str = "bolsai"
+    provider: str = "brapi"
 
 
 class FiiScreenerResponse(BaseModel):
@@ -228,4 +228,4 @@ class FiiScreenerResponse(BaseModel):
     total: int
     offset: int
     limit: int
-    provider: str = "bolsai"
+    provider: str = "brapi"

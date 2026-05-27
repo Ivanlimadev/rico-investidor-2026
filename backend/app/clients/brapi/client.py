@@ -2,11 +2,21 @@ import asyncio
 
 import httpx
 
+from app.clients.brapi.currency_mapper import (
+    map_available_pairs,
+    map_currency_history,
+    map_currency_rates,
+    normalize_currency_pair,
+)
+from app.clients.brapi.fii_catalog import featured_fiis as catalog_featured_fiis
+from app.clients.brapi.fii_catalog import list_fiis as catalog_list_fiis
+from app.clients.brapi.fii_catalog import load_lightweight_catalog
+from app.clients.brapi.fii_catalog import screen_fiis as catalog_screen_fiis
 from app.clients.brapi.fii_mapper import (
     map_candles,
     map_distributions,
+    map_fii_detail_from_brapi,
     map_history,
-    merge_fii_detail,
     pct_from_ratio,
 )
 from app.clients.brapi.macro_mapper import map_brazil_macro, map_dictionary
@@ -34,6 +44,7 @@ from app.clients.brapi.stock_mapper import (
     financials_modules_for_period,
     limit_to_range,
     map_market_quote,
+    map_list_market_quote,
     map_market_stats,
     map_catalog_item,
     map_screener_item,
@@ -52,15 +63,50 @@ from app.clients.brapi.stock_mapper import (
     passes_fundamental_filters,
     sort_screener_items,
 )
-from app.clients.bolsai.models import (
+from app.clients.brapi.treasury_mapper import (
+    map_treasury_history,
+    map_treasury_indicators,
+    map_treasury_list,
+    normalize_treasury_symbol,
+)
+from app.domain.fii.models import (
     FiiCandlesResponse,
     FiiDetail,
     FiiDistributions,
     FiiHistoryResponse,
+    FiiListResponse,
+    FiiScreenerResponse,
+)
+from app.clients.brapi.schema_validation import (
+    parse_currency_available,
+    parse_currency_historical,
+    parse_currency_rates,
+    parse_dictionary,
+    parse_fii_dividends,
+    parse_fii_historical,
+    parse_fii_history,
+    parse_fii_indicator_item,
+    parse_fii_report,
+    parse_inflation,
+    parse_list_stocks,
+    parse_prime_rate,
+    parse_quote_item,
+    parse_quote_list_response,
+    parse_quote_response,
+    parse_treasury_historical,
+    parse_treasury_indicators,
+    parse_treasury_list,
 )
 from app.config import settings
 from app.core.exceptions import UpstreamError
+from app.core.http_client import get_http_client
+from app.domain.currency.models import (
+    CurrencyHistoryResponse,
+    CurrencyListResponse,
+    CurrencyPairListResponse,
+)
 from app.domain.fii.ticker import normalize_fii_ticker
+from app.domain.treasury.models import TreasuryBond, TreasuryHistoryResponse, TreasuryListResponse
 from app.domain.quotes.category_map import BRAPI_LIST_TYPE, CATEGORY_SLUGS, infer_category
 from app.providers.registry import AssetClass
 
@@ -98,8 +144,8 @@ class BrapiClient:
         url = f"{self._base_url}/{path.lstrip('/')}"
 
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(url, params=query or None, headers=headers)
+            client = get_http_client()
+            response = await client.get(url, params=query or None, headers=headers)
         except httpx.RequestError as exc:
             raise UpstreamError(
                 f"Falha ao conectar na Brapi: {exc.__class__.__name__}",
@@ -112,11 +158,14 @@ class BrapiClient:
             raise UpstreamError("Limite de requisições da Brapi excedido", status_code=429)
         if response.status_code >= 400:
             raise UpstreamError(
-                f"Erro Brapi ({response.status_code}): {response.text[:200]}",
+                f"Erro ao consultar dados de mercado ({response.status_code})",
                 status_code=502,
             )
 
-        return response.json()
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise UpstreamError("Resposta inválida do provedor de dados", status_code=502) from exc
 
     async def _get(self, path: str, params: dict | None = None) -> dict:
         return await self._request(path, params=params, use_bearer=False)
@@ -143,8 +192,33 @@ class BrapiClient:
             )
 
         data = await self._get(f"/quote/{','.join(unique)}")
-        results = data.get("results") or []
-        return [self._map_quote_item(item) for item in results if item.get("symbol")]
+        return [map_market_quote(item) for item in parse_quote_response(data)]
+
+    async def get_quote_item(self, ticker: str) -> dict:
+        normalized = ticker.upper().strip()
+        data = await self._get(f"/quote/{normalized}")
+        return parse_quote_item(data)
+
+    async def get_quotes_raw(self, tickers: list[str]) -> list[dict]:
+        if not tickers:
+            return []
+
+        unique: list[str] = []
+        seen: set[str] = set()
+        for ticker in tickers:
+            normalized = ticker.upper().strip()
+            if normalized and normalized not in seen:
+                seen.add(normalized)
+                unique.append(normalized)
+
+        if len(unique) > self.MAX_BATCH:
+            raise UpstreamError(
+                f"Máximo de {self.MAX_BATCH} tickers por requisição",
+                status_code=400,
+            )
+
+        data = await self._get(f"/quote/{','.join(unique)}")
+        return parse_quote_response(data)
 
     async def get_quotes_with_modules(self, tickers: list[str], *, modules: str) -> list[dict]:
         if not tickers:
@@ -168,7 +242,7 @@ class BrapiClient:
             f"/quote/{','.join(unique)}",
             params={"modules": modules},
         )
-        return data.get("results") or []
+        return parse_quote_response(data)
 
     async def list_quotes(
         self,
@@ -192,8 +266,7 @@ class BrapiClient:
             params["type"] = quote_type
 
         data = await self._get("/quote/list", params=params)
-        stocks = data.get("stocks") or []
-        return [self._map_list_item(item) for item in stocks if item.get("stock")]
+        return [map_list_market_quote(item) for item in parse_list_stocks(data)]
 
     async def load_stock_catalog(self, category_slug: str) -> StockCatalogResponse:
         asset_class = CATEGORY_SLUGS.get(category_slug)
@@ -217,8 +290,9 @@ class BrapiClient:
                     "type": quote_type,
                 },
             )
-            total_count = int(data.get("totalCount") or total_count or 0)
-            for raw in data.get("stocks") or []:
+            envelope = parse_quote_list_response(data)
+            total_count = int(envelope.totalCount or total_count or 0)
+            for raw in parse_list_stocks(data):
                 mapped = map_catalog_item(raw, target_class=asset_class)
                 if mapped is None:
                     continue
@@ -226,7 +300,7 @@ class BrapiClient:
                 if mapped.sector:
                     sectors.add(mapped.sector)
 
-            if not data.get("hasNextPage"):
+            if not envelope.hasNextPage:
                 break
             page += 1
 
@@ -237,6 +311,25 @@ class BrapiClient:
             total=total_count or len(items),
             sectors=sorted(sectors),
         )
+
+    async def fetch_stock_list_total(self, category_slug: str) -> int:
+        asset_class = CATEGORY_SLUGS.get(category_slug)
+        if asset_class is None:
+            raise UpstreamError(f"Categoria inválida: {category_slug}", status_code=400)
+
+        quote_type = BRAPI_LIST_TYPE[asset_class]
+        data = await self._get(
+            "/quote/list",
+            {
+                "limit": 1,
+                "page": 1,
+                "sortBy": "volume",
+                "sortOrder": "desc",
+                "type": quote_type,
+            },
+        )
+        envelope = parse_quote_list_response(data)
+        return int(envelope.totalCount or 0)
 
     async def screener_quotes(
         self,
@@ -307,8 +400,8 @@ class BrapiClient:
             params["search"] = search
 
         data = await self._get("/quote/list", params=params)
-        stocks = data.get("stocks") or []
-        items = [map_screener_item(item) for item in stocks if item.get("stock")]
+        envelope = parse_quote_list_response(data)
+        items = [map_screener_item(item) for item in parse_list_stocks(data)]
 
         if quote_type == "stock":
             items = [
@@ -322,10 +415,10 @@ class BrapiClient:
         return StockScreenerResponse(
             items=items,
             count=len(items),
-            total=data.get("totalCount"),
-            page=data.get("currentPage") or page,
-            total_pages=data.get("totalPages"),
-            sectors=data.get("availableSectors") or [],
+            total=envelope.totalCount,
+            page=envelope.currentPage or page,
+            total_pages=envelope.totalPages,
+            sectors=envelope.availableSectors or [],
         )
 
     async def _screener_with_fundamentals(
@@ -360,12 +453,11 @@ class BrapiClient:
             params["search"] = search
 
         data = await self._get("/quote/list", params=params)
-        stocks = data.get("stocks") or []
+        envelope = parse_quote_list_response(data)
         base_items = [
             map_screener_item(item)
-            for item in stocks
-            if item.get("stock")
-            and infer_category(str(item["stock"]).upper(), "stock") == AssetClass.STOCK_BR
+            for item in parse_list_stocks(data)
+            if infer_category(str(item["stock"]).upper(), "stock") == AssetClass.STOCK_BR
         ]
 
         enriched: list[StockScreenerItem] = []
@@ -409,7 +501,7 @@ class BrapiClient:
             total=total,
             page=page,
             total_pages=total_pages or (1 if items else 0),
-            sectors=data.get("availableSectors") or [],
+            sectors=envelope.availableSectors or [],
         )
 
     async def _get_stock_quote_item(
@@ -432,10 +524,7 @@ class BrapiClient:
             params["modules"] = modules
 
         data = await self._get(f"/quote/{normalized}", params=params)
-        results = data.get("results") or []
-        if not results:
-            raise UpstreamError("Ativo não encontrado", status_code=404)
-        return results[0]
+        return parse_quote_item(data)
 
     async def get_stock_candles(
         self,
@@ -586,48 +675,13 @@ class BrapiClient:
         )
         return map_stock_compare_item(item)
 
-    def _map_quote_item(self, item: dict) -> MarketQuote:
-        symbol = str(item["symbol"]).upper()
-        name = item.get("longName") or item.get("shortName") or symbol
-        price = float(item.get("regularMarketPrice") or 0)
-        change = float(item.get("regularMarketChangePercent") or 0)
-        asset_class = infer_category(symbol, item.get("type") or item.get("quoteType"))
-        from app.domain.quotes.category_map import category_to_slug
-
-        return MarketQuote(
-            symbol=symbol,
-            name=name,
-            price=price,
-            change_percent=change,
-            category=category_to_slug(asset_class),
-        )
-
-    def _map_list_item(self, item: dict) -> MarketQuote:
-        symbol = str(item["stock"]).upper()
-        name = item.get("name") or symbol
-        price = float(item.get("close") or 0)
-        change = float(item.get("change") or 0)
-        asset_class = infer_category(symbol, item.get("type"))
-        from app.domain.quotes.category_map import category_to_slug
-
-        return MarketQuote(
-            symbol=symbol,
-            name=name,
-            price=price,
-            change_percent=change,
-            category=category_to_slug(asset_class),
-        )
-
     async def get_fii_indicators(self, ticker: str) -> dict:
         normalized = normalize_fii_ticker(ticker)
         data = await self._get_v2(
             "v2/fii/indicators",
             params={"symbols": normalized},
         )
-        items = data.get("fiis") or []
-        if not items:
-            raise UpstreamError("FII não encontrado", status_code=404)
-        return items[0]
+        return parse_fii_indicator_item(data)
 
     async def get_fii_report(self, ticker: str) -> dict | None:
         normalized = normalize_fii_ticker(ticker)
@@ -635,8 +689,7 @@ class BrapiClient:
             "v2/fii/reports",
             params={"symbols": normalized, "limit": 1},
         )
-        reports = data.get("reports") or []
-        return reports[0] if reports else None
+        return parse_fii_report(data)
 
     async def get_fii_distributions(
         self,
@@ -645,6 +698,7 @@ class BrapiClient:
         years: int = 5,
         close_price: float | None = None,
         dividend_yield_ttm: float | None = None,
+        name: str | None = None,
     ) -> FiiDistributions:
         normalized = normalize_fii_ticker(ticker)
         limit = max(years * 14, 24)
@@ -654,24 +708,40 @@ class BrapiClient:
         )
         dividends = [
             item
-            for item in (data.get("dividends") or [])
+            for item in parse_fii_dividends(data)
             if str(item.get("symbol", "")).upper() == normalized
         ]
         if not dividends:
             raise UpstreamError("FII não encontrado", status_code=404)
 
-        indicators = await self.get_fii_indicators(normalized)
-        name = indicators.get("name") or normalized
-        dy = indicators.get("dividendYield12m")
+        if name is None or close_price is None or dividend_yield_ttm is None:
+            indicators = await self.get_fii_indicators(normalized)
+            name = name or indicators.get("name") or normalized
+            close_price = close_price if close_price is not None else indicators.get("price")
+            dy = indicators.get("dividendYield12m")
+            dividend_yield_ttm = (
+                dividend_yield_ttm
+                if dividend_yield_ttm is not None
+                else pct_from_ratio(dy)
+            )
+        else:
+            name = name or normalized
+
         return map_distributions(
             ticker=normalized,
             name=name,
             dividends=dividends,
-            close_price=close_price or indicators.get("price"),
-            dividend_yield_ttm=dividend_yield_ttm or pct_from_ratio(dy),
+            close_price=close_price,
+            dividend_yield_ttm=dividend_yield_ttm,
         )
 
-    async def get_fii_history(self, ticker: str, *, limit: int = 24) -> FiiHistoryResponse:
+    async def get_fii_history(
+        self,
+        ticker: str,
+        *,
+        limit: int = 24,
+        name: str | None = None,
+    ) -> FiiHistoryResponse:
         normalized = normalize_fii_ticker(ticker)
         data = await self._get_v2(
             "v2/fii/indicators/history",
@@ -679,16 +749,21 @@ class BrapiClient:
         )
         entries = [
             item
-            for item in (data.get("history") or [])
+            for item in parse_fii_history(data)
             if str(item.get("symbol", "")).upper() == normalized
         ]
         if not entries:
             raise UpstreamError("FII não encontrado", status_code=404)
 
-        indicators = await self.get_fii_indicators(normalized)
+        if name is None:
+            indicators = await self.get_fii_indicators(normalized)
+            name = indicators.get("name") or normalized
+        else:
+            name = name or normalized
+
         return map_history(
             ticker=normalized,
-            name=indicators.get("name") or normalized,
+            name=name,
             entries=entries,
         )
 
@@ -713,7 +788,7 @@ class BrapiClient:
             params["endDate"] = end
 
         data = await self._get_v2("v2/fii/historical", params=params)
-        series = data.get("fiis") or []
+        series = parse_fii_historical(data)
         if not series:
             raise UpstreamError("FII não encontrado", status_code=404)
 
@@ -733,19 +808,131 @@ class BrapiClient:
             self._get("/v2/prime-rate"),
             self._get("/v2/inflation", {"country": "brazil"}),
         )
-        return map_brazil_macro(prime_rate_data=prime_rate, inflation_data=inflation)
+        return map_brazil_macro(
+            prime_rate_data=parse_prime_rate(prime_rate),
+            inflation_data=parse_inflation(inflation),
+        )
 
     async def get_dictionary(self, *, category: str = "statistics") -> DictionaryResponse:
         data = await self._get("/v2/dictionary", {"category": category})
-        return map_dictionary(data, category=category.strip().lower())
+        return map_dictionary(parse_dictionary(data), category=category.strip().lower())
 
-    async def build_fii_detail(self, ticker: str, bolsai: FiiDetail) -> FiiDetail:
+    async def get_currency_rates(self, pairs: list[str]) -> CurrencyListResponse:
+        normalized = [normalize_currency_pair(pair) for pair in pairs if pair.strip()]
+        if not normalized:
+            raise UpstreamError("Informe ao menos um par de moedas", status_code=400)
+
+        data = await self._get_v2(
+            "v2/currency",
+            params={"currency": ",".join(normalized)},
+        )
+        return map_currency_rates(parse_currency_rates(data))
+
+    async def get_currency_available(self, *, search: str | None = None) -> CurrencyPairListResponse:
+        params: dict[str, str] = {}
+        if search:
+            params["search"] = search.strip()
+        data = await self._get_v2("v2/currency/available", params=params or None)
+        return map_available_pairs(parse_currency_available(data))
+
+    async def get_currency_history(
+        self,
+        pair: str,
+        *,
+        limit: int = 252,
+        start: str | None = None,
+        end: str | None = None,
+    ) -> CurrencyHistoryResponse:
+        normalized = normalize_currency_pair(pair)
+        params: dict[str, str | int] = {
+            "currency": normalized,
+            "sortOrder": "desc",
+            "limit": limit,
+        }
+        if start:
+            params["startDate"] = start
+        if end:
+            params["endDate"] = end
+
+        data = await self._get_v2("v2/currency/historical", params=params)
+        return map_currency_history(parse_currency_historical(data), pair=normalized)
+
+    async def get_treasury_list(
+        self,
+        *,
+        search: str | None = None,
+        indexer: str | None = None,
+        coupon_type: str | None = None,
+        page: int = 1,
+        limit: int = 30,
+    ) -> TreasuryListResponse:
+        params: dict[str, str | int] = {
+            "page": max(1, page),
+            "limit": max(1, min(limit, 50)),
+        }
+        if search:
+            params["search"] = search.strip()
+        if indexer:
+            params["indexer"] = indexer.strip().lower()
+        if coupon_type:
+            params["couponType"] = coupon_type.strip().lower()
+
+        data = await self._get_v2("v2/treasury/list", params=params)
+        group = indexer or "all"
+        return map_treasury_list(parse_treasury_list(data), group=group)
+
+    async def get_treasury_indicators(self, symbols: list[str]) -> list[TreasuryBond]:
+        normalized = [normalize_treasury_symbol(symbol) for symbol in symbols if symbol.strip()]
+        if not normalized:
+            raise UpstreamError("Informe ao menos um título do Tesouro", status_code=400)
+        if len(normalized) > self.MAX_BATCH:
+            raise UpstreamError(
+                f"Máximo de {self.MAX_BATCH} títulos por requisição",
+                status_code=400,
+            )
+
+        data = await self._get_v2(
+            "v2/treasury/indicators",
+            params={"symbols": ",".join(normalized)},
+        )
+        return map_treasury_indicators(parse_treasury_indicators(data))
+
+    async def get_treasury_history(
+        self,
+        symbol: str,
+        *,
+        limit: int = 252,
+        start: str | None = None,
+        end: str | None = None,
+    ) -> TreasuryHistoryResponse:
+        normalized = normalize_treasury_symbol(symbol)
+        params: dict[str, str] = {"symbols": normalized}
+        if start:
+            params["startDate"] = start
+        if end:
+            params["endDate"] = end
+
+        data = await self._get_v2("v2/treasury/indicators/history", params=params)
+        return map_treasury_history(parse_treasury_historical(data), symbol=normalized, limit=limit)
+
+    async def get_fii_detail(self, ticker: str) -> FiiDetail:
         normalized = normalize_fii_ticker(ticker)
         indicators = await self.get_fii_indicators(normalized)
         report = await self.get_fii_report(normalized)
-        return merge_fii_detail(
+        return map_fii_detail_from_brapi(
             ticker=normalized,
             indicators=indicators,
             report=report,
-            bolsai=bolsai,
         )
+
+    async def list_fiis(self, *, limit: int = 500, offset: int = 0) -> FiiListResponse:
+        return await catalog_list_fiis(self, limit=limit, offset=offset)
+
+    async def load_fii_catalog_light(self) -> list:
+        return await load_lightweight_catalog(self)
+
+    async def screen_fiis(self, params: dict[str, str]) -> FiiScreenerResponse:
+        return await catalog_screen_fiis(self, params)
+
+    async def get_featured_fiis(self, tickers: tuple[str, ...]) -> FiiScreenerResponse:
+        return await catalog_featured_fiis(self, tickers)

@@ -174,7 +174,7 @@ def test_map_stock_financials():
 
 
 def test_map_stock_performance():
-    from app.clients.bolsai.models import FiiCandleBar
+    from app.domain.fii.models import FiiCandleBar
     from app.clients.brapi.stock_mapper import map_stock_performance
 
     ticker_candles = [
@@ -275,3 +275,47 @@ def test_map_stock_dividends_builds_annual_summary_and_labels():
     assert labels == {"Dividendo", "Jcp", "Rendimento"}
     assert len(result.corporate_actions) == 1
     assert result.corporate_actions[0].complete_factor == "2 para 1"
+
+
+def test_map_market_quote_includes_logo_fallback():
+    from app.clients.brapi.stock_mapper import map_market_quote
+
+    item = map_market_quote(
+        {
+            "symbol": "PETR4",
+            "longName": "Petrobras",
+            "regularMarketPrice": 38.42,
+            "regularMarketChangePercent": 1.24,
+            "type": "stock",
+        }
+    )
+
+    assert item.logo_url == (
+        "https://raw.githubusercontent.com/thefintz/icones-b3/main/icones/PETR4.png"
+    )
+
+
+def test_map_enriched_market_quote():
+    from app.clients.brapi.stock_mapper import map_enriched_market_quote
+
+    item = map_enriched_market_quote(
+        {
+            "symbol": "PETR4",
+            "longName": "Petrobras PN",
+            "regularMarketPrice": 38.42,
+            "regularMarketChangePercent": 1.24,
+            "type": "stock",
+            "logourl": "https://icons.brapi.dev/icons/PETR4.svg",
+            "defaultKeyStatistics": {
+                "dividendYield": 0.125,
+                "priceToBook": 0.98,
+            },
+        }
+    )
+
+    assert item.symbol == "PETR4"
+    assert item.dividend_yield_12m == 12.5
+    assert item.price_to_book == 0.98
+    assert item.logo_url == (
+        "https://raw.githubusercontent.com/thefintz/icones-b3/main/icones/PETR4.png"
+    )

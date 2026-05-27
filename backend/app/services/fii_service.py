@@ -1,5 +1,7 @@
-from app.clients.bolsai.client import BolsaiClient
-from app.clients.bolsai.models import (
+from app.clients.brapi.client import BrapiClient
+from app.config import settings
+from app.core.cache import TtlCache
+from app.domain.fii.models import (
     FiiCandlesResponse,
     FiiDetail,
     FiiDistributions,
@@ -10,48 +12,38 @@ from app.clients.bolsai.models import (
     FiiScreenerResponse,
     FiiTenantsResponse,
 )
-from app.clients.brapi.client import BrapiClient
-from app.config import settings
-from app.core.cache import TtlCache
 from app.domain.fii.ticker import normalize_fii_ticker
+from app.domain.home.presets import FEATURED_FII_TICKERS
 from app.providers.fii_providers import FiiCapability, fii_provider_for
 from app.providers.registry import AssetClass, DataProvider, provider_for
 
 
 class FiiService:
-    """
-    Camada de serviço FIIs com provedores duplos.
+    """Camada de serviço FIIs — fonte única: Brapi."""
 
-    Brapi: indicadores, relatórios, dividendos, histórico e candles.
-    Bolsai: screener, inquilinos e imóveis (top_properties).
-    """
-
-    def __init__(
-        self,
-        bolsai_client: BolsaiClient | None = None,
-        brapi_client: BrapiClient | None = None,
-    ) -> None:
-        self._bolsai = bolsai_client or BolsaiClient()
+    def __init__(self, brapi_client: BrapiClient | None = None) -> None:
         self._brapi = brapi_client or BrapiClient()
-        self._list_cache: TtlCache[FiiListResponse] = TtlCache(settings.fii_cache_ttl_seconds)
-        self._detail_cache: TtlCache[FiiDetail] = TtlCache(settings.fii_cache_ttl_seconds)
+        max_entries = settings.cache_max_entries
+        self._list_cache: TtlCache[FiiListResponse] = TtlCache(
+            settings.fii_cache_ttl_seconds, max_entries=max_entries
+        )
+        self._detail_cache: TtlCache[FiiDetail] = TtlCache(
+            settings.fii_cache_ttl_seconds, max_entries=max_entries
+        )
         self._distributions_cache: TtlCache[FiiDistributions] = TtlCache(
-            settings.fii_cache_ttl_seconds * 4
+            settings.fii_cache_ttl_seconds * 4, max_entries=max_entries
         )
         self._history_cache: TtlCache[FiiHistoryResponse] = TtlCache(
-            settings.fii_cache_ttl_seconds * 4
+            settings.fii_cache_ttl_seconds * 4, max_entries=max_entries
         )
         self._candles_cache: TtlCache[FiiCandlesResponse] = TtlCache(
-            settings.fii_cache_ttl_seconds * 2
-        )
-        self._tenants_cache: TtlCache[FiiTenantsResponse] = TtlCache(
-            settings.fii_cache_ttl_seconds * 4
+            settings.fii_cache_ttl_seconds * 2, max_entries=max_entries
         )
         self._catalog_cache: TtlCache[list[FiiListItem]] = TtlCache(
-            settings.fii_cache_ttl_seconds * 2
+            settings.fii_fund_catalog_ttl_seconds, max_entries=8
         )
         self._screener_cache: TtlCache[FiiScreenerResponse] = TtlCache(
-            settings.fii_cache_ttl_seconds
+            settings.fii_cache_ttl_seconds, max_entries=max_entries
         )
 
     @staticmethod
@@ -64,7 +56,7 @@ class FiiService:
         if cached:
             return cached
 
-        result = await self._bolsai.list_fiis(limit=limit, offset=offset)
+        result = await self._brapi.list_fiis(limit=limit, offset=offset)
         self._list_cache.set(cache_key, result)
         return result
 
@@ -73,19 +65,7 @@ class FiiService:
         if cached:
             return cached
 
-        items: list[FiiListItem] = []
-        offset = 0
-        page_size = 500
-        total = None
-
-        while True:
-            page = await self.list_fiis(limit=page_size, offset=offset)
-            items.extend(page.fiis)
-            total = page.total
-            offset += page.count
-            if offset >= total or page.count == 0:
-                break
-
+        items = await self._brapi.load_fii_catalog_light()
         self._catalog_cache.set("all", items)
         return items
 
@@ -121,12 +101,7 @@ class FiiService:
         if cached:
             return cached
 
-        bolsai_detail = await self._bolsai.get_fii(normalized)
-        try:
-            result = await self._brapi.build_fii_detail(normalized, bolsai_detail)
-        except Exception:
-            result = bolsai_detail
-
+        result = await self._brapi.get_fii_detail(normalized)
         self._detail_cache.set(cache_key, result)
         return result
 
@@ -137,11 +112,14 @@ class FiiService:
         if cached:
             return cached
 
-        try:
-            result = await self._brapi.get_fii_distributions(normalized, years=years)
-        except Exception:
-            result = await self._bolsai.get_fii_distributions(normalized, years=years)
-
+        detail = self._detail_cache.get(f"detail:{normalized}")
+        result = await self._brapi.get_fii_distributions(
+            normalized,
+            years=years,
+            name=detail.name if detail else None,
+            close_price=detail.close_price if detail else None,
+            dividend_yield_ttm=detail.dividend_yield_ttm if detail else None,
+        )
         self._distributions_cache.set(cache_key, result)
         return result
 
@@ -152,11 +130,12 @@ class FiiService:
         if cached:
             return cached
 
-        try:
-            result = await self._brapi.get_fii_history(normalized, limit=limit)
-        except Exception:
-            result = await self._bolsai.get_fii_history(normalized, limit=limit)
-
+        detail = self._detail_cache.get(f"detail:{normalized}")
+        result = await self._brapi.get_fii_history(
+            normalized,
+            limit=limit,
+            name=detail.name if detail else None,
+        )
         self._history_cache.set(cache_key, result)
         return result
 
@@ -174,34 +153,19 @@ class FiiService:
         if cached:
             return cached
 
-        try:
-            result = await self._brapi.get_fii_candles(
-                normalized,
-                limit=limit,
-                start=start,
-                end=end,
-            )
-        except Exception:
-            result = await self._bolsai.get_stock_candles(
-                normalized,
-                limit=limit,
-                start=start,
-                end=end,
-            )
-
+        result = await self._brapi.get_fii_candles(
+            normalized,
+            limit=limit,
+            start=start,
+            end=end,
+        )
         self._candles_cache.set(cache_key, result)
         return result
 
     async def get_tenants(self, ticker: str) -> FiiTenantsResponse:
+        """Inquilinos não disponíveis na Brapi — retorna vazio."""
         normalized = normalize_fii_ticker(ticker)
-        cache_key = f"tenants:{normalized}"
-        cached = self._tenants_cache.get(cache_key)
-        if cached:
-            return cached
-
-        result = await self._bolsai.get_fii_tenants(normalized)
-        self._tenants_cache.set(cache_key, result)
-        return result
+        return FiiTenantsResponse(ticker=normalized, count=0, sectors=[], provider="brapi")
 
     async def screen_fiis(self, params: dict[str, str]) -> FiiScreenerResponse:
         cache_key = "screener:" + ":".join(f"{k}={params[k]}" for k in sorted(params))
@@ -209,13 +173,23 @@ class FiiService:
         if cached:
             return cached
 
-        result = await self._bolsai.screen_fiis(params)
+        result = await self._brapi.screen_fiis(params)
         self._screener_cache.set(cache_key, result)
         return result
 
     async def count_fiis(self) -> int:
         catalog = await self._load_catalog()
         return len(catalog)
+
+    async def featured_fiis(self) -> FiiScreenerResponse:
+        cache_key = "featured:home"
+        cached = self._screener_cache.get(cache_key)
+        if cached:
+            return cached
+
+        result = await self._brapi.get_featured_fiis(FEATURED_FII_TICKERS)
+        self._screener_cache.set(cache_key, result)
+        return result
 
     def capability_providers(self) -> dict[str, str]:
         return {cap.value: fii_provider_for(cap).value for cap in FiiCapability}

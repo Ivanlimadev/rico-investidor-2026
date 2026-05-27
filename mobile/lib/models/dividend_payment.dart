@@ -12,6 +12,24 @@ class DividendPayment {
   final String name;
   final double amount;
   final DateTime date;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'symbol': symbol,
+        'name': name,
+        'amount': amount,
+        'date': date.toIso8601String(),
+      };
+
+  factory DividendPayment.fromJson(Map<String, dynamic> json) {
+    return DividendPayment(
+      id: json['id'] as String,
+      symbol: json['symbol'] as String,
+      name: json['name'] as String,
+      amount: (json['amount'] as num).toDouble(),
+      date: DateTime.parse(json['date'] as String),
+    );
+  }
 }
 
 enum DividendChartGranularity { day, month, year }

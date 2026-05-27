@@ -1,7 +1,7 @@
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
-from fastapi import APIRouter
-
+from app.core.open_finance_auth import require_open_finance_key
 from app.services.open_finance_service import OpenFinanceService
 
 router = APIRouter(prefix="/open-finance", tags=["Open Finance (Pluggy)"])
@@ -29,14 +29,20 @@ class RegisterItemResponse(BaseModel):
 
 
 @router.post("/connect-token", response_model=ConnectTokenResponse)
-async def create_connect_token(body: ConnectTokenRequest):
+async def create_connect_token(
+    body: ConnectTokenRequest,
+    _: None = Depends(require_open_finance_key),
+):
     """Token para abrir o widget Pluggy Connect no app."""
     token = await _service.create_connect_token(body.client_user_id)
     return ConnectTokenResponse(connect_token=token)
 
 
 @router.post("/items", response_model=RegisterItemResponse)
-async def register_item(body: RegisterItemRequest):
+async def register_item(
+    body: RegisterItemRequest,
+    _: None = Depends(require_open_finance_key),
+):
     """Registra item conectado pelo widget (callback onSuccess)."""
     _service.register_item(body.client_user_id, body.item_id)
     status = _service.status(body.client_user_id)
@@ -44,11 +50,17 @@ async def register_item(body: RegisterItemRequest):
 
 
 @router.get("/status")
-async def open_finance_status(client_user_id: str):
+async def open_finance_status(
+    client_user_id: str,
+    _: None = Depends(require_open_finance_key),
+):
     return _service.status(client_user_id)
 
 
 @router.post("/sync")
-async def sync_portfolio(body: ConnectTokenRequest):
+async def sync_portfolio(
+    body: ConnectTokenRequest,
+    _: None = Depends(require_open_finance_key),
+):
     """Importa investimentos Open Finance como carteira consolidada."""
     return await _service.sync_portfolio(body.client_user_id)

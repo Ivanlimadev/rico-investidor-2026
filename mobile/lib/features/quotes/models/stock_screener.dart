@@ -1,5 +1,6 @@
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/market_category.dart';
+import 'package:rico_investidor/core/utils/asset_logo_url.dart';
 
 class StockScreenerItemDto {
   const StockScreenerItemDto({
@@ -68,6 +69,9 @@ class StockScreenerItemDto {
       category: _parseCategory(category),
       price: price,
       changePercent: changePercent,
+      logoUrl: resolveAssetLogoUrl(symbol, logoUrl, isFii: false),
+      dividendYield12m: dividendYield12m,
+      priceToBook: priceToBook,
     );
   }
 

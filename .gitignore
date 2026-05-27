@@ -19,4 +19,4 @@ mobile/.flutter-plugins-dependencies
 # IDE / OS
 .idea/
 .vscode/
-.DS_Store
+backend/data/

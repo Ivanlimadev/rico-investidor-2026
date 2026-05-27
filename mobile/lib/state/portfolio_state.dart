@@ -119,10 +119,11 @@ class PortfolioState {
     required double quantity,
     required double averagePrice,
     double? currentPrice,
+    double? changePercent,
     DividendPayment? initialDividend,
   }) {
-    final quote = searchService.findBySymbol(symbol);
-    final resolvedPrice = currentPrice ?? quote?.price ?? averagePrice;
+    final resolvedPrice = currentPrice ?? averagePrice;
+    final resolvedChange = changePercent ?? 0;
 
     final existingIndex = holdings.indexWhere((h) => h.symbol == symbol);
     if (existingIndex >= 0) {
@@ -134,6 +135,7 @@ class PortfolioState {
         quantity: totalQty,
         averagePrice: avg,
         currentPrice: resolvedPrice,
+        changePercent: resolvedChange,
       );
     } else {
       holdings.add(
@@ -144,6 +146,7 @@ class PortfolioState {
           quantity: quantity,
           averagePrice: averagePrice,
           currentPrice: resolvedPrice,
+          changePercent: resolvedChange,
         ),
       );
     }

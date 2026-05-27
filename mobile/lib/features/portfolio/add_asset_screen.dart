@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/utils/parse_decimal.dart';
+import 'package:rico_investidor/core/widgets/asset_card_header.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/dividend_payment.dart';
-import 'package:rico_investidor/models/market_category.dart';
 import 'package:rico_investidor/state/portfolio_state.dart';
 
 class AddAssetScreen extends StatefulWidget {
@@ -71,7 +71,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
   Future<void> _selectAsset(AssetItem asset) async {
     var resolved = asset;
 
-    if (asset.price <= 0 && asset.category == MarketCategory.fiis) {
+    if (resolved.price <= 0) {
       final detailed = await widget.portfolio.searchService.findBySymbolAsync(asset.symbol);
       if (detailed != null && detailed.price > 0) {
         resolved = detailed;
@@ -148,6 +148,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
       quantity: quantity,
       averagePrice: averagePrice,
       currentPrice: _selected!.price > 0 ? _selected!.price : null,
+      changePercent: _selected!.price > 0 ? _selected!.changePercent : null,
       initialDividend: initialDividend,
     );
 
@@ -191,6 +192,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
                   for (var i = 0; i < _results.length; i++) ...[
                     if (i > 0) const Divider(height: 1),
                     ListTile(
+                      leading: AssetListLeading(symbol: _results[i].symbol, logoUrl: _results[i].logoUrl),
                       title: Text(_results[i].symbol),
                       subtitle: Text(_results[i].name),
                       trailing: _results[i].price > 0

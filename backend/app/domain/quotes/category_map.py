@@ -14,7 +14,25 @@ CATEGORY_SLUGS: dict[str, AssetClass] = {
     "acoes_br": AssetClass.STOCK_BR,
     "bdr": AssetClass.BDR,
     "etf": AssetClass.ETF_BR,
+    "etf_intl": AssetClass.ETF_BR,
 }
+
+INTERNATIONAL_ETF_PREFIXES = (
+    "IVVB",
+    "BOVV",
+    "NASD",
+    "SPXI",
+    "EURP",
+    "WRLD",
+    "TECK",
+    "XINA",
+    "HASH",
+    "QETH",
+    "BITH",
+    "ETHE",
+    "GOLD",
+    "USDV",
+)
 
 FEATURED_STOCK_TICKERS = ("PETR4", "VALE3", "ITUB4", "MGLU3")
 
@@ -39,6 +57,13 @@ def category_to_slug(asset_class: AssetClass) -> str:
         AssetClass.ETF_BR: "etf",
         AssetClass.FII: "fiis",
     }.get(asset_class, "acoes_br")
+
+
+def is_international_etf(symbol: str) -> bool:
+    normalized = symbol.upper().strip()
+    if not normalized.endswith("11"):
+        return False
+    return any(normalized.startswith(prefix) for prefix in INTERNATIONAL_ETF_PREFIXES)
 
 
 def looks_like_fii(symbol: str) -> bool:

@@ -4,6 +4,7 @@ import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/app/tab_root_navigator.dart';
 import 'package:rico_investidor/features/community/community_tab_screen.dart';
 import 'package:rico_investidor/features/fii/data/fii_repository.dart';
+import 'package:rico_investidor/features/home/data/home_repository.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/finances/finances_tab_screen.dart';
 import 'package:rico_investidor/features/home/home_screen.dart';
@@ -29,6 +30,7 @@ class MainShellScreen extends StatefulWidget {
     required this.onProfileChanged,
     required this.portfolio,
     required this.onPortfolioChanged,
+    required this.homeRepository,
     required this.fiiRepository,
     required this.quoteRepository,
     required this.isDarkMode,
@@ -39,6 +41,7 @@ class MainShellScreen extends StatefulWidget {
   final void Function(UserProfile profile) onProfileChanged;
   final PortfolioState portfolio;
   final VoidCallback onPortfolioChanged;
+  final HomeRepository homeRepository;
   final FiiRepository fiiRepository;
   final QuoteRepository quoteRepository;
   final bool isDarkMode;
@@ -50,6 +53,7 @@ class MainShellScreen extends StatefulWidget {
 
 class _MainShellScreenState extends State<MainShellScreen> {
   AppTab _tab = AppTab.home;
+  final Set<AppTab> _loadedTabs = {AppTab.home};
 
   final _navigatorKeys = List.generate(
     AppTab.values.length,
@@ -63,7 +67,10 @@ class _MainShellScreenState extends State<MainShellScreen> {
       _navigatorKeys[AppTab.home.index].currentState?.popUntil((route) => route.isFirst);
       return;
     }
-    setState(() => _tab = AppTab.home);
+    setState(() {
+      _loadedTabs.add(AppTab.home);
+      _tab = AppTab.home;
+    });
   }
 
   void _selectTab(AppTab tab) {
@@ -71,7 +78,18 @@ class _MainShellScreenState extends State<MainShellScreen> {
       _navigatorKeys[tab.index].currentState?.popUntil((route) => route.isFirst);
       return;
     }
-    setState(() => _tab = tab);
+    setState(() {
+      _loadedTabs.add(tab);
+      _tab = tab;
+    });
+  }
+
+  Widget _tabRoot(AppTab tab, Widget root) {
+    if (!_loadedTabs.contains(tab)) return const SizedBox.shrink();
+    return TabRootNavigator(
+      navigatorKey: _navigatorKeys[tab.index],
+      root: root,
+    );
   }
 
   @override
@@ -83,47 +101,42 @@ class _MainShellScreenState extends State<MainShellScreen> {
         body: IndexedStack(
           index: _index,
           children: [
-            TabRootNavigator(
-              navigatorKey: _navigatorKeys[AppTab.home.index],
-              root: HomeScreen(
+            _tabRoot(
+              AppTab.home,
+              HomeScreen(
                 profile: widget.profile,
                 onProfileChanged: widget.onProfileChanged,
                 portfolio: widget.portfolio,
                 onPortfolioChanged: widget.onPortfolioChanged,
+                homeRepository: widget.homeRepository,
                 fiiRepository: widget.fiiRepository,
                 quoteRepository: widget.quoteRepository,
                 isDarkMode: widget.isDarkMode,
                 onToggleTheme: widget.onToggleTheme,
               ),
             ),
-            TabRootNavigator(
-              navigatorKey: _navigatorKeys[AppTab.portfolio.index],
-              root: PortfolioTabScreen(
+            _tabRoot(
+              AppTab.portfolio,
+              PortfolioTabScreen(
                 portfolio: widget.portfolio,
                 onPortfolioChanged: widget.onPortfolioChanged,
                 fiiRepository: widget.fiiRepository,
                 quoteRepository: widget.quoteRepository,
               ),
             ),
-            TabRootNavigator(
-              navigatorKey: _navigatorKeys[AppTab.search.index],
-              root: SearchTabScreen(
+            _tabRoot(
+              AppTab.search,
+              SearchTabScreen(
                 portfolio: widget.portfolio,
                 fiiRepository: widget.fiiRepository,
                 quoteRepository: widget.quoteRepository,
               ),
             ),
-            TabRootNavigator(
-              navigatorKey: _navigatorKeys[AppTab.community.index],
-              root: const CommunityTabScreen(),
-            ),
-            TabRootNavigator(
-              navigatorKey: _navigatorKeys[AppTab.finances.index],
-              root: const FinancesTabScreen(),
-            ),
-            TabRootNavigator(
-              navigatorKey: _navigatorKeys[AppTab.menu.index],
-              root: MenuTabScreen(
+            _tabRoot(AppTab.community, const CommunityTabScreen()),
+            _tabRoot(AppTab.finances, const FinancesTabScreen()),
+            _tabRoot(
+              AppTab.menu,
+              MenuTabScreen(
                 profile: widget.profile,
                 onProfileChanged: widget.onProfileChanged,
                 portfolio: widget.portfolio,

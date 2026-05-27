@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/core/config/api_config.dart';
 import 'package:rico_investidor/features/fii/data/fii_repository.dart';
+import 'package:rico_investidor/features/fii/utils/fii_data_freshness.dart';
 import 'package:rico_investidor/features/fii/utils/fii_format.dart';
+import 'package:rico_investidor/features/fii/widgets/fii_data_freshness_card.dart';
 import 'package:rico_investidor/features/fii/widgets/fii_about_card.dart';
 import 'package:rico_investidor/features/fii/widgets/fii_quote_chart_card.dart';
 import 'package:rico_investidor/features/fii/widgets/fii_detail_sections.dart';
@@ -37,39 +41,103 @@ class FiiDetailScreen extends StatefulWidget {
 }
 
 class _FiiDetailScreenState extends State<FiiDetailScreen> {
-  late Future<FiiDetailBundle> _loadFuture;
+  FiiDetail? _detail;
+  FiiDistributions? _distributions;
+  FiiHistoryResponse? _history;
+  FiiCandlesResponse? _candles;
+  FiiTenantsResponse? _tenants;
+  Object? _detailError;
+  bool _detailLoading = true;
+  bool _extrasLoading = false;
 
   @override
   void initState() {
     super.initState();
-    _loadFuture = _load();
+    _bootstrap();
   }
 
-  Future<FiiDetailBundle> _load() async {
-    final detail = widget.initialDetail ?? await widget.repository.getDetail(widget.ticker);
-
-    FiiDistributions? distributions;
-    FiiHistoryResponse? history;
-    FiiTenantsResponse? tenants;
-
-    try {
-      distributions = await widget.repository.getDistributions(widget.ticker, years: 15);
-    } catch (_) {}
-
-    try {
-      history = await widget.repository.getHistory(widget.ticker, limit: 120);
-    } catch (_) {}
+  Future<void> _bootstrap() async {
+    if (widget.initialDetail != null) {
+      setState(() {
+        _detail = widget.initialDetail;
+        _detailLoading = false;
+        _extrasLoading = true;
+      });
+      await _loadExtras();
+      return;
+    }
 
     try {
-      tenants = await widget.repository.getTenants(widget.ticker);
-    } catch (_) {}
+      final detail = await widget.repository.getDetail(widget.ticker);
+      if (!mounted) return;
+      setState(() {
+        _detail = detail;
+        _detailLoading = false;
+        _extrasLoading = true;
+      });
+      await _loadExtras();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _detailError = error;
+        _detailLoading = false;
+        _extrasLoading = false;
+      });
+    }
+  }
 
-    return FiiDetailBundle(
-      detail: detail,
-      distributions: distributions,
-      history: history,
-      tenants: tenants,
-    );
+  Future<void> _loadExtras() async {
+    final results = await Future.wait<Object?>([
+      _safe(() => widget.repository.getDistributions(widget.ticker, years: 5)),
+      _safe(() => widget.repository.getHistory(widget.ticker, limit: 120)),
+      _safe(() => widget.repository.getCandles(widget.ticker, limit: 252)),
+    ]);
+
+    if (!mounted) return;
+    setState(() {
+      _distributions = results[0] as FiiDistributions?;
+      _history = results[1] as FiiHistoryResponse?;
+      _candles = results[2] as FiiCandlesResponse?;
+      _extrasLoading = false;
+    });
+    unawaited(_loadExtendedExtras());
+  }
+
+  Future<void> _loadExtendedExtras() async {
+    final results = await Future.wait<Object?>([
+      _safe(() => widget.repository.getDistributions(widget.ticker, years: 15)),
+      _safe(() => widget.repository.getCandles(widget.ticker, limit: 1260)),
+    ]);
+
+    if (!mounted) return;
+    setState(() {
+      final distributions = results[0] as FiiDistributions?;
+      final candles = results[1] as FiiCandlesResponse?;
+      if (distributions != null) _distributions = distributions;
+      if (candles != null) _candles = candles;
+    });
+  }
+
+  Future<T?> _safe<T>(Future<T> Function() load) async {
+    try {
+      return await load();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _retry() {
+    setState(() {
+      _detail = null;
+      _distributions = null;
+      _history = null;
+      _candles = null;
+      _tenants = null;
+      _detailError = null;
+      _detailLoading = true;
+      _extrasLoading = false;
+    });
+    _bootstrap();
   }
 
   @override
@@ -80,7 +148,7 @@ class _FiiDetailScreenState extends State<FiiDetailScreen> {
         actions: [
           const ShellHomeButton(),
           IconButton(
-            tooltip: 'Comparar',
+            tooltip: 'Comparar FIIs',
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (_) => FiiCompareScreen(
@@ -93,23 +161,42 @@ class _FiiDetailScreenState extends State<FiiDetailScreen> {
           ),
         ],
       ),
-      body: FutureBuilder<FiiDetailBundle>(
-        future: _loadFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: _buildBody(),
+    );
+  }
 
-          if (snapshot.hasError) {
-            return _ErrorState(
-              message: snapshot.error.toString(),
-              onRetry: () => setState(() => _loadFuture = _load()),
-            );
-          }
+  Widget _buildBody() {
+    if (_detailLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
-          return _FiiDetailBody(bundle: snapshot.data!, repository: widget.repository);
-        },
-      ),
+    if (_detailError != null || _detail == null) {
+      return _ErrorState(
+        message: _detailError?.toString() ?? 'Detalhe indisponível',
+        onRetry: _retry,
+      );
+    }
+
+    return Stack(
+      children: [
+        _FiiDetailBody(
+          bundle: FiiDetailBundle(
+            detail: _detail!,
+            distributions: _distributions,
+            history: _history,
+            candles: _candles,
+            tenants: _tenants,
+          ),
+          repository: widget.repository,
+        ),
+        if (_extrasLoading)
+          const Positioned(
+            left: 0,
+            right: 0,
+            top: 0,
+            child: LinearProgressIndicator(minHeight: 2),
+          ),
+      ],
     );
   }
 }
@@ -119,13 +206,21 @@ class FiiDetailBundle {
     required this.detail,
     this.distributions,
     this.history,
+    this.candles,
     this.tenants,
   });
 
   final FiiDetail detail;
   final FiiDistributions? distributions;
   final FiiHistoryResponse? history;
+  final FiiCandlesResponse? candles;
   final FiiTenantsResponse? tenants;
+
+  List<FiiHistoryPoint> get historyPoints => history?.history ?? const [];
+
+  List<FiiCandleBar> get candleBars => candles?.candles ?? const [];
+
+  bool get hasReturnData => historyPoints.isNotEmpty || candleBars.isNotEmpty;
 }
 
 class _FiiDetailBody extends StatelessWidget {
@@ -148,36 +243,36 @@ class _FiiDetailBody extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Center(child: FiiHeaderChips(detail: detail)),
-        if (detail.referenceDate != null) ...[
-          const SizedBox(height: 8),
-          Text(
-            'Referência: ${detail.referenceDate}',
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ],
+        const SizedBox(height: 12),
+        FiiDataFreshnessCard(
+          reportReferenceDate: detail.referenceDate,
+          candles: bundle.candleBars,
+        ),
         const SizedBox(height: 16),
         FiiQuoteHeroCard(
           detail: detail,
-          history: bundle.history?.history,
+          history: bundle.historyPoints,
+          candles: bundle.candleBars,
         ),
-        if (bundle.history != null && bundle.history!.history.isNotEmpty) ...[
+        if (bundle.hasReturnData) ...[
           const SizedBox(height: 12),
           FiiReturnsCard(
-            history: bundle.history!.history,
+            history: bundle.historyPoints,
+            candles: bundle.candleBars,
             currentPrice: detail.closePrice,
             payments: bundle.distributions?.payments ?? const [],
           ),
           const SizedBox(height: 12),
           FiiMarketSentimentCard(
-            history: bundle.history!.history,
+            history: bundle.historyPoints,
+            candles: bundle.candleBars,
             currentPrice: detail.closePrice,
           ),
           const SizedBox(height: 12),
           FiiMagicNumberCard(
             detail: detail,
             distributions: bundle.distributions,
-            history: bundle.history!.history,
+            history: bundle.historyPoints,
           ),
           if (bundle.distributions != null && bundle.distributions!.payments.isNotEmpty) ...[
             const SizedBox(height: 12),
@@ -188,6 +283,7 @@ class _FiiDetailBody extends StatelessWidget {
         FiiQuoteChartCard(
           ticker: detail.ticker,
           repository: repository,
+          initialCandles: bundle.candleBars,
         ),
         const SizedBox(height: 20),
         const FiiSectionHeader('Operacional'),
@@ -229,7 +325,7 @@ class _FiiDetailBody extends StatelessWidget {
           FiiSectionHeader(
             'Principais imóveis',
             subtitle: detail.propertyReferenceDate != null
-                ? 'Referência: ${detail.propertyReferenceDate}'
+                ? cvmReportReferenceLabel(detail.propertyReferenceDate)
                 : null,
           ),
           const SizedBox(height: 8),
@@ -250,7 +346,7 @@ class _FiiDetailBody extends StatelessWidget {
           FiiSectionHeader(
             'Inquilinos por setor',
             subtitle: bundle.tenants!.referenceDate != null
-                ? 'Referência: ${bundle.tenants!.referenceDate}'
+                ? cvmReportReferenceLabel(bundle.tenants!.referenceDate)
                 : null,
           ),
           const SizedBox(height: 8),

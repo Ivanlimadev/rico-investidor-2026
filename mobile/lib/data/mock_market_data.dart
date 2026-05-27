@@ -9,6 +9,8 @@ abstract final class MockMarketData {
       category: MarketCategory.acoesBr,
       price: 38.42,
       changePercent: 1.24,
+      dividendYield12m: 12.5,
+      priceToBook: 0.98,
     ),
     AssetItem(
       symbol: 'VALE3',
@@ -16,6 +18,8 @@ abstract final class MockMarketData {
       category: MarketCategory.acoesBr,
       price: 62.15,
       changePercent: -0.58,
+      dividendYield12m: 8.2,
+      priceToBook: 1.15,
     ),
     AssetItem(
       symbol: 'HGLG11',

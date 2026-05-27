@@ -60,17 +60,6 @@ const fiiScreenerPresets = [
     },
   ),
   FiiScreenerPreset(
-    id: 'low_vacancy',
-    label: 'Baixa vacância',
-    params: {
-      'vacancy_pct_lt': '5',
-      'fund_type': 'Tijolo',
-      'sort': 'vacancy_pct',
-      'order': 'asc',
-      'limit': '50',
-    },
-  ),
-  FiiScreenerPreset(
     id: 'logistics',
     label: 'Logística',
     params: {

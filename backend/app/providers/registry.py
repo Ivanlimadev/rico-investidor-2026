@@ -11,13 +11,8 @@ class AssetClass(str, Enum):
 
 
 class DataProvider(str, Enum):
-    BOLSAI = "bolsai"
     BRAPI = "brapi"
     POLYGON = "polygon"
-
-
-# Legado: provider primário de FIIs para rotas exclusivas da Bolsai.
-FII_PROVIDER = DataProvider.BOLSAI
 
 
 def provider_for(asset_class: AssetClass) -> DataProvider:

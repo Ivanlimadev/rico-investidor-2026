@@ -118,8 +118,7 @@ List<String> buildFiiHighlights({
   return items.take(6).toList();
 }
 
-String bolsaiDataDisclaimer() {
-  return 'A Bolsai não fornece texto editorial sobre o fundo — este resumo é '
-      'gerado automaticamente a partir dos dados oficiais (CVM/B3). '
-      'Não constitui recomendação de investimento.';
+String fiiDataDisclaimer() {
+  return 'Resumo gerado automaticamente a partir dos dados oficiais (CVM/B3) '
+      'via Brapi. Não constitui recomendação de investimento.';
 }

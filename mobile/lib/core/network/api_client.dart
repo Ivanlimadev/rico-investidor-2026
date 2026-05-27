@@ -1,16 +1,38 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:rico_investidor/core/auth/auth_session.dart';
 import 'package:rico_investidor/core/config/api_config.dart';
 import 'package:rico_investidor/core/network/api_exception.dart';
 
+typedef AuthHeaderProvider = String? Function();
+
 class ApiClient {
-  ApiClient({http.Client? client}) : _client = client ?? http.Client();
+  ApiClient({
+    http.Client? client,
+    AuthHeaderProvider? authHeaderProvider,
+  })  : _client = client ?? http.Client(),
+        _authHeaderProvider = authHeaderProvider ?? (() => authSession.accessToken);
+
+  static const _timeout = Duration(seconds: 45);
 
   final http.Client _client;
+  final AuthHeaderProvider _authHeaderProvider;
 
   Uri uri(String path, [Map<String, String>? query]) {
     return Uri.parse('${ApiConfig.baseUrl}$path').replace(queryParameters: query);
+  }
+
+  Map<String, String> _headers({bool json = false}) {
+    final headers = <String, String>{};
+    if (json) {
+      headers['Content-Type'] = 'application/json';
+    }
+    final token = _authHeaderProvider();
+    if (token != null && token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+    return headers;
   }
 
   Future<T> postJson<T>(
@@ -18,11 +40,13 @@ class ApiClient {
     Map<String, dynamic>? body,
     required T Function(Map<String, dynamic>) fromJson,
   }) async {
-    final response = await _client.post(
-      uri(path),
-      headers: const {'Content-Type': 'application/json'},
-      body: body == null ? null : jsonEncode(body),
-    );
+    final response = await _client
+        .post(
+          uri(path),
+          headers: _headers(json: true),
+          body: body == null ? null : jsonEncode(body),
+        )
+        .timeout(_timeout);
     return _parse(response, fromJson);
   }
 
@@ -31,12 +55,12 @@ class ApiClient {
     Map<String, String>? query,
     required T Function(Map<String, dynamic>) fromJson,
   }) async {
-    final response = await _client.get(uri(path, query));
+    final response = await _client.get(uri(path, query), headers: _headers()).timeout(_timeout);
     return _parse(response, fromJson);
   }
 
   Future<bool> checkHealth() async {
-    final response = await _client.get(uri('/health'));
+    final response = await _client.get(uri('/health'), headers: _headers()).timeout(_timeout);
     return response.statusCode == 200;
   }
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
+import 'package:rico_investidor/core/widgets/asset_card_header.dart';
 import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/quotes/models/stock_screener.dart';
@@ -258,39 +259,23 @@ class StockScreenerTile extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (item.logoUrl != null && item.logoUrl!.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 10),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
-                        child: Image.network(
-                          item.logoUrl!,
-                          width: 32,
-                          height: 32,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
-                        ),
-                      ),
-                    ),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(item.symbol, style: Theme.of(context).textTheme.titleMedium),
-                        const SizedBox(height: 2),
-                        Text(item.name, maxLines: 2, overflow: TextOverflow.ellipsis),
-                      ],
-                    ),
-                  ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(formatBrl(item.price), style: Theme.of(context).textTheme.titleSmall),
-                      Text(
-                        '${item.isPositive ? '+' : ''}${item.changePercent.toStringAsFixed(2)}%',
-                        style: TextStyle(color: changeColor, fontWeight: FontWeight.w700, fontSize: 13),
+                    child: AssetCardHeader(
+                      symbol: item.symbol,
+                      name: item.name,
+                      logoUrl: item.logoUrl,
+                      logoSize: kAssetLogoSizeCompact,
+                      trailing: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(formatBrl(item.price), style: Theme.of(context).textTheme.titleSmall),
+                          Text(
+                            '${item.isPositive ? '+' : ''}${item.changePercent.toStringAsFixed(2)}%',
+                            style: TextStyle(color: changeColor, fontWeight: FontWeight.w700, fontSize: 13),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ],
               ),

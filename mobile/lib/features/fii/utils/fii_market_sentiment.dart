@@ -50,12 +50,16 @@ const _sentimentWeights = {
 FiiMarketSentiment? computeFiiMarketSentiment({
   required List<FiiHistoryPoint> history,
   required double? currentPrice,
+  List<FiiCandleBar> candles = const [],
 }) {
-  if (history.isEmpty || currentPrice == null || currentPrice <= 0) return null;
+  if ((history.isEmpty && candles.isEmpty) || currentPrice == null || currentPrice <= 0) {
+    return null;
+  }
 
   final returns = computeFiiReturns(
     history: history,
     currentPrice: currentPrice,
+    candles: candles,
   );
 
   final byLabel = {for (final item in returns) item.label: item};

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
+import 'package:rico_investidor/core/widgets/asset_card_header.dart';
+import 'package:rico_investidor/core/widgets/asset_logo.dart';
+import 'package:rico_investidor/features/fii/utils/fii_format.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/market_category.dart';
 
@@ -13,6 +16,8 @@ class FeaturedAssetCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final changeColor = asset.isPositive ? AppColors.positive : AppColors.negative;
     final priceText = _formatPrice(asset);
+    final hasDy = asset.dividendYield12m != null;
+    final hasPvp = asset.priceToBook != null;
 
     return SizedBox(
       width: 168,
@@ -24,46 +29,85 @@ class FeaturedAssetCard extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.all(12),
             child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                asset.symbol,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 16),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                asset.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                AssetLogo(
+                  symbol: asset.symbol,
+                  logoUrl: asset.logoUrl,
+                  size: kAssetLogoSizeCard,
+                  borderRadius: kAssetLogoBorderRadius,
+                  style: AssetLogoStyle.vibrant,
                 ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                priceText,
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontSize: 18,
+                const SizedBox(height: 10),
+                Text(
+                  asset.symbol,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 16),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  Icon(
-                    asset.isPositive ? Icons.arrow_drop_up : Icons.arrow_drop_down,
-                    color: changeColor,
-                    size: 22,
-                  ),
-                  Text(
-                    '${asset.changePercent.abs().toStringAsFixed(2)}%',
-                    style: TextStyle(
-                      color: changeColor,
-                      fontWeight: FontWeight.w600,
+                const SizedBox(height: 2),
+                Text(
+                  asset.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
+                      ),
+                ),
+                const Spacer(),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        priceText,
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 18),
+                      ),
                     ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          asset.isPositive ? Icons.arrow_drop_up : Icons.arrow_drop_down,
+                          color: changeColor,
+                          size: 22,
+                        ),
+                        Text(
+                          '${asset.changePercent.abs().toStringAsFixed(2)}%',
+                          style: TextStyle(color: changeColor, fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                if (hasDy || hasPvp) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      if (hasDy)
+                        Text(
+                          'DY ${formatPct(asset.dividendYield12m!)}',
+                          style: const TextStyle(
+                            color: AppColors.positive,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                            height: 1.2,
+                          ),
+                        ),
+                      if (hasDy && hasPvp) const SizedBox(width: 8),
+                      if (hasPvp)
+                        Flexible(
+                          child: Text(
+                            'P/VP ${asset.priceToBook!.toStringAsFixed(2)}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(height: 1.2),
+                          ),
+                        ),
+                    ],
                   ),
                 ],
-              ),
-            ],
+              ],
             ),
           ),
         ),

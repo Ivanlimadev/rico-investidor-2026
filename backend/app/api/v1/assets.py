@@ -14,8 +14,7 @@ async def get_asset_detail(
     """
     Detalhe unificado por ticker.
 
-    FIIs → Bolsai (+ enriquecimento Brapi quando disponível).
-    Ações, BDRs e ETFs → Brapi.
+    FIIs, ações, BDRs e ETFs → Brapi.
     """
     return await asset_service.get_detail(
         ticker,

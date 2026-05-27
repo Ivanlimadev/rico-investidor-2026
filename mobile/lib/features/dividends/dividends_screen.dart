@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
+import 'package:rico_investidor/core/widgets/asset_card_header.dart';
 import 'package:rico_investidor/features/dividends/widgets/dividend_period_chart.dart';
 import 'package:rico_investidor/models/dividend_payment.dart';
 import 'package:rico_investidor/state/portfolio_state.dart';
@@ -148,6 +149,7 @@ class _DividendTile extends StatelessWidget {
         '${payment.date.year}';
 
     return ListTile(
+      leading: AssetListLeading(symbol: payment.symbol),
       title: Text(payment.symbol),
       subtitle: Text('${payment.name} · $date'),
       trailing: Text(

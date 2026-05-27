@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/app/main_shell_screen.dart';
+import 'package:rico_investidor/core/widgets/asset_card_header.dart';
 import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/fii/screens/fii_compare_screen.dart';
 import 'package:rico_investidor/features/fii/screens/fii_explore_screen.dart';
@@ -35,6 +36,7 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
   List<AssetItem> _results = const [];
   bool _loading = false;
   String _query = '';
+  int _searchGeneration = 0;
 
   @override
   void dispose() {
@@ -44,6 +46,7 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
 
   Future<void> _search(String query) async {
     final q = query.trim();
+    final generation = ++_searchGeneration;
     setState(() {
       _query = q;
       _loading = q.length >= 2;
@@ -52,8 +55,11 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
 
     if (q.length < 2) return;
 
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+    if (!mounted || generation != _searchGeneration) return;
+
     final results = await widget.portfolio.searchService.searchAsync(q);
-    if (!mounted || _query != q) return;
+    if (!mounted || generation != _searchGeneration) return;
     setState(() {
       _results = results;
       _loading = false;
@@ -191,12 +197,7 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
               Card(
                 margin: const EdgeInsets.only(bottom: 8),
                 child: ListTile(
-                  leading: CircleAvatar(
-                    child: Text(
-                      asset.symbol.length > 2 ? asset.symbol.substring(0, 2) : asset.symbol,
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
-                    ),
-                  ),
+                  leading: AssetListLeading(symbol: asset.symbol, logoUrl: asset.logoUrl),
                   title: Text(asset.symbol),
                   subtitle: Text(asset.name),
                   trailing: isFiiTicker(asset.symbol)

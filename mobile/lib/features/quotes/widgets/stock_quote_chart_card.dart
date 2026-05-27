@@ -2,16 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:rico_investidor/features/fii/utils/fii_quote_chart.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/quotes/widgets/stock_quote_line_chart.dart';
+import 'package:rico_investidor/models/fii_models.dart';
 
 class StockQuoteChartCard extends StatefulWidget {
   const StockQuoteChartCard({
     super.key,
     required this.ticker,
     required this.repository,
+    this.initialCandles = const [],
   });
 
   final String ticker;
   final QuoteRepository repository;
+  final List<FiiCandleBar> initialCandles;
 
   @override
   State<StockQuoteChartCard> createState() => _StockQuoteChartCardState();
@@ -49,6 +52,7 @@ class _StockQuoteChartCardState extends State<StockQuoteChartCard> {
               chartHeight: 240,
               initialPeriod: _period,
               initialStyle: _style,
+              initialCandles: widget.initialCandles,
               showBenchmarkCompare: !_isBenchmarkTicker(widget.ticker),
               onPeriodChanged: (period) => setState(() => _period = period),
               onStyleChanged: (style) => setState(() => _style = style),

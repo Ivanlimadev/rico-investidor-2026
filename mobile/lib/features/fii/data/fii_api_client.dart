@@ -84,4 +84,5 @@ class FiiApiClient {
       fromJson: FiiScreenerResponse.fromJson,
     );
   }
+
 }

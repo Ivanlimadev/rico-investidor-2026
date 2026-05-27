@@ -19,6 +19,7 @@ class StockQuoteLineChart extends StatefulWidget {
     this.showBenchmarkCompare = true,
     this.onPeriodChanged,
     this.onStyleChanged,
+    this.initialCandles = const [],
   });
 
   final String ticker;
@@ -29,6 +30,7 @@ class StockQuoteLineChart extends StatefulWidget {
   final bool showBenchmarkCompare;
   final ValueChanged<FiiQuotePeriod>? onPeriodChanged;
   final ValueChanged<QuoteChartStyle>? onStyleChanged;
+  final List<FiiCandleBar> initialCandles;
 
   @override
   State<StockQuoteLineChart> createState() => _StockQuoteLineChartState();
@@ -47,10 +49,33 @@ class _StockQuoteLineChartState extends State<StockQuoteLineChart> {
   @override
   void initState() {
     super.initState();
+    if (_seedFromInitialCandles(_period)) {
+      return;
+    }
     _loadPeriod();
   }
 
+  bool _seedFromInitialCandles(FiiQuotePeriod period) {
+    if (_compareWithBenchmark || widget.initialCandles.isEmpty) return false;
+
+    final needed = limitForQuotePeriod(period);
+    if (widget.initialCandles.length < needed) return false;
+
+    final sorted = sortedQuoteBars(widget.initialCandles);
+    if (sorted.isEmpty) return false;
+
+    _bars = sorted;
+    _loading = false;
+    _selectedIndex = sorted.length - 1;
+    return true;
+  }
+
   Future<void> _loadPeriod() async {
+    if (!_compareWithBenchmark && _seedFromInitialCandles(_period)) {
+      if (mounted) setState(() {});
+      return;
+    }
+
     setState(() {
       _loading = true;
       _error = null;

@@ -3,27 +3,31 @@ import 'package:rico_investidor/app/main_shell_screen.dart';
 import 'package:rico_investidor/data/mock_market_data.dart';
 import 'package:rico_investidor/features/dividends/dividends_screen.dart';
 import 'package:rico_investidor/features/fii/data/fii_repository.dart';
-import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
-import 'package:rico_investidor/features/quotes/widgets/featured_stocks_row.dart';
 import 'package:rico_investidor/features/fii/widgets/featured_fiis_row.dart';
+import 'package:rico_investidor/features/home/data/home_repository.dart';
+import 'package:rico_investidor/features/home/models/home_feed.dart';
 import 'package:rico_investidor/features/home/widgets/market_category_card.dart';
 import 'package:rico_investidor/features/home/widgets/portfolio_allocation_card.dart';
 import 'package:rico_investidor/features/home/widgets/portfolio_summary_row.dart';
 import 'package:rico_investidor/features/market/market_list_screen.dart';
 import 'package:rico_investidor/features/portfolio/portfolio_screen.dart';
+import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
+import 'package:rico_investidor/features/quotes/widgets/featured_stocks_row.dart';
 import 'package:rico_investidor/features/settings/settings_screen.dart';
 import 'package:rico_investidor/models/market_category.dart';
+import 'package:rico_investidor/models/market_category_availability.dart';
 import 'package:rico_investidor/models/subscription_plan.dart';
 import 'package:rico_investidor/models/user_profile.dart';
 import 'package:rico_investidor/state/portfolio_state.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({
     super.key,
     required this.profile,
     required this.onProfileChanged,
     required this.portfolio,
     required this.onPortfolioChanged,
+    required this.homeRepository,
     required this.fiiRepository,
     required this.quoteRepository,
     required this.isDarkMode,
@@ -34,21 +38,62 @@ class HomeScreen extends StatelessWidget {
   final void Function(UserProfile profile) onProfileChanged;
   final PortfolioState portfolio;
   final VoidCallback onPortfolioChanged;
+  final HomeRepository homeRepository;
   final FiiRepository fiiRepository;
   final QuoteRepository quoteRepository;
   final bool isDarkMode;
   final VoidCallback onToggleTheme;
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  late Future<HomeFeed> _feedFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _feedFuture = widget.homeRepository.loadFeed();
+  }
+
+  void _retryFeed() {
+    widget.homeRepository.invalidateFeed();
+    setState(() {
+      _feedFuture = widget.homeRepository.loadFeed();
+    });
+  }
 
   void _openCategory(BuildContext context, MarketCategory category) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => MarketListScreen(
           category: category,
-          fiiRepository: fiiRepository,
-          quoteRepository: quoteRepository,
+          fiiRepository: widget.fiiRepository,
+          quoteRepository: widget.quoteRepository,
         ),
       ),
     );
+  }
+
+  int? _marketCount(HomeFeed? feed, MarketCategory category) {
+    if (category.isDemo) return null;
+
+    final fallback = MockMarketData.byCategory(category).length;
+    if (feed == null) return fallback;
+
+    return switch (category) {
+      MarketCategory.fiis => feed.marketCounts.fiis ?? fallback,
+      MarketCategory.acoesBr => feed.marketCounts.acoesBr ?? fallback,
+      MarketCategory.bdr => feed.marketCounts.bdr ?? fallback,
+      MarketCategory.etf => feed.marketCounts.etf ?? fallback,
+      MarketCategory.etfInternacional => feed.marketCounts.etfIntl ?? fallback,
+      MarketCategory.moeda => feed.marketCounts.moeda ?? fallback,
+      MarketCategory.tesouroDireto => feed.marketCounts.tesouro ?? fallback,
+      MarketCategory.indices => feed.marketCounts.indices ?? fallback,
+      MarketCategory.cripto => feed.marketCounts.cripto ?? fallback,
+      _ => fallback,
+    };
   }
 
   @override
@@ -60,7 +105,7 @@ class HomeScreen extends StatelessWidget {
           children: [
             const Text('Rico Investidor'),
             Text(
-              'Olá, ${profile.displayName}',
+              'Olá, ${widget.profile.displayName}',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
                     fontWeight: FontWeight.w500,
@@ -73,14 +118,14 @@ class HomeScreen extends StatelessWidget {
             tooltip: 'Configurações',
             onPressed: () => openSettingsScreen(
               context,
-              profile: profile,
-              onProfileChanged: onProfileChanged,
+              profile: widget.profile,
+              onProfileChanged: widget.onProfileChanged,
             ),
             icon: CircleAvatar(
               radius: 14,
               backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
-              backgroundImage: profile.hasPhoto ? NetworkImage(profile.photoUrl!) : null,
-              child: profile.hasPhoto
+              backgroundImage: widget.profile.hasPhoto ? NetworkImage(widget.profile.photoUrl!) : null,
+              child: widget.profile.hasPhoto
                   ? null
                   : Icon(
                       Icons.person,
@@ -90,130 +135,120 @@ class HomeScreen extends StatelessWidget {
             ),
           ),
           IconButton(
-            tooltip: isDarkMode ? 'Tema claro' : 'Tema escuro',
-            onPressed: onToggleTheme,
-            icon: Icon(isDarkMode ? Icons.light_mode_outlined : Icons.dark_mode_outlined),
+            tooltip: widget.isDarkMode ? 'Tema claro' : 'Tema escuro',
+            onPressed: widget.onToggleTheme,
+            icon: Icon(widget.isDarkMode ? Icons.light_mode_outlined : Icons.dark_mode_outlined),
           ),
         ],
       ),
-      body: CustomScrollView(
-        slivers: [
-          SliverToBoxAdapter(
-            child: PortfolioSummaryRow(
-              summary: portfolio.buildSummary(),
-              onPortfolioTap: () => openPortfolioScreen(
-                context,
-                portfolio: portfolio,
-                onPortfolioChanged: onPortfolioChanged,
-                fiiRepository: fiiRepository,
+      body: FutureBuilder<HomeFeed>(
+        future: _feedFuture,
+        builder: (context, snapshot) {
+          final feed = snapshot.data;
+
+          return CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(
+                child: PortfolioSummaryRow(
+                  summary: widget.portfolio.buildSummary(),
+                  onPortfolioTap: () => openPortfolioScreen(
+                    context,
+                    portfolio: widget.portfolio,
+                    onPortfolioChanged: widget.onPortfolioChanged,
+                    fiiRepository: widget.fiiRepository,
+                    quoteRepository: widget.quoteRepository,
+                  ),
+                  onDividendsTap: () => openDividendsScreen(
+                    context,
+                    portfolio: widget.portfolio,
+                  ),
+                ),
               ),
-              onDividendsTap: () => openDividendsScreen(
-                context,
-                portfolio: portfolio,
+              SliverToBoxAdapter(
+                child: PortfolioAllocationCard(
+                  portfolio: widget.portfolio,
+                  onTap: () => openPortfolioScreen(
+                    context,
+                    portfolio: widget.portfolio,
+                    onPortfolioChanged: widget.onPortfolioChanged,
+                    fiiRepository: widget.fiiRepository,
+                    quoteRepository: widget.quoteRepository,
+                  ),
+                ),
               ),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: PortfolioAllocationCard(
-              portfolio: portfolio,
-              onTap: () => openPortfolioScreen(
-                context,
-                portfolio: portfolio,
-                onPortfolioChanged: onPortfolioChanged,
-                fiiRepository: fiiRepository,
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                  child: Text(
+                    'FIIs em destaque',
+                    style: Theme.of(context).textTheme.headlineMedium,
+                  ),
+                ),
               ),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-              child: Text(
-                'FIIs em destaque',
-                style: Theme.of(context).textTheme.headlineMedium,
+              SliverToBoxAdapter(
+                child: FeaturedFiisRow(
+                  repository: widget.fiiRepository,
+                  initialItems: feed?.featuredFiis,
+                  loading: snapshot.connectionState == ConnectionState.waiting,
+                  error: snapshot.hasError ? snapshot.error : null,
+                  onRetry: _retryFeed,
+                ),
               ),
-            ),
-          ),
-          SliverToBoxAdapter(child: FeaturedFiisRow(repository: fiiRepository)),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-              child: Text(
-                'Principais ações',
-                style: Theme.of(context).textTheme.titleMedium,
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                  child: Text(
+                    'Principais ações',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
               ),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: FeaturedStocksRow(
-              repository: quoteRepository,
-              fiiRepository: fiiRepository,
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
-              child: Text(
-                'Mercados',
-                style: Theme.of(context).textTheme.headlineMedium,
+              SliverToBoxAdapter(
+                child: FeaturedStocksRow(
+                  repository: widget.quoteRepository,
+                  fiiRepository: widget.fiiRepository,
+                  initialItems: feed?.featuredStocks,
+                  loading: snapshot.connectionState == ConnectionState.waiting,
+                  error: snapshot.hasError ? snapshot.error : null,
+                  onRetry: _retryFeed,
+                ),
               ),
-            ),
-          ),
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, kBottomNavContentPadding),
-            sliver: SliverGrid(
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3,
-                mainAxisSpacing: 12,
-                crossAxisSpacing: 12,
-                childAspectRatio: 0.82,
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
+                  child: Text(
+                    'Mercados',
+                    style: Theme.of(context).textTheme.headlineMedium,
+                  ),
+                ),
               ),
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final category = MarketCategory.values[index];
-                  if (category == MarketCategory.fiis) {
-                    return _FiiCategoryCard(
-                      fiiRepository: fiiRepository,
-                      onTap: () => _openCategory(context, category),
-                    );
-                  }
-                  final count = MockMarketData.byCategory(category).length;
-                  return MarketCategoryCard(
-                    category: category,
-                    assetCount: count,
-                    onTap: () => _openCategory(context, category),
-                  );
-                },
-                childCount: MarketCategory.values.length,
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, kBottomNavContentPadding),
+                sliver: SliverGrid(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12,
+                    childAspectRatio: 0.82,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final category = MarketCategory.values[index];
+                      return MarketCategoryCard(
+                        category: category,
+                        assetCount: _marketCount(feed, category),
+                        isDemo: category.isDemo,
+                        onTap: () => _openCategory(context, category),
+                      );
+                    },
+                    childCount: MarketCategory.values.length,
+                  ),
+                ),
               ),
-            ),
-          ),
-        ],
+            ],
+          );
+        },
       ),
-    );
-  }
-}
-
-class _FiiCategoryCard extends StatelessWidget {
-  const _FiiCategoryCard({
-    required this.fiiRepository,
-    required this.onTap,
-  });
-
-  final FiiRepository fiiRepository;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<int>(
-      future: fiiRepository.totalCount(),
-      builder: (context, snapshot) {
-        final count = snapshot.data ?? MockMarketData.byCategory(MarketCategory.fiis).length;
-        return MarketCategoryCard(
-          category: MarketCategory.fiis,
-          assetCount: count,
-          onTap: onTap,
-        );
-      },
     );
   }
 }

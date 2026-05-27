@@ -5,7 +5,7 @@ class FiiSummary {
     this.segment,
     this.managementType,
     this.totalShareholders,
-    this.provider = 'bolsai',
+    this.provider = 'brapi',
   });
 
   final String ticker;
@@ -22,7 +22,7 @@ class FiiSummary {
       segment: json['segment'] as String?,
       managementType: json['management_type'] as String?,
       totalShareholders: json['total_shareholders'] as int?,
-      provider: json['provider'] as String? ?? 'bolsai',
+      provider: json['provider'] as String? ?? 'brapi',
     );
   }
 }
@@ -32,7 +32,7 @@ class FiiListResponse {
     required this.count,
     required this.total,
     required this.fiis,
-    this.provider = 'bolsai',
+    this.provider = 'brapi',
   });
 
   final int count;
@@ -46,7 +46,7 @@ class FiiListResponse {
       count: json['count'] as int? ?? items.length,
       total: json['total'] as int? ?? items.length,
       fiis: items.map((e) => FiiSummary.fromJson(e as Map<String, dynamic>)).toList(),
-      provider: json['provider'] as String? ?? 'bolsai',
+      provider: json['provider'] as String? ?? 'brapi',
     );
   }
 }
@@ -210,7 +210,7 @@ class FiiDetail {
     this.leasedPct,
     this.topProperties = const [],
     this.propertyReferenceDate,
-    this.provider = 'bolsai',
+    this.provider = 'brapi',
   });
 
   final String ticker;
@@ -284,7 +284,7 @@ class FiiDetail {
           .map((e) => FiiProperty.fromJson(e as Map<String, dynamic>))
           .toList(),
       propertyReferenceDate: json['property_reference_date'] as String?,
-      provider: json['provider'] as String? ?? 'bolsai',
+      provider: json['provider'] as String? ?? 'brapi',
     );
   }
 }
@@ -344,7 +344,7 @@ class FiiSearchResponse {
     required this.count,
     required this.total,
     required this.fiis,
-    this.provider = 'bolsai',
+    this.provider = 'brapi',
   });
 
   final String query;
@@ -360,13 +360,13 @@ class FiiSearchResponse {
       count: json['count'] as int? ?? items.length,
       total: json['total'] as int? ?? items.length,
       fiis: items.map((e) => FiiSummary.fromJson(e as Map<String, dynamic>)).toList(),
-      provider: json['provider'] as String? ?? 'bolsai',
+      provider: json['provider'] as String? ?? 'brapi',
     );
   }
 }
 
 class FiiCountResponse {
-  const FiiCountResponse({required this.total, this.provider = 'bolsai'});
+  const FiiCountResponse({required this.total, this.provider = 'brapi'});
 
   final int total;
   final String provider;
@@ -374,7 +374,7 @@ class FiiCountResponse {
   factory FiiCountResponse.fromJson(Map<String, dynamic> json) {
     return FiiCountResponse(
       total: json['total'] as int? ?? 0,
-      provider: json['provider'] as String? ?? 'bolsai',
+      provider: json['provider'] as String? ?? 'brapi',
     );
   }
 }
@@ -420,7 +420,7 @@ class FiiHistoryResponse {
     required this.name,
     required this.count,
     required this.history,
-    this.provider = 'bolsai',
+    this.provider = 'brapi',
   });
 
   final String ticker;
@@ -436,7 +436,7 @@ class FiiHistoryResponse {
       name: json['name'] as String,
       count: json['count'] as int? ?? items.length,
       history: items.map((e) => FiiHistoryPoint.fromJson(e as Map<String, dynamic>)).toList(),
-      provider: json['provider'] as String? ?? 'bolsai',
+      provider: json['provider'] as String? ?? 'brapi',
     );
   }
 }
@@ -475,7 +475,7 @@ class FiiCandlesResponse {
     required this.ticker,
     required this.count,
     required this.candles,
-    this.provider = 'bolsai',
+    this.provider = 'brapi',
   });
 
   final String ticker;
@@ -489,7 +489,7 @@ class FiiCandlesResponse {
       ticker: json['ticker'] as String,
       count: json['count'] as int? ?? items.length,
       candles: items.map((e) => FiiCandleBar.fromJson(e as Map<String, dynamic>)).toList(),
-      provider: json['provider'] as String? ?? 'bolsai',
+      provider: json['provider'] as String? ?? 'brapi',
     );
   }
 }
@@ -515,7 +515,7 @@ class FiiTenantsResponse {
     this.count,
     this.topSectorPct,
     this.sectors = const [],
-    this.provider = 'bolsai',
+    this.provider = 'brapi',
   });
 
   final String ticker;
@@ -533,7 +533,7 @@ class FiiTenantsResponse {
       count: json['count'] as int?,
       topSectorPct: _toDouble(json['top_sector_pct']),
       sectors: items.map((e) => FiiTenantSector.fromJson(e as Map<String, dynamic>)).toList(),
-      provider: json['provider'] as String? ?? 'bolsai',
+      provider: json['provider'] as String? ?? 'brapi',
     );
   }
 }
@@ -561,7 +561,7 @@ class FiiScreenerItem {
     this.leasedPct,
     this.propertyCount,
     this.totalAreaSqm,
-    this.provider = 'bolsai',
+    this.provider = 'brapi',
   });
 
   final String ticker;
@@ -610,7 +610,7 @@ class FiiScreenerItem {
       leasedPct: _toDouble(json['leased_pct']),
       propertyCount: json['property_count'] as int?,
       totalAreaSqm: _toDouble(json['total_area_sqm']),
-      provider: json['provider'] as String? ?? 'bolsai',
+      provider: json['provider'] as String? ?? 'brapi',
     );
   }
 }
@@ -622,7 +622,7 @@ class FiiScreenerResponse {
     required this.total,
     required this.offset,
     required this.limit,
-    this.provider = 'bolsai',
+    this.provider = 'brapi',
   });
 
   final List<FiiScreenerItem> data;
@@ -640,7 +640,7 @@ class FiiScreenerResponse {
       total: json['total'] as int? ?? items.length,
       offset: json['offset'] as int? ?? 0,
       limit: json['limit'] as int? ?? items.length,
-      provider: json['provider'] as String? ?? 'bolsai',
+      provider: json['provider'] as String? ?? 'brapi',
     );
   }
 }
@@ -655,7 +655,7 @@ class FiiDistributions {
     this.totalPayments,
     this.annualSummary = const [],
     this.payments = const [],
-    this.provider = 'bolsai',
+    this.provider = 'brapi',
   });
 
   final String ticker;
@@ -684,7 +684,7 @@ class FiiDistributions {
       payments: payments
           .map((e) => FiiDistributionPayment.fromJson(e as Map<String, dynamic>))
           .toList(),
-      provider: json['provider'] as String? ?? 'bolsai',
+      provider: json['provider'] as String? ?? 'brapi',
     );
   }
 }

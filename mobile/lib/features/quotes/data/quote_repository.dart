@@ -1,3 +1,4 @@
+import 'package:rico_investidor/core/cache/session_cache.dart';
 import 'package:rico_investidor/features/fii/utils/fii_quote_chart.dart';
 import 'package:rico_investidor/features/fii/utils/fii_ticker.dart';
 import 'package:rico_investidor/features/quotes/data/quote_api_client.dart';
@@ -19,17 +20,36 @@ class QuoteRepository {
 
   final QuoteApiClient _api;
   final Map<MarketCategory, List<StockCatalogItemDto>> _catalogByCategory = {};
+  final _featuredCache = SessionCache<List<AssetItem>>(ttl: const Duration(minutes: 5));
+  Future<List<AssetItem>>? _featuredFuture;
 
   bool supportsCategory(MarketCategory category) {
     return switch (category) {
-      MarketCategory.acoesBr || MarketCategory.bdr || MarketCategory.etf => true,
+      MarketCategory.acoesBr ||
+      MarketCategory.bdr ||
+      MarketCategory.etf ||
+      MarketCategory.etfInternacional =>
+        true,
       _ => false,
     };
   }
 
-  Future<List<AssetItem>> featuredStocks() async {
+  Future<List<AssetItem>> featuredStocks() {
+    final cached = _featuredCache.get();
+    if (cached != null) return Future.value(cached);
+    return _featuredFuture ??= _loadFeaturedStocks();
+  }
+
+  void invalidateFeaturedCache() {
+    _featuredCache.clear();
+    _featuredFuture = null;
+  }
+
+  Future<List<AssetItem>> _loadFeaturedStocks() async {
     final response = await _api.featured();
-    return response.items.map((e) => e.toAssetItem()).toList();
+    final items = response.items.map((e) => e.toAssetItem()).toList();
+    _featuredCache.set(items);
+    return items;
   }
 
   Future<List<AssetItem>> search(String query, {int limit = 12}) async {
@@ -81,6 +101,7 @@ class QuoteRepository {
     return switch (category) {
       MarketCategory.bdr => 'bdr',
       MarketCategory.etf => 'etf',
+      MarketCategory.etfInternacional => 'etf_intl',
       _ => 'acoes_br',
     };
   }
@@ -95,8 +116,16 @@ class QuoteRepository {
     return _api.getQuote(symbol);
   }
 
-  Future<StockQuoteDetailDto> getStockDetail(String symbol) {
-    return _api.getDetail(symbol);
+  Future<StockQuoteDetailDto> getStockDetail(
+    String symbol, {
+    int candleLimit = 252,
+    int dividendLimit = 120,
+  }) {
+    return _api.getDetail(
+      symbol,
+      candleLimit: candleLimit,
+      dividendLimit: dividendLimit,
+    );
   }
 
   Future<List<FiiCandleBar>> getStockCandles(String symbol, {FiiQuotePeriod? period}) async {
@@ -160,24 +189,33 @@ class QuoteRepository {
     }
   }
 
-  Future<void> refreshPortfolioStockPrices(PortfolioState portfolio) async {
-    final symbols = portfolio.holdings
-        .where((h) => !isFiiTicker(h.symbol))
-        .map((h) => h.symbol)
-        .toList();
-    if (symbols.isEmpty) return;
+  Future<bool> refreshPortfolioPrices(PortfolioState portfolio) async {
+    final symbols = portfolio.holdings.map((h) => h.symbol).toList();
+    if (symbols.isEmpty) return true;
 
     try {
       final response = await _api.batch(symbols);
-      final bySymbol = {for (final item in response.items) item.symbol: item.toAssetItem()};
+      final bySymbol = {
+        for (final item in response.items) item.symbol: item.toAssetItem(),
+      };
       for (var i = 0; i < portfolio.holdings.length; i++) {
         final holding = portfolio.holdings[i];
         final quote = bySymbol[holding.symbol];
         if (quote != null && quote.price > 0) {
-          portfolio.holdings[i] = holding.copyWith(currentPrice: quote.price);
+          portfolio.holdings[i] = holding.copyWith(
+            currentPrice: quote.price,
+            changePercent: quote.changePercent,
+          );
         }
       }
-    } catch (_) {}
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> refreshPortfolioStockPrices(PortfolioState portfolio) async {
+    return refreshPortfolioPrices(portfolio);
   }
 }
 

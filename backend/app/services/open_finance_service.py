@@ -35,7 +35,6 @@ class OpenFinanceService:
         return {
             "client_user_id": client_user_id,
             "linked_items": len(item_ids),
-            "item_ids": item_ids,
             "provider": "pluggy",
         }
 

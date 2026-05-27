@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
+import 'package:rico_investidor/core/widgets/asset_card_header.dart';
+import 'package:rico_investidor/core/widgets/asset_logo.dart';
+import 'package:rico_investidor/features/fii/utils/fii_data_freshness.dart';
 import 'package:rico_investidor/features/fii/utils/fii_format.dart';
 import 'package:rico_investidor/features/fii/utils/fii_returns.dart';
 import 'package:rico_investidor/features/fii/widgets/fii_detail_sections.dart';
@@ -10,15 +13,22 @@ class FiiQuoteHeroCard extends StatelessWidget {
     super.key,
     required this.detail,
     this.history,
+    this.candles = const [],
   });
 
   final FiiDetail detail;
   final List<FiiHistoryPoint>? history;
+  final List<FiiCandleBar> candles;
 
   @override
   Widget build(BuildContext context) {
-    final changePct = history != null ? dailyReturnPct(history!, detail.closePrice) : null;
+    final changePct = history != null
+        ? dailyReturnPct(history!, detail.closePrice, candles: candles)
+        : candles.isNotEmpty
+            ? dailyReturnPct(const [], detail.closePrice, candles: candles)
+            : null;
     final isPositive = changePct != null && changePct >= 0;
+    final quoteDate = latestQuoteTradeDate(candles);
 
     return Card(
       clipBehavior: Clip.antiAlias,
@@ -38,58 +48,88 @@ class FiiQuoteHeroCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Cotação', style: Theme.of(context).textTheme.labelLarge),
-            const SizedBox(height: 4),
             Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Text(
-                    detail.closePrice != null ? formatBrl(detail.closePrice!) : '—',
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
-                  ),
+                AssetLogo(
+                  symbol: detail.ticker,
+                  size: kAssetLogoSizeList,
+                  borderRadius: kAssetLogoBorderRadius,
                 ),
-                if (changePct != null)
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    mainAxisSize: MainAxisSize.min,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: (isPositive ? AppColors.positive : AppColors.negative)
-                              .withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(20),
+                      Text('Cotação', style: Theme.of(context).textTheme.labelLarge),
+                      if (quoteDate != null) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          quoteUpdatedLabel(quoteDate),
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurface
+                                    .withValues(alpha: 0.65),
+                              ),
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              isPositive ? Icons.arrow_upward : Icons.arrow_downward,
-                              size: 14,
-                              color: isPositive ? AppColors.positive : AppColors.negative,
-                            ),
-                            const SizedBox(width: 2),
-                            Text(
-                              '${changePct.abs().toStringAsFixed(2)}%',
-                              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                                    color: isPositive ? AppColors.positive : AppColors.negative,
-                                    fontWeight: FontWeight.w700,
+                      ],
+                      const SizedBox(height: 4),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              detail.closePrice != null ? formatBrl(detail.closePrice!) : '—',
+                              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                                    fontWeight: FontWeight.w800,
                                   ),
                             ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Rentabilidade do dia',
-                        style: Theme.of(context).textTheme.bodySmall,
-                        textAlign: TextAlign.end,
+                          ),
+                          if (changePct != null)
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: (isPositive ? AppColors.positive : AppColors.negative)
+                                        .withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        isPositive ? Icons.arrow_upward : Icons.arrow_downward,
+                                        size: 14,
+                                        color: isPositive ? AppColors.positive : AppColors.negative,
+                                      ),
+                                      const SizedBox(width: 2),
+                                      Text(
+                                        '${changePct.abs().toStringAsFixed(2)}%',
+                                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                                              color: isPositive ? AppColors.positive : AppColors.negative,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Rentabilidade do dia',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                  textAlign: TextAlign.end,
+                                ),
+                              ],
+                            ),
+                        ],
                       ),
                     ],
                   ),
+                ),
               ],
             ),
             const SizedBox(height: 16),
