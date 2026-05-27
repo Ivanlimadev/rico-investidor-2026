@@ -1,7 +1,10 @@
 import 'package:rico_investidor/core/network/api_client.dart';
 import 'package:rico_investidor/features/quotes/models/stock_compare.dart';
 import 'package:rico_investidor/features/quotes/models/stock_financials.dart';
+import 'package:rico_investidor/features/quotes/models/stock_fundamental_history.dart';
 import 'package:rico_investidor/features/quotes/models/stock_quote_detail.dart';
+import 'package:rico_investidor/features/quotes/models/stock_macro.dart';
+import 'package:rico_investidor/features/quotes/models/stock_performance.dart';
 import 'package:rico_investidor/features/quotes/models/stock_screener.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/market_category.dart';
@@ -88,23 +91,72 @@ class QuoteApiClient {
     );
   }
 
-  Future<StockCandlesResponseDto> getCandles(String ticker, {String? range, int? limit}) {
-    final query = <String, String>{};
+  Future<StockCandlesResponseDto> getCandles(
+    String ticker, {
+    String? range,
+    int? limit,
+    String interval = '1d',
+  }) {
+    final query = <String, String>{'interval': interval};
     if (range != null) query['range'] = range;
     if (limit != null) query['limit'] = '$limit';
 
     return _client.getJson(
       '/v1/quotes/$ticker/candles',
-      query: query.isEmpty ? null : query,
+      query: query,
       fromJson: StockCandlesResponseDto.fromJson,
     );
   }
 
-  Future<StockFinancialsDto> getFinancials(String ticker, {int limit = 8}) {
+  Future<BrazilMacroDto> getBrazilMacro() {
+    return _client.getJson(
+      '/v1/macro/brazil',
+      fromJson: BrazilMacroDto.fromJson,
+    );
+  }
+
+  Future<DictionaryResponseDto> getDictionary({String category = 'statistics'}) {
+    return _client.getJson(
+      '/v1/meta/dictionary',
+      query: {'category': category},
+      fromJson: DictionaryResponseDto.fromJson,
+    );
+  }
+
+  Future<StockFinancialsDto> getFinancials(
+    String ticker, {
+    int limit = 8,
+    String period = 'quarterly',
+  }) {
     return _client.getJson(
       '/v1/quotes/$ticker/financials',
-      query: {'limit': '$limit'},
+      query: {'limit': '$limit', 'period': period},
       fromJson: StockFinancialsDto.fromJson,
+    );
+  }
+
+  Future<StockFundamentalHistoryDto> getFundamentalHistory(String ticker, {int limit = 12}) {
+    return _client.getJson(
+      '/v1/quotes/$ticker/fundamentals/history',
+      query: {'limit': '$limit'},
+      fromJson: StockFundamentalHistoryDto.fromJson,
+    );
+  }
+
+  Future<StockPerformanceDto> getPerformance(
+    String ticker, {
+    String? range,
+    int? limit,
+    String benchmark = '^BVSP',
+  }) {
+    final query = <String, String>{'benchmark': benchmark};
+    if (range != null) query['range'] = range;
+    if (limit != null) query['limit'] = '$limit';
+
+    return _client.getJson(
+      '/v1/quotes/$ticker/performance',
+      query: query,
+      fromJson: StockPerformanceDto.fromJson,
     );
   }
 

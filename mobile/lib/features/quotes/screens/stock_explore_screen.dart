@@ -217,6 +217,14 @@ class StockScreenerTile extends StatelessWidget {
                     _MetricChip(label: 'Cap.', value: formatCompactBrl(item.marketCap!)),
                   if (item.volume != null)
                     _MetricChip(label: 'Vol.', value: _formatVolume(item.volume!)),
+                  if (item.dividendYield12m != null)
+                    _MetricChip(label: 'DY', value: '${item.dividendYield12m!.toStringAsFixed(1)}%'),
+                  if (item.priceEarnings != null)
+                    _MetricChip(label: 'P/L', value: item.priceEarnings!.toStringAsFixed(1)),
+                  if (item.returnOnEquity != null)
+                    _MetricChip(label: 'ROE', value: '${item.returnOnEquity!.toStringAsFixed(1)}%'),
+                  if (item.priceToBook != null)
+                    _MetricChip(label: 'P/VP', value: item.priceToBook!.toStringAsFixed(2)),
                 ],
               ),
             ],

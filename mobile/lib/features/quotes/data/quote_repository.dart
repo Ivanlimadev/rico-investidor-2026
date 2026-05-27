@@ -2,8 +2,11 @@ import 'package:rico_investidor/features/fii/utils/fii_quote_chart.dart';
 import 'package:rico_investidor/features/fii/utils/fii_ticker.dart';
 import 'package:rico_investidor/features/quotes/data/quote_api_client.dart';
 import 'package:rico_investidor/features/quotes/models/stock_compare.dart';
+import 'package:rico_investidor/features/quotes/models/stock_fundamental_history.dart';
 import 'package:rico_investidor/features/quotes/models/stock_financials.dart';
 import 'package:rico_investidor/features/quotes/models/stock_quote_detail.dart';
+import 'package:rico_investidor/features/quotes/models/stock_macro.dart';
+import 'package:rico_investidor/features/quotes/models/stock_performance.dart';
 import 'package:rico_investidor/features/quotes/models/stock_screener.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/fii_models.dart';
@@ -52,12 +55,41 @@ class QuoteRepository {
       symbol,
       range: rangeForQuotePeriod(effective),
       limit: limitForQuotePeriod(effective),
+      interval: intervalForQuotePeriod(effective),
     );
     return response.candles;
   }
 
-  Future<StockFinancialsDto> getStockFinancials(String symbol, {int limit = 8}) {
-    return _api.getFinancials(symbol, limit: limit);
+  Future<BrazilMacroDto> getBrazilMacro() => _api.getBrazilMacro();
+
+  Future<DictionaryResponseDto> getFundamentalsDictionary() {
+    return _api.getDictionary(category: 'statistics');
+  }
+
+  Future<StockFinancialsDto> getStockFinancials(
+    String symbol, {
+    int limit = 8,
+    String period = 'quarterly',
+  }) {
+    return _api.getFinancials(symbol, limit: limit, period: period);
+  }
+
+  Future<StockFundamentalHistoryDto> getFundamentalHistory(String symbol, {int limit = 12}) {
+    return _api.getFundamentalHistory(symbol, limit: limit);
+  }
+
+  Future<StockPerformanceDto> getStockPerformance(
+    String symbol, {
+    FiiQuotePeriod? period,
+    String benchmark = '^BVSP',
+  }) {
+    final effective = period ?? FiiQuotePeriod.year1;
+    return _api.getPerformance(
+      symbol,
+      range: rangeForQuotePeriod(effective),
+      limit: limitForQuotePeriod(effective),
+      benchmark: benchmark,
+    );
   }
 
   Future<StockScreenerResponseDto> screener(Map<String, String> query) {

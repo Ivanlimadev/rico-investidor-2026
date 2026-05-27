@@ -10,7 +10,9 @@ import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/quotes/models/stock_quote_detail.dart';
 import 'package:rico_investidor/features/quotes/widgets/stock_about_card.dart';
 import 'package:rico_investidor/features/quotes/widgets/stock_financials_card.dart';
+import 'package:rico_investidor/features/quotes/widgets/stock_fundamental_history_card.dart';
 import 'package:rico_investidor/features/quotes/widgets/stock_fundamentals_card.dart';
+import 'package:rico_investidor/features/quotes/widgets/stock_macro_card.dart';
 import 'package:rico_investidor/features/quotes/widgets/stock_market_stats_card.dart';
 import 'package:rico_investidor/features/quotes/screens/stock_compare_screen.dart';
 import 'package:rico_investidor/features/quotes/widgets/stock_quote_chart_card.dart';
@@ -242,7 +244,14 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              StockFundamentalsCard(fundamentals: detail.fundamentals),
+              StockFundamentalsCard(
+                fundamentals: detail.fundamentals,
+                repository: widget.repository,
+              ),
+              if (widget.category == MarketCategory.acoesBr) ...[
+                const SizedBox(height: 16),
+                StockMacroCard(repository: widget.repository),
+              ],
               const SizedBox(height: 16),
               StockQuoteChartCard(
                 ticker: widget.ticker,
@@ -251,6 +260,11 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
               const SizedBox(height: 16),
               StockAboutCard(profile: detail.profile),
               if (widget.category == MarketCategory.acoesBr) ...[
+                const SizedBox(height: 16),
+                StockFundamentalHistoryCard(
+                  ticker: widget.ticker,
+                  repository: widget.repository,
+                ),
                 const SizedBox(height: 16),
                 StockFinancialsCard(
                   ticker: widget.ticker,

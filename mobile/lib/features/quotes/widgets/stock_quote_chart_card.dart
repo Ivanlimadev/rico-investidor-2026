@@ -17,6 +17,11 @@ class StockQuoteChartCard extends StatefulWidget {
   State<StockQuoteChartCard> createState() => _StockQuoteChartCardState();
 }
 
+bool _isBenchmarkTicker(String ticker) {
+  final normalized = ticker.toUpperCase().trim();
+  return normalized == 'BOVA11' || normalized == '^BVSP';
+}
+
 class _StockQuoteChartCardState extends State<StockQuoteChartCard> {
   FiiQuotePeriod _period = FiiQuotePeriod.year1;
   QuoteChartStyle _style = QuoteChartStyle.line;
@@ -44,6 +49,7 @@ class _StockQuoteChartCardState extends State<StockQuoteChartCard> {
               chartHeight: 240,
               initialPeriod: _period,
               initialStyle: _style,
+              showBenchmarkCompare: !_isBenchmarkTicker(widget.ticker),
               onPeriodChanged: (period) => setState(() => _period = period),
               onStyleChanged: (style) => setState(() => _style = style),
             ),

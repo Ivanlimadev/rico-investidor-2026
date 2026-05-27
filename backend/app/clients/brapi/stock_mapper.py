@@ -12,12 +12,16 @@ from app.clients.bolsai.models import (
 from app.clients.brapi.models import (
     FinancialLine,
     FinancialPeriod,
+    FundamentalHistoryPeriod,
     MarketQuote,
     StockCorporateAction,
     StockDividendsResponse,
     StockFinancialsResponse,
+    StockFundamentalHistoryResponse,
     StockFundamentals,
     StockMarketStats,
+    StockPerformanceResponse,
+    PerformancePoint,
     StockProfile,
     StockCompareItem,
     StockScreenerItem,
@@ -25,8 +29,27 @@ from app.clients.brapi.models import (
 )
 
 STOCK_DETAIL_MODULES = "summaryProfile,financialData,defaultKeyStatistics"
-STOCK_FINANCIALS_MODULES = (
+STOCK_FINANCIALS_MODULES_QUARTERLY = (
     "incomeStatementHistoryQuarterly,balanceSheetHistoryQuarterly,cashflowHistoryQuarterly"
+)
+STOCK_FINANCIALS_MODULES_ANNUAL = (
+    "incomeStatementHistory,balanceSheetHistory,cashflowHistory"
+)
+STOCK_DVA_MODULES_QUARTERLY = "valueAddedHistoryQuarterly"
+STOCK_DVA_MODULES_ANNUAL = "valueAddedHistory"
+STOCK_FINANCIALS_MODULES = STOCK_FINANCIALS_MODULES_QUARTERLY
+VALID_FINANCIAL_PERIODS = frozenset({"quarterly", "annual"})
+DEFAULT_STOCK_BENCHMARK = "^BVSP"
+BENCHMARK_LABELS = {
+    "^BVSP": "IBOV",
+    "BOVA11": "BOVA11",
+}
+STOCK_FUNDAMENTALS_HISTORY_MODULES = (
+    "financialDataHistoryQuarterly,defaultKeyStatisticsHistoryQuarterly"
+)
+STOCK_SCREENER_MODULES = "defaultKeyStatistics,financialData"
+SCREENER_FUNDAMENTAL_SORT = frozenset(
+    {"dividend_yield", "price_earnings", "return_on_equity", "price_to_book"}
 )
 VALID_SORT_BY = frozenset({"name", "close", "change", "change_abs", "volume", "market_cap_basic"})
 from app.domain.quotes.category_map import category_to_slug, infer_category
@@ -70,7 +93,10 @@ def _normalize_date(value: str | None) -> str | None:
     return value.split("T", 1)[0].split(" ", 1)[0]
 
 
-VALID_CANDLE_RANGES = frozenset({"ytd", "1mo", "3mo", "6mo", "1y", "5y", "max"})
+VALID_CANDLE_RANGES = frozenset({"1d", "2d", "5d", "7d", "ytd", "1mo", "3mo", "6mo", "1y", "5y", "max"})
+VALID_CANDLE_INTERVALS = frozenset({"1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h", "1d", "1wk", "1mo"})
+INTRADAY_INTERVALS = frozenset({"1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"})
+DEFAULT_INTRADAY_INTERVAL = "5m"
 
 
 def limit_to_range(limit: int) -> str:
@@ -93,6 +119,18 @@ def normalize_candle_range(range_: str | None, *, limit: int) -> str:
         if normalized in VALID_CANDLE_RANGES:
             return normalized
     return limit_to_range(limit)
+
+
+def normalize_candle_interval(interval: str | None) -> str:
+    if interval:
+        normalized = interval.strip().lower()
+        if normalized in VALID_CANDLE_INTERVALS:
+            return normalized
+    return "1d"
+
+
+def is_intraday_interval(interval: str) -> bool:
+    return normalize_candle_interval(interval) in INTRADAY_INTERVALS
 
 
 def map_market_quote(item: dict) -> MarketQuote:
@@ -139,9 +177,36 @@ def map_stock_profile(item: dict) -> StockProfile:
     )
 
 
+def normalize_financial_period(period: str | None) -> str:
+    normalized = (period or "quarterly").strip().lower()
+    if normalized in VALID_FINANCIAL_PERIODS:
+        return normalized
+    return "quarterly"
+
+
+def financials_modules_for_period(period: str) -> str:
+    normalized = normalize_financial_period(period)
+    if normalized == "annual":
+        return f"{STOCK_FINANCIALS_MODULES_ANNUAL},{STOCK_DVA_MODULES_ANNUAL}"
+    return f"{STOCK_FINANCIALS_MODULES_QUARTERLY},{STOCK_DVA_MODULES_QUARTERLY}"
+
+
+def benchmark_label(symbol: str) -> str:
+    normalized = symbol.upper().strip()
+    return BENCHMARK_LABELS.get(normalized, normalized)
+
+
+def _normalize_recommendation(value: str | None) -> str | None:
+    if not value:
+        return None
+    cleaned = value.strip().lower().replace("-", "_")
+    return cleaned or None
+
+
 def map_stock_fundamentals(item: dict) -> StockFundamentals:
     financial = item.get("financialData") or {}
     stats = item.get("defaultKeyStatistics") or {}
+    analyst_count = financial.get("numberOfAnalystOpinions")
 
     return StockFundamentals(
         dividend_yield_12m=_as_pct(stats.get("dividendYield")),
@@ -157,6 +222,20 @@ def map_stock_fundamentals(item: dict) -> StockFundamentals:
         earnings_per_share=item.get("earningsPerShare"),
         free_cashflow=financial.get("freeCashflow"),
         earnings_growth=_as_pct(financial.get("earningsGrowth")),
+        total_revenue=financial.get("totalRevenue"),
+        ebitda=financial.get("ebitda"),
+        enterprise_value=stats.get("enterpriseValue"),
+        enterprise_to_ebitda=stats.get("enterpriseToEbitda"),
+        forward_pe=stats.get("forwardPE"),
+        gross_margin=_as_pct(financial.get("grossMargins")),
+        operating_margin=_as_pct(financial.get("operatingMargins")),
+        revenue_growth=_as_pct(financial.get("revenueGrowth")),
+        total_cash=financial.get("totalCash"),
+        total_debt=financial.get("totalDebt"),
+        current_ratio=financial.get("currentRatio"),
+        target_mean_price=financial.get("targetMeanPrice"),
+        recommendation_key=_normalize_recommendation(financial.get("recommendationKey")),
+        number_of_analyst_opinions=int(analyst_count) if analyst_count is not None else None,
     )
 
 
@@ -177,7 +256,16 @@ def map_market_stats(item: dict) -> StockMarketStats:
     )
 
 
-def map_stock_candles(*, ticker: str, price_points: list[dict], limit: int | None = None) -> FiiCandlesResponse:
+def map_stock_candles(
+    *,
+    ticker: str,
+    price_points: list[dict],
+    limit: int | None = None,
+    interval: str = "1d",
+    range_: str | None = None,
+) -> FiiCandlesResponse:
+    normalized_interval = normalize_candle_interval(interval)
+    intraday = is_intraday_interval(normalized_interval)
     candles: list[FiiCandleBar] = []
     for point in price_points:
         ts = point.get("date")
@@ -189,7 +277,8 @@ def map_stock_candles(*, ticker: str, price_points: list[dict], limit: int | Non
         close = point.get("close")
         if None in (open_, high, low, close):
             continue
-        trade_date = datetime.fromtimestamp(int(ts), tz=UTC).strftime("%Y-%m-%d")
+        dt = datetime.fromtimestamp(int(ts), tz=UTC)
+        trade_date = dt.strftime("%Y-%m-%dT%H:%M:%S") if intraday else dt.strftime("%Y-%m-%d")
         candles.append(
             FiiCandleBar(
                 trade_date=trade_date,
@@ -205,7 +294,14 @@ def map_stock_candles(*, ticker: str, price_points: list[dict], limit: int | Non
     if limit and len(candles) > limit:
         candles = candles[-limit:]
 
-    return FiiCandlesResponse(ticker=ticker.upper(), count=len(candles), candles=candles, provider="brapi")
+    return FiiCandlesResponse(
+        ticker=ticker.upper(),
+        count=len(candles),
+        candles=candles,
+        provider="brapi",
+        interval=normalized_interval,
+        range=range_,
+    )
 
 
 def _normalize_label(value: str | None) -> str | None:
@@ -322,6 +418,27 @@ CASH_FLOW_LINES: list[LineSpec] = [
     ("final_cash_balance", "Saldo final de caixa", "finalCashBalance"),
 ]
 
+DVA_LINES: list[LineSpec] = [
+    ("revenue", "Receita", "revenue"),
+    ("supplies_purchased", "Insumos adquiridos", "suppliesPurchasedFromThirdParties"),
+    ("gross_added_value", "Valor adicionado bruto", "grossAddedValue"),
+    ("depreciation", "Depreciação e amortização", "depreciationAndAmortization"),
+    ("net_added_value", "Valor adicionado líquido", "netAddedValue"),
+    ("added_value_to_distribute", "VA total a distribuir", "addedValueToDistribute"),
+    ("team_remuneration", "Pessoal", "teamRemuneration"),
+    ("taxes", "Impostos", "taxes"),
+    ("third_party_capital", "Remuneração cap. terceiros", "remunerationOfThirdPartyCapitals"),
+    ("own_equity_remuneration", "Remuneração cap. próprio", "ownEquityRemuneration"),
+]
+
+DVA_ABS_KEYS = frozenset(
+    {
+        "supplies_purchased",
+        "depreciation",
+        "third_party_capital",
+    }
+)
+
 
 def _normalize_financial_value(key: str, value: float | None) -> float | None:
     if value is None:
@@ -360,25 +477,128 @@ def _map_financial_periods(
     return periods
 
 
-def map_stock_financials(*, ticker: str, item: dict, limit: int = 8) -> StockFinancialsResponse:
+def _normalize_dva_value(key: str, value: float | None) -> float | None:
+    if value is None:
+        return None
+    if key in DVA_ABS_KEYS:
+        return abs(float(value))
+    return float(value)
+
+
+def _map_dva_periods(raw_items: list[dict], *, limit: int) -> list[FinancialPeriod]:
+    sorted_items = sorted(
+        raw_items,
+        key=lambda item: item.get("endDate") or "",
+        reverse=True,
+    )[:limit]
+
+    periods: list[FinancialPeriod] = []
+    for item in sorted_items:
+        end_date = _normalize_date(item.get("endDate"))
+        if not end_date:
+            continue
+        lines = [
+            FinancialLine(
+                key=key,
+                label=label,
+                value=_normalize_dva_value(key, item.get(brapi_key)),
+            )
+            for key, label, brapi_key in DVA_LINES
+        ]
+        periods.append(FinancialPeriod(end_date=end_date, lines=lines))
+    return periods
+
+
+def map_stock_financials(
+    *,
+    ticker: str,
+    item: dict,
+    limit: int = 8,
+    period: str = "quarterly",
+) -> StockFinancialsResponse:
     normalized = ticker.upper().strip()
+    normalized_period = normalize_financial_period(period)
+    if normalized_period == "annual":
+        income_key = "incomeStatementHistory"
+        balance_key = "balanceSheetHistory"
+        cashflow_key = "cashflowHistory"
+        dva_key = "valueAddedHistory"
+    else:
+        income_key = "incomeStatementHistoryQuarterly"
+        balance_key = "balanceSheetHistoryQuarterly"
+        cashflow_key = "cashflowHistoryQuarterly"
+        dva_key = "valueAddedHistoryQuarterly"
+
     return StockFinancialsResponse(
         ticker=normalized,
+        period=normalized_period,
         income_statement=_map_financial_periods(
-            item.get("incomeStatementHistoryQuarterly") or [],
+            item.get(income_key) or [],
             INCOME_STATEMENT_LINES,
             limit=limit,
         ),
         balance_sheet=_map_financial_periods(
-            item.get("balanceSheetHistoryQuarterly") or [],
+            item.get(balance_key) or [],
             BALANCE_SHEET_LINES,
             limit=limit,
         ),
         cash_flow=_map_financial_periods(
-            item.get("cashflowHistoryQuarterly") or [],
+            item.get(cashflow_key) or [],
             CASH_FLOW_LINES,
             limit=limit,
         ),
+        value_added=_map_dva_periods(item.get(dva_key) or [], limit=limit),
+    )
+
+
+def _return_pct_series(candles: list[FiiCandleBar]) -> dict[str, float]:
+    if not candles:
+        return {}
+    sorted_candles = sorted(candles, key=lambda bar: bar.trade_date)
+    base = sorted_candles[0].close
+    if base == 0:
+        return {}
+    return {
+        bar.trade_date: round(((bar.close / base) - 1) * 100, 4)
+        for bar in sorted_candles
+    }
+
+
+def map_stock_performance(
+    *,
+    ticker: str,
+    benchmark: str,
+    range_: str,
+    ticker_candles: list[FiiCandleBar],
+    benchmark_candles: list[FiiCandleBar],
+) -> StockPerformanceResponse:
+    normalized = ticker.upper().strip()
+    normalized_benchmark = benchmark.upper().strip()
+    ticker_returns = _return_pct_series(ticker_candles)
+    benchmark_returns = _return_pct_series(benchmark_candles)
+    common_dates = sorted(set(ticker_returns) & set(benchmark_returns))
+
+    points = [
+        PerformancePoint(
+            trade_date=trade_date,
+            ticker_return_pct=ticker_returns[trade_date],
+            benchmark_return_pct=benchmark_returns[trade_date],
+        )
+        for trade_date in common_dates
+    ]
+
+    ticker_total = points[-1].ticker_return_pct if points else None
+    benchmark_total = points[-1].benchmark_return_pct if points else None
+
+    return StockPerformanceResponse(
+        ticker=normalized,
+        benchmark=normalized_benchmark,
+        benchmark_label=benchmark_label(normalized_benchmark),
+        range=range_,
+        count=len(points),
+        ticker_return_pct=ticker_total,
+        benchmark_return_pct=benchmark_total,
+        points=points,
     )
 
 
@@ -388,4 +608,115 @@ def map_stock_compare_item(item: dict) -> StockCompareItem:
         profile=map_stock_profile(item),
         fundamentals=map_stock_fundamentals(item),
         market_stats=map_market_stats(item),
+    )
+
+
+def enrich_screener_item(base: StockScreenerItem, item: dict) -> StockScreenerItem:
+    fundamentals = map_stock_fundamentals(item)
+    return base.model_copy(
+        update={
+            "dividend_yield_12m": fundamentals.dividend_yield_12m,
+            "price_earnings": fundamentals.price_earnings,
+            "return_on_equity": fundamentals.return_on_equity,
+            "price_to_book": fundamentals.price_to_book,
+        }
+    )
+
+
+def passes_fundamental_filters(
+    item: StockScreenerItem,
+    *,
+    min_dividend_yield: float | None = None,
+    max_dividend_yield: float | None = None,
+    min_price_earnings: float | None = None,
+    max_price_earnings: float | None = None,
+    min_return_on_equity: float | None = None,
+    max_return_on_equity: float | None = None,
+    min_price_to_book: float | None = None,
+    max_price_to_book: float | None = None,
+) -> bool:
+    checks = (
+        (min_dividend_yield, item.dividend_yield_12m, lambda value, bound: value >= bound),
+        (max_dividend_yield, item.dividend_yield_12m, lambda value, bound: value <= bound),
+        (min_price_earnings, item.price_earnings, lambda value, bound: value >= bound),
+        (max_price_earnings, item.price_earnings, lambda value, bound: value <= bound),
+        (min_return_on_equity, item.return_on_equity, lambda value, bound: value >= bound),
+        (max_return_on_equity, item.return_on_equity, lambda value, bound: value <= bound),
+        (min_price_to_book, item.price_to_book, lambda value, bound: value >= bound),
+        (max_price_to_book, item.price_to_book, lambda value, bound: value <= bound),
+    )
+    for bound, value, predicate in checks:
+        if bound is None:
+            continue
+        if value is None:
+            return False
+        if not predicate(value, bound):
+            return False
+    return True
+
+
+def _fundamental_sort_value(item: StockScreenerItem, sort_by: str) -> float:
+    return {
+        "dividend_yield": item.dividend_yield_12m,
+        "price_earnings": item.price_earnings,
+        "return_on_equity": item.return_on_equity,
+        "price_to_book": item.price_to_book,
+    }.get(sort_by, item.volume or 0.0) or 0.0
+
+
+def sort_screener_items(
+    items: list[StockScreenerItem],
+    *,
+    sort_by: str,
+    sort_order: str,
+) -> list[StockScreenerItem]:
+    normalized = sort_by.strip().lower()
+    if normalized not in SCREENER_FUNDAMENTAL_SORT:
+        return items
+
+    reverse = sort_order.lower() != "asc"
+    return sorted(items, key=lambda item: _fundamental_sort_value(item, normalized), reverse=reverse)
+
+
+def map_stock_fundamental_history(*, ticker: str, item: dict, limit: int = 12) -> StockFundamentalHistoryResponse:
+    normalized = ticker.upper().strip()
+    financial_rows = item.get("financialDataHistoryQuarterly") or []
+    stats_rows = item.get("defaultKeyStatisticsHistoryQuarterly") or []
+
+    stats_by_date: dict[str, dict] = {}
+    for row in stats_rows:
+        end_date = _normalize_date(row.get("endDate"))
+        if end_date:
+            stats_by_date[end_date] = row
+
+    periods: list[FundamentalHistoryPeriod] = []
+    for row in sorted(
+        financial_rows,
+        key=lambda entry: entry.get("endDate") or "",
+        reverse=True,
+    )[:limit]:
+        end_date = _normalize_date(row.get("endDate"))
+        if not end_date:
+            continue
+        stats = stats_by_date.get(end_date) or {}
+        net_income = stats.get("netIncomeToCommon")
+        periods.append(
+            FundamentalHistoryPeriod(
+                end_date=end_date,
+                total_revenue=row.get("totalRevenue"),
+                net_income=float(net_income) if net_income is not None else None,
+                ebitda=row.get("ebitda"),
+                free_cashflow=row.get("freeCashflow"),
+                profit_margin=_as_pct(_pick_float(row.get("profitMargins"), stats.get("profitMargins"))),
+                return_on_equity=_as_pct(row.get("returnOnEquity")),
+                dividend_yield_12m=_as_pct(stats.get("dividendYield")),
+                price_earnings=stats.get("trailingPE"),
+                price_to_book=stats.get("priceToBook"),
+            )
+        )
+
+    return StockFundamentalHistoryResponse(
+        ticker=normalized,
+        periods=periods,
+        count=len(periods),
     )

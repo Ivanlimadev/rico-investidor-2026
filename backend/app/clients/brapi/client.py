@@ -9,6 +9,7 @@ from app.clients.brapi.fii_mapper import (
     merge_fii_detail,
     pct_from_ratio,
 )
+from app.clients.brapi.macro_mapper import map_brazil_macro, map_dictionary
 from app.clients.brapi.models import (
     MarketQuote,
     StockDividendsResponse,
@@ -16,12 +17,20 @@ from app.clients.brapi.models import (
     StockQuoteDetailResponse,
     StockScreenerResponse,
     StockFinancialsResponse,
+    StockFundamentalHistoryResponse,
     StockCompareResponse,
     StockCompareItem,
+    StockScreenerItem,
+    StockPerformanceResponse,
+    BrazilMacroResponse,
+    DictionaryResponse,
 )
 from app.clients.brapi.stock_mapper import (
+    DEFAULT_STOCK_BENCHMARK,
     STOCK_DETAIL_MODULES,
-    STOCK_FINANCIALS_MODULES,
+    STOCK_FUNDAMENTALS_HISTORY_MODULES,
+    STOCK_SCREENER_MODULES,
+    financials_modules_for_period,
     limit_to_range,
     map_market_quote,
     map_market_stats,
@@ -29,11 +38,17 @@ from app.clients.brapi.stock_mapper import (
     map_stock_candles,
     map_stock_dividends,
     map_stock_financials,
+    map_stock_fundamental_history,
+    map_stock_performance,
     map_stock_compare_item,
     map_stock_fundamentals,
     map_stock_profile,
     normalize_candle_range,
+    normalize_candle_interval,
     normalize_sort_by,
+    enrich_screener_item,
+    passes_fundamental_filters,
+    sort_screener_items,
 )
 from app.clients.bolsai.models import (
     FiiCandlesResponse,
@@ -129,6 +144,30 @@ class BrapiClient:
         results = data.get("results") or []
         return [self._map_quote_item(item) for item in results if item.get("symbol")]
 
+    async def get_quotes_with_modules(self, tickers: list[str], *, modules: str) -> list[dict]:
+        if not tickers:
+            return []
+
+        unique: list[str] = []
+        seen: set[str] = set()
+        for ticker in tickers:
+            normalized = ticker.upper().strip()
+            if normalized and normalized not in seen:
+                seen.add(normalized)
+                unique.append(normalized)
+
+        if len(unique) > self.MAX_BATCH:
+            raise UpstreamError(
+                f"Máximo de {self.MAX_BATCH} tickers por requisição",
+                status_code=400,
+            )
+
+        data = await self._get(
+            f"/quote/{','.join(unique)}",
+            params={"modules": modules},
+        )
+        return data.get("results") or []
+
     async def list_quotes(
         self,
         *,
@@ -164,7 +203,51 @@ class BrapiClient:
         sort_order: str = "desc",
         limit: int = 50,
         page: int = 1,
+        min_dividend_yield: float | None = None,
+        max_dividend_yield: float | None = None,
+        min_price_earnings: float | None = None,
+        max_price_earnings: float | None = None,
+        min_return_on_equity: float | None = None,
+        max_return_on_equity: float | None = None,
+        min_price_to_book: float | None = None,
+        max_price_to_book: float | None = None,
     ) -> StockScreenerResponse:
+        uses_fundamental_filters = any(
+            value is not None
+            for value in (
+                min_dividend_yield,
+                max_dividend_yield,
+                min_price_earnings,
+                max_price_earnings,
+                min_return_on_equity,
+                max_return_on_equity,
+                min_price_to_book,
+                max_price_to_book,
+            )
+        ) or sort_by.strip().lower() in {
+            "dividend_yield",
+            "price_earnings",
+            "return_on_equity",
+            "price_to_book",
+        }
+
+        if uses_fundamental_filters and quote_type == "stock":
+            return await self._screener_with_fundamentals(
+                sector=sector,
+                search=search,
+                sort_by=sort_by,
+                sort_order=sort_order,
+                limit=limit,
+                min_dividend_yield=min_dividend_yield,
+                max_dividend_yield=max_dividend_yield,
+                min_price_earnings=min_price_earnings,
+                max_price_earnings=max_price_earnings,
+                min_return_on_equity=min_return_on_equity,
+                max_return_on_equity=max_return_on_equity,
+                min_price_to_book=min_price_to_book,
+                max_price_to_book=max_price_to_book,
+            )
+
         params: dict[str, str | int] = {
             "limit": limit,
             "page": page,
@@ -199,16 +282,100 @@ class BrapiClient:
             sectors=data.get("availableSectors") or [],
         )
 
+    async def _screener_with_fundamentals(
+        self,
+        *,
+        sector: str | None,
+        search: str | None,
+        sort_by: str,
+        sort_order: str,
+        limit: int,
+        min_dividend_yield: float | None,
+        max_dividend_yield: float | None,
+        min_price_earnings: float | None,
+        max_price_earnings: float | None,
+        min_return_on_equity: float | None,
+        max_return_on_equity: float | None,
+        min_price_to_book: float | None,
+        max_price_to_book: float | None,
+    ) -> StockScreenerResponse:
+        pool_limit = min(max(limit * 4, 80), 100)
+        params: dict[str, str | int] = {
+            "limit": pool_limit,
+            "page": 1,
+            "sortBy": "market_cap_basic",
+            "sortOrder": "desc",
+            "type": "stock",
+        }
+        if sector:
+            params["sector"] = sector
+        if search:
+            params["search"] = search
+
+        data = await self._get("/quote/list", params=params)
+        stocks = data.get("stocks") or []
+        base_items = [
+            map_screener_item(item)
+            for item in stocks
+            if item.get("stock")
+            and infer_category(str(item["stock"]).upper(), "stock") == AssetClass.STOCK_BR
+        ]
+
+        enriched: list[StockScreenerItem] = []
+        by_symbol = {item.symbol: item for item in base_items}
+        symbols = list(by_symbol.keys())
+
+        for offset in range(0, len(symbols), self.MAX_BATCH):
+            batch = symbols[offset : offset + self.MAX_BATCH]
+            quote_items = await self.get_quotes_with_modules(batch, modules=STOCK_SCREENER_MODULES)
+            for quote_item in quote_items:
+                symbol = str(quote_item.get("symbol") or "").upper()
+                base = by_symbol.get(symbol)
+                if base is None:
+                    continue
+                enriched.append(enrich_screener_item(base, quote_item))
+
+        filtered = [
+            item
+            for item in enriched
+            if passes_fundamental_filters(
+                item,
+                min_dividend_yield=min_dividend_yield,
+                max_dividend_yield=max_dividend_yield,
+                min_price_earnings=min_price_earnings,
+                max_price_earnings=max_price_earnings,
+                min_return_on_equity=min_return_on_equity,
+                max_return_on_equity=max_return_on_equity,
+                min_price_to_book=min_price_to_book,
+                max_price_to_book=max_price_to_book,
+            )
+        ]
+        sorted_items = sort_screener_items(filtered, sort_by=sort_by, sort_order=sort_order)
+        items = sorted_items[:limit]
+
+        return StockScreenerResponse(
+            items=items,
+            count=len(items),
+            total=len(filtered),
+            page=1,
+            total_pages=1 if items else 0,
+            sectors=data.get("availableSectors") or [],
+        )
+
     async def _get_stock_quote_item(
         self,
         ticker: str,
         *,
         range_: str = "1y",
+        interval: str = "1d",
         dividends: bool = False,
         modules: str | None = None,
     ) -> dict:
         normalized = ticker.upper().strip()
-        params: dict[str, str] = {"range": range_, "interval": "1d"}
+        params: dict[str, str] = {
+            "range": range_,
+            "interval": normalize_candle_interval(interval),
+        }
         if dividends:
             params["dividends"] = "true"
         if modules:
@@ -226,13 +393,50 @@ class BrapiClient:
         *,
         limit: int = 252,
         range_: str | None = None,
+        interval: str = "1d",
     ) -> FiiCandlesResponse:
         normalized = ticker.upper().strip()
         brapi_range = normalize_candle_range(range_, limit=limit)
-        item = await self._get_stock_quote_item(normalized, range_=brapi_range)
+        normalized_interval = normalize_candle_interval(interval)
+        item = await self._get_stock_quote_item(
+            normalized,
+            range_=brapi_range,
+            interval=normalized_interval,
+        )
         prices = item.get("historicalDataPrice") or []
         trim = limit if range_ is None else (5000 if brapi_range == "max" else None)
-        return map_stock_candles(ticker=normalized, price_points=prices, limit=trim)
+        return map_stock_candles(
+            ticker=normalized,
+            price_points=prices,
+            limit=trim,
+            interval=normalized_interval,
+            range_=brapi_range,
+        )
+
+    async def get_stock_performance(
+        self,
+        ticker: str,
+        *,
+        limit: int = 252,
+        range_: str | None = None,
+        benchmark: str = DEFAULT_STOCK_BENCHMARK,
+    ) -> StockPerformanceResponse:
+        normalized = ticker.upper().strip()
+        normalized_benchmark = benchmark.upper().strip()
+        brapi_range = normalize_candle_range(range_, limit=limit)
+
+        ticker_candles, benchmark_candles = await asyncio.gather(
+            self.get_stock_candles(normalized, limit=limit, range_=range_),
+            self.get_stock_candles(normalized_benchmark, limit=limit, range_=range_),
+        )
+
+        return map_stock_performance(
+            ticker=normalized,
+            benchmark=normalized_benchmark,
+            range_=brapi_range,
+            ticker_candles=ticker_candles.candles,
+            benchmark_candles=benchmark_candles.candles,
+        )
 
     async def get_stock_dividends(self, ticker: str, *, limit: int = 24) -> StockDividendsResponse:
         normalized = ticker.upper().strip()
@@ -278,14 +482,34 @@ class BrapiClient:
             dividends=dividends,
         )
 
-    async def get_stock_financials(self, ticker: str, *, limit: int = 8) -> StockFinancialsResponse:
+    async def get_stock_financials(
+        self,
+        ticker: str,
+        *,
+        limit: int = 8,
+        period: str = "quarterly",
+    ) -> StockFinancialsResponse:
         normalized = ticker.upper().strip()
         item = await self._get_stock_quote_item(
             normalized,
             range_="1mo",
-            modules=STOCK_FINANCIALS_MODULES,
+            modules=financials_modules_for_period(period),
         )
-        return map_stock_financials(ticker=normalized, item=item, limit=limit)
+        return map_stock_financials(ticker=normalized, item=item, limit=limit, period=period)
+
+    async def get_stock_fundamental_history(
+        self,
+        ticker: str,
+        *,
+        limit: int = 12,
+    ) -> StockFundamentalHistoryResponse:
+        normalized = ticker.upper().strip()
+        item = await self._get_stock_quote_item(
+            normalized,
+            range_="1mo",
+            modules=STOCK_FUNDAMENTALS_HISTORY_MODULES,
+        )
+        return map_stock_fundamental_history(ticker=normalized, item=item, limit=limit)
 
     async def get_stock_compare(self, tickers: list[str]) -> StockCompareResponse:
         unique: list[str] = []
@@ -453,6 +677,17 @@ class BrapiClient:
                 provider=candles.provider,
             )
         return candles
+
+    async def get_brazil_macro(self) -> BrazilMacroResponse:
+        prime_rate, inflation = await asyncio.gather(
+            self._get("/v2/prime-rate"),
+            self._get("/v2/inflation", {"country": "brazil"}),
+        )
+        return map_brazil_macro(prime_rate_data=prime_rate, inflation_data=inflation)
+
+    async def get_dictionary(self, *, category: str = "statistics") -> DictionaryResponse:
+        data = await self._get("/v2/dictionary", {"category": category})
+        return map_dictionary(data, category=category.strip().lower())
 
     async def build_fii_detail(self, ticker: str, bolsai: FiiDetail) -> FiiDetail:
         normalized = normalize_fii_ticker(ticker)

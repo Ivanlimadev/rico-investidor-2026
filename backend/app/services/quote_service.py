@@ -7,7 +7,9 @@ from app.clients.brapi.models import (
     StockQuoteDetailResponse,
     StockScreenerResponse,
     StockFinancialsResponse,
+    StockFundamentalHistoryResponse,
     StockCompareResponse,
+    StockPerformanceResponse,
 )
 from app.clients.bolsai.models import FiiCandlesResponse
 from app.config import settings
@@ -44,7 +46,13 @@ class QuoteService:
         self._financials_cache: TtlCache[StockFinancialsResponse] = TtlCache(
             settings.quote_cache_ttl_seconds * 4,
         )
+        self._fundamental_history_cache: TtlCache[StockFundamentalHistoryResponse] = TtlCache(
+            settings.quote_cache_ttl_seconds * 4,
+        )
         self._compare_cache: TtlCache[StockCompareResponse] = TtlCache(
+            settings.quote_cache_ttl_seconds,
+        )
+        self._performance_cache: TtlCache[StockPerformanceResponse] = TtlCache(
             settings.quote_cache_ttl_seconds,
         )
 
@@ -186,14 +194,20 @@ class QuoteService:
         *,
         limit: int = 252,
         range_: str | None = None,
+        interval: str = "1d",
     ) -> FiiCandlesResponse:
         normalized = ticker.upper().strip()
-        cache_key = f"candles:{normalized}:{range_ or ''}:{limit}"
+        cache_key = f"candles:{normalized}:{range_ or ''}:{interval}:{limit}"
         cached = self._candles_cache.get(cache_key)
         if cached:
             return cached
 
-        result = await self._client.get_stock_candles(normalized, limit=limit, range_=range_)
+        result = await self._client.get_stock_candles(
+            normalized,
+            limit=limit,
+            range_=range_,
+            interval=interval,
+        )
         self._candles_cache.set(cache_key, result)
         return result
 
@@ -211,10 +225,22 @@ class QuoteService:
         sort_order: str = "desc",
         limit: int = 50,
         page: int = 1,
+        min_dividend_yield: float | None = None,
+        max_dividend_yield: float | None = None,
+        min_price_earnings: float | None = None,
+        max_price_earnings: float | None = None,
+        min_return_on_equity: float | None = None,
+        max_return_on_equity: float | None = None,
+        min_price_to_book: float | None = None,
+        max_price_to_book: float | None = None,
     ) -> StockScreenerResponse:
         cache_key = (
             f"screener:{quote_type}:{sort_by}:{sort_order}:{limit}:{page}:"
-            f"{sector or ''}:{search or ''}"
+            f"{sector or ''}:{search or ''}:"
+            f"{min_dividend_yield}:{max_dividend_yield}:"
+            f"{min_price_earnings}:{max_price_earnings}:"
+            f"{min_return_on_equity}:{max_return_on_equity}:"
+            f"{min_price_to_book}:{max_price_to_book}"
         )
         cached = self._screener_cache.get(cache_key)
         if cached:
@@ -228,19 +254,73 @@ class QuoteService:
             sort_order=sort_order,
             limit=limit,
             page=page,
+            min_dividend_yield=min_dividend_yield,
+            max_dividend_yield=max_dividend_yield,
+            min_price_earnings=min_price_earnings,
+            max_price_earnings=max_price_earnings,
+            min_return_on_equity=min_return_on_equity,
+            max_return_on_equity=max_return_on_equity,
+            min_price_to_book=min_price_to_book,
+            max_price_to_book=max_price_to_book,
         )
         self._screener_cache.set(cache_key, result)
         return result
 
-    async def get_stock_financials(self, ticker: str, *, limit: int = 8) -> StockFinancialsResponse:
+    async def get_stock_fundamental_history(
+        self,
+        ticker: str,
+        *,
+        limit: int = 12,
+    ) -> StockFundamentalHistoryResponse:
         normalized = ticker.upper().strip()
-        cache_key = f"financials:{normalized}:{limit}"
+        cache_key = f"fundamental_history:{normalized}:{limit}"
+        cached = self._fundamental_history_cache.get(cache_key)
+        if cached:
+            return cached
+
+        result = await self._client.get_stock_fundamental_history(normalized, limit=limit)
+        self._fundamental_history_cache.set(cache_key, result)
+        return result
+
+    async def get_stock_financials(
+        self,
+        ticker: str,
+        *,
+        limit: int = 8,
+        period: str = "quarterly",
+    ) -> StockFinancialsResponse:
+        normalized = ticker.upper().strip()
+        cache_key = f"financials:{normalized}:{period}:{limit}"
         cached = self._financials_cache.get(cache_key)
         if cached:
             return cached
 
-        result = await self._client.get_stock_financials(normalized, limit=limit)
+        result = await self._client.get_stock_financials(normalized, limit=limit, period=period)
         self._financials_cache.set(cache_key, result)
+        return result
+
+    async def get_stock_performance(
+        self,
+        ticker: str,
+        *,
+        limit: int = 252,
+        range_: str | None = None,
+        benchmark: str = "^BVSP",
+    ) -> StockPerformanceResponse:
+        normalized = ticker.upper().strip()
+        normalized_benchmark = benchmark.upper().strip()
+        cache_key = f"performance:{normalized}:{normalized_benchmark}:{range_ or ''}:{limit}"
+        cached = self._performance_cache.get(cache_key)
+        if cached:
+            return cached
+
+        result = await self._client.get_stock_performance(
+            normalized,
+            limit=limit,
+            range_=range_,
+            benchmark=normalized_benchmark,
+        )
+        self._performance_cache.set(cache_key, result)
         return result
 
     async def compare_stocks(self, tickers: list[str]) -> StockCompareResponse:

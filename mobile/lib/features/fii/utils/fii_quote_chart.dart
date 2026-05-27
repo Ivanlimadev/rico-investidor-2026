@@ -1,6 +1,8 @@
 import 'package:rico_investidor/models/fii_models.dart';
 
 enum FiiQuotePeriod {
+  day1,
+  day5,
   month1,
   month3,
   month6,
@@ -17,6 +19,7 @@ enum QuoteChartStyle {
 
 int limitForQuotePeriod(FiiQuotePeriod period) {
   return switch (period) {
+    FiiQuotePeriod.day1 || FiiQuotePeriod.day5 => 500,
     FiiQuotePeriod.month1 => 30,
     FiiQuotePeriod.month3 => 66,
     FiiQuotePeriod.month6 => 132,
@@ -29,6 +32,8 @@ int limitForQuotePeriod(FiiQuotePeriod period) {
 
 String? rangeForQuotePeriod(FiiQuotePeriod period) {
   return switch (period) {
+    FiiQuotePeriod.day1 => '1d',
+    FiiQuotePeriod.day5 => '5d',
     FiiQuotePeriod.month1 => '1mo',
     FiiQuotePeriod.month3 => '3mo',
     FiiQuotePeriod.month6 => '6mo',
@@ -39,8 +44,24 @@ String? rangeForQuotePeriod(FiiQuotePeriod period) {
   };
 }
 
+String intervalForQuotePeriod(FiiQuotePeriod period) {
+  return switch (period) {
+    FiiQuotePeriod.day1 || FiiQuotePeriod.day5 => '5m',
+    _ => '1d',
+  };
+}
+
+bool isIntradayQuotePeriod(FiiQuotePeriod period) {
+  return switch (period) {
+    FiiQuotePeriod.day1 || FiiQuotePeriod.day5 => true,
+    _ => false,
+  };
+}
+
 String quotePeriodLabel(FiiQuotePeriod period) {
   return switch (period) {
+    FiiQuotePeriod.day1 => '1D',
+    FiiQuotePeriod.day5 => '5D',
     FiiQuotePeriod.month1 => '1M',
     FiiQuotePeriod.month3 => '3M',
     FiiQuotePeriod.month6 => '6M',
@@ -53,6 +74,8 @@ String quotePeriodLabel(FiiQuotePeriod period) {
 
 String quotePeriodHint(FiiQuotePeriod period) {
   return switch (period) {
+    FiiQuotePeriod.day1 => 'Intraday · candles 5 min · pregão de hoje',
+    FiiQuotePeriod.day5 => 'Intraday · candles 5 min · últimos 5 dias',
     FiiQuotePeriod.month1 => 'Cotação diária · último mês',
     FiiQuotePeriod.month3 => 'Cotação diária · últimos 3 meses',
     FiiQuotePeriod.month6 => 'Cotação diária · últimos 6 meses',
@@ -100,6 +123,13 @@ String _formatDate(DateTime date) {
 String formatQuoteDate(String tradeDate) {
   final date = DateTime.tryParse(tradeDate);
   if (date == null) return tradeDate;
+  if (tradeDate.contains('T')) {
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    final hour = date.hour.toString().padLeft(2, '0');
+    final minute = date.minute.toString().padLeft(2, '0');
+    return '$day/$month $hour:$minute';
+  }
   return formatQuoteDateTime(date);
 }
 
@@ -117,6 +147,15 @@ double quoteChartScrollWidth(int pointCount) {
 String axisLabelForIndex(List<FiiCandleBar> sorted, int index, FiiQuotePeriod period) {
   if (index < 0 || index >= sorted.length) return '';
   final date = sorted[index].tradeDate;
+  if (date.contains('T')) {
+    final parsed = DateTime.tryParse(date);
+    if (parsed == null) return '';
+    if (index != 0 && index != sorted.length - 1 && index % 12 != 0) return '';
+    final hour = parsed.hour.toString().padLeft(2, '0');
+    final minute = parsed.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+
   final parts = date.split('-');
   if (parts.length < 3) return date;
 

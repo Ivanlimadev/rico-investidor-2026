@@ -34,6 +34,10 @@ class StockScreenerItem(BaseModel):
     market_cap: float | None = None
     volume: float | None = None
     logo_url: str | None = None
+    dividend_yield_12m: float | None = None
+    price_earnings: float | None = None
+    return_on_equity: float | None = None
+    price_to_book: float | None = None
     provider: str = "brapi"
 
 
@@ -105,6 +109,20 @@ class StockFundamentals(BaseModel):
     earnings_per_share: float | None = None
     free_cashflow: float | None = None
     earnings_growth: float | None = None
+    total_revenue: float | None = None
+    ebitda: float | None = None
+    enterprise_value: float | None = None
+    enterprise_to_ebitda: float | None = None
+    forward_pe: float | None = None
+    gross_margin: float | None = None
+    operating_margin: float | None = None
+    revenue_growth: float | None = None
+    total_cash: float | None = None
+    total_debt: float | None = None
+    current_ratio: float | None = None
+    target_mean_price: float | None = None
+    recommendation_key: str | None = None
+    number_of_analyst_opinions: int | None = None
     provider: str = "brapi"
 
 
@@ -131,9 +149,54 @@ class FinancialPeriod(BaseModel):
 
 class StockFinancialsResponse(BaseModel):
     ticker: str
+    period: str = "quarterly"
     income_statement: list[FinancialPeriod] = Field(default_factory=list)
     balance_sheet: list[FinancialPeriod] = Field(default_factory=list)
     cash_flow: list[FinancialPeriod] = Field(default_factory=list)
+    value_added: list[FinancialPeriod] = Field(default_factory=list)
+    provider: str = "brapi"
+
+
+class PerformancePoint(BaseModel):
+    trade_date: str
+    ticker_return_pct: float
+    benchmark_return_pct: float
+    provider: str = "brapi"
+
+
+class StockPerformanceResponse(BaseModel):
+    ticker: str
+    benchmark: str
+    benchmark_label: str
+    range: str
+    count: int
+    ticker_return_pct: float | None = None
+    benchmark_return_pct: float | None = None
+    points: list[PerformancePoint] = Field(default_factory=list)
+    provider: str = "brapi"
+
+
+class BrazilMacroResponse(BaseModel):
+    selic: float | None = None
+    selic_as_of: str | None = None
+    ipca_12m: float | None = None
+    ipca_as_of: str | None = None
+    provider: str = "brapi"
+
+
+class DictionaryField(BaseModel):
+    key: str
+    label: str | None = None
+    description: str | None = None
+    calculation: str | None = None
+    category: str | None = None
+    provider: str = "brapi"
+
+
+class DictionaryResponse(BaseModel):
+    category: str
+    fields: list[DictionaryField] = Field(default_factory=list)
+    count: int
     provider: str = "brapi"
 
 
@@ -147,5 +210,26 @@ class StockCompareItem(BaseModel):
 
 class StockCompareResponse(BaseModel):
     items: list[StockCompareItem]
+    count: int
+    provider: str = "brapi"
+
+
+class FundamentalHistoryPeriod(BaseModel):
+    end_date: str
+    total_revenue: float | None = None
+    net_income: float | None = None
+    ebitda: float | None = None
+    free_cashflow: float | None = None
+    profit_margin: float | None = None
+    return_on_equity: float | None = None
+    dividend_yield_12m: float | None = None
+    price_earnings: float | None = None
+    price_to_book: float | None = None
+    provider: str = "brapi"
+
+
+class StockFundamentalHistoryResponse(BaseModel):
+    ticker: str
+    periods: list[FundamentalHistoryPeriod] = Field(default_factory=list)
     count: int
     provider: str = "brapi"

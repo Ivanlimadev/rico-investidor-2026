@@ -44,16 +44,25 @@ class StockFinancialsDto {
     required this.incomeStatement,
     required this.balanceSheet,
     required this.cashFlow,
+    this.valueAdded = const [],
+    this.period = 'quarterly',
     this.provider = 'brapi',
   });
 
   final List<FinancialPeriodDto> incomeStatement;
   final List<FinancialPeriodDto> balanceSheet;
   final List<FinancialPeriodDto> cashFlow;
+  final List<FinancialPeriodDto> valueAdded;
+  final String period;
   final String provider;
 
+  bool get isAnnual => period == 'annual';
+
   bool get isEmpty =>
-      incomeStatement.isEmpty && balanceSheet.isEmpty && cashFlow.isEmpty;
+      incomeStatement.isEmpty &&
+      balanceSheet.isEmpty &&
+      cashFlow.isEmpty &&
+      valueAdded.isEmpty;
 
   factory StockFinancialsDto.fromJson(Map<String, dynamic> json) {
     List<FinancialPeriodDto> parseList(String key) {
@@ -65,14 +74,17 @@ class StockFinancialsDto {
       incomeStatement: parseList('income_statement'),
       balanceSheet: parseList('balance_sheet'),
       cashFlow: parseList('cash_flow'),
+      valueAdded: parseList('value_added'),
+      period: json['period'] as String? ?? 'quarterly',
       provider: json['provider'] as String? ?? 'brapi',
     );
   }
 }
 
-String formatFinancialPeriod(String endDate) {
+String formatFinancialPeriod(String endDate, {bool annual = false}) {
   final date = DateTime.tryParse(endDate);
   if (date == null) return endDate;
+  if (annual) return '${date.year}';
   final quarter = ((date.month - 1) ~/ 3) + 1;
   final year = date.year.toString().substring(2);
   return '${quarter}T$year';

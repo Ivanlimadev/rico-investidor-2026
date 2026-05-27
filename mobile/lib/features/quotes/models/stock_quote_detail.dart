@@ -98,6 +98,20 @@ class StockFundamentalsDto {
     this.earningsPerShare,
     this.freeCashflow,
     this.earningsGrowth,
+    this.totalRevenue,
+    this.ebitda,
+    this.enterpriseValue,
+    this.enterpriseToEbitda,
+    this.forwardPe,
+    this.grossMargin,
+    this.operatingMargin,
+    this.revenueGrowth,
+    this.totalCash,
+    this.totalDebt,
+    this.currentRatio,
+    this.targetMeanPrice,
+    this.recommendationKey,
+    this.numberOfAnalystOpinions,
   });
 
   final double? dividendYield12m;
@@ -113,6 +127,20 @@ class StockFundamentalsDto {
   final double? earningsPerShare;
   final double? freeCashflow;
   final double? earningsGrowth;
+  final double? totalRevenue;
+  final double? ebitda;
+  final double? enterpriseValue;
+  final double? enterpriseToEbitda;
+  final double? forwardPe;
+  final double? grossMargin;
+  final double? operatingMargin;
+  final double? revenueGrowth;
+  final double? totalCash;
+  final double? totalDebt;
+  final double? currentRatio;
+  final double? targetMeanPrice;
+  final String? recommendationKey;
+  final int? numberOfAnalystOpinions;
 
   factory StockFundamentalsDto.fromJson(Map<String, dynamic> json) {
     double? numVal(String key) {
@@ -135,6 +163,20 @@ class StockFundamentalsDto {
       earningsPerShare: numVal('earnings_per_share'),
       freeCashflow: numVal('free_cashflow'),
       earningsGrowth: numVal('earnings_growth'),
+      totalRevenue: numVal('total_revenue'),
+      ebitda: numVal('ebitda'),
+      enterpriseValue: numVal('enterprise_value'),
+      enterpriseToEbitda: numVal('enterprise_to_ebitda'),
+      forwardPe: numVal('forward_pe'),
+      grossMargin: numVal('gross_margin'),
+      operatingMargin: numVal('operating_margin'),
+      revenueGrowth: numVal('revenue_growth'),
+      totalCash: numVal('total_cash'),
+      totalDebt: numVal('total_debt'),
+      currentRatio: numVal('current_ratio'),
+      targetMeanPrice: numVal('target_mean_price'),
+      recommendationKey: json['recommendation_key'] as String?,
+      numberOfAnalystOpinions: json['number_of_analyst_opinions'] as int?,
     );
   }
 }

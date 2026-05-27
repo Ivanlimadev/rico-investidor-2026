@@ -161,6 +161,8 @@ class FiiCandlesResponse(BaseModel):
     count: int
     candles: list[FiiCandleBar] = Field(default_factory=list)
     provider: str = "bolsai"
+    interval: str | None = None
+    range: str | None = None
 
     @field_validator("candles", mode="before")
     @classmethod

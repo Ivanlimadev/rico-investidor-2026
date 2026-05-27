@@ -51,8 +51,16 @@ async def screener_quotes(
     page: int = Query(default=1, ge=1),
     quote_type: str = Query(default="stock", pattern="^(stock|bdr)$", alias="type"),
     search: str | None = Query(default=None, max_length=80),
+    min_dividend_yield: float | None = Query(default=None, ge=0, le=100),
+    max_dividend_yield: float | None = Query(default=None, ge=0, le=100),
+    min_price_earnings: float | None = Query(default=None, ge=0),
+    max_price_earnings: float | None = Query(default=None, ge=0),
+    min_return_on_equity: float | None = Query(default=None, ge=-100, le=200),
+    max_return_on_equity: float | None = Query(default=None, ge=-100, le=200),
+    min_price_to_book: float | None = Query(default=None, ge=0),
+    max_price_to_book: float | None = Query(default=None, ge=0),
 ):
-    """Screener de ações/BDRs — volume, variação, setor e cap. de mercado (Brapi)."""
+    """Screener de ações/BDRs — volume, setor, cap. e filtros fundamentalistas."""
     return await quote_service.screener(
         sector=sector,
         quote_type=quote_type,
@@ -61,6 +69,14 @@ async def screener_quotes(
         sort_order=sort_order,
         limit=limit,
         page=page,
+        min_dividend_yield=min_dividend_yield,
+        max_dividend_yield=max_dividend_yield,
+        min_price_earnings=min_price_earnings,
+        max_price_earnings=max_price_earnings,
+        min_return_on_equity=min_return_on_equity,
+        max_return_on_equity=max_return_on_equity,
+        min_price_to_book=min_price_to_book,
+        max_price_to_book=max_price_to_book,
     )
 
 
@@ -85,12 +101,42 @@ async def get_stock_candles(
     range_: str | None = Query(
         default=None,
         alias="range",
-        pattern="^(ytd|1mo|3mo|6mo|1y|5y|max)$",
-        description="Período Brapi (preferencial). Ex.: ytd, 1y, max",
+        pattern="^(1d|2d|5d|7d|ytd|1mo|3mo|6mo|1y|5y|max)$",
+        description="Período Brapi. Intraday: 1d, 5d. Diário: 1y, max…",
+    ),
+    interval: str = Query(
+        default="1d",
+        pattern="^(1m|2m|5m|15m|30m|60m|1h|1d|1wk|1mo)$",
+        description="Granularidade. Intraday: 5m com range 1d/5d.",
     ),
 ):
-    """Histórico de pregão — Brapi."""
-    return await quote_service.get_stock_candles(ticker, limit=limit, range_=range_)
+    """Histórico de pregão — Brapi (diário ou intraday)."""
+    return await quote_service.get_stock_candles(
+        ticker,
+        limit=limit,
+        range_=range_,
+        interval=interval,
+    )
+
+
+@router.get("/{ticker}/performance")
+async def get_stock_performance(
+    ticker: str,
+    limit: int = Query(default=252, ge=30, le=5000),
+    range_: str | None = Query(
+        default=None,
+        alias="range",
+        pattern="^(ytd|1mo|3mo|6mo|1y|5y|max)$",
+    ),
+    benchmark: str = Query(default="^BVSP", max_length=16, description="Benchmark (padrão IBOV)"),
+):
+    """Retorno acumulado da ação vs benchmark (ex.: IBOV) — Brapi."""
+    return await quote_service.get_stock_performance(
+        ticker,
+        limit=limit,
+        range_=range_,
+        benchmark=benchmark,
+    )
 
 
 @router.get("/compare")
@@ -106,9 +152,19 @@ async def compare_quotes(
 async def get_stock_financials(
     ticker: str,
     limit: int = Query(default=8, ge=1, le=20),
+    period: str = Query(default="quarterly", description="quarterly ou annual"),
 ):
-    """Demonstrações trimestrais: DRE, balanço e fluxo de caixa — Brapi."""
-    return await quote_service.get_stock_financials(ticker, limit=limit)
+    """Demonstrações financeiras: DRE, balanço e fluxo de caixa — Brapi."""
+    return await quote_service.get_stock_financials(ticker, limit=limit, period=period)
+
+
+@router.get("/{ticker}/fundamentals/history")
+async def get_stock_fundamental_history(
+    ticker: str,
+    limit: int = Query(default=12, ge=4, le=24),
+):
+    """Histórico trimestral de receita, margens, ROE, DY, P/L e P/VP — Brapi."""
+    return await quote_service.get_stock_fundamental_history(ticker, limit=limit)
 
 
 @router.get("/{ticker}")

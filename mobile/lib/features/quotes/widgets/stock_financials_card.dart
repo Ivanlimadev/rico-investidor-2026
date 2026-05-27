@@ -21,17 +21,31 @@ class _StockFinancialsCardState extends State<StockFinancialsCard>
   late final TabController _tabController;
   late Future<StockFinancialsDto> _loadFuture;
   int _periodIndex = 0;
+  String _period = 'quarterly';
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) {
         setState(() => _periodIndex = 0);
       }
     });
-    _loadFuture = widget.repository.getStockFinancials(widget.ticker);
+    _loadFuture = _fetchFinancials();
+  }
+
+  Future<StockFinancialsDto> _fetchFinancials() {
+    return widget.repository.getStockFinancials(widget.ticker, period: _period);
+  }
+
+  void _setPeriod(String period) {
+    if (_period == period) return;
+    setState(() {
+      _period = period;
+      _periodIndex = 0;
+      _loadFuture = _fetchFinancials();
+    });
   }
 
   @override
@@ -59,6 +73,8 @@ class _StockFinancialsCardState extends State<StockFinancialsCard>
         }
 
         final financials = snapshot.data!;
+        final isAnnual = financials.isAnnual;
+
         return Card(
           clipBehavior: Clip.antiAlias,
           child: Padding(
@@ -66,7 +82,28 @@ class _StockFinancialsCardState extends State<StockFinancialsCard>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('Demonstrações trimestrais', style: Theme.of(context).textTheme.titleSmall),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        isAnnual ? 'Demonstrações anuais' : 'Demonstrações trimestrais',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                    ),
+                    SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment(value: 'quarterly', label: Text('Trim.')),
+                        ButtonSegment(value: 'annual', label: Text('Anual')),
+                      ],
+                      selected: {_period},
+                      onSelectionChanged: (selection) => _setPeriod(selection.first),
+                      style: const ButtonStyle(
+                        visualDensity: VisualDensity.compact,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 8),
                 TabBar(
                   controller: _tabController,
@@ -76,6 +113,7 @@ class _StockFinancialsCardState extends State<StockFinancialsCard>
                     Tab(text: 'DRE'),
                     Tab(text: 'Balanço'),
                     Tab(text: 'Fluxo de caixa'),
+                    Tab(text: 'DVA'),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -85,7 +123,8 @@ class _StockFinancialsCardState extends State<StockFinancialsCard>
                     final periods = switch (_tabController.index) {
                       0 => financials.incomeStatement,
                       1 => financials.balanceSheet,
-                      _ => financials.cashFlow,
+                      2 => financials.cashFlow,
+                      _ => financials.valueAdded,
                     };
                     if (periods.isEmpty) {
                       return Padding(
@@ -116,7 +155,9 @@ class _StockFinancialsCardState extends State<StockFinancialsCard>
                             itemBuilder: (context, index) {
                               final period = periods[index];
                               return FilterChip(
-                                label: Text(formatFinancialPeriod(period.endDate)),
+                                label: Text(
+                                  formatFinancialPeriod(period.endDate, annual: isAnnual),
+                                ),
                                 selected: safeIndex == index,
                                 onSelected: (_) => setState(() => _periodIndex = index),
                                 visualDensity: VisualDensity.compact,
@@ -126,7 +167,12 @@ class _StockFinancialsCardState extends State<StockFinancialsCard>
                           ),
                         ),
                         const SizedBox(height: 8),
-                        _StatementTable(period: periods[safeIndex]),
+                        _StatementTable(
+                          period: periods[safeIndex],
+                          emptyLabel: isAnnual
+                              ? 'Sem valores neste exercício.'
+                              : 'Sem valores neste trimestre.',
+                        ),
                       ],
                     );
                   },
@@ -141,18 +187,19 @@ class _StockFinancialsCardState extends State<StockFinancialsCard>
 }
 
 class _StatementTable extends StatelessWidget {
-  const _StatementTable({required this.period});
+  const _StatementTable({
+    required this.period,
+    required this.emptyLabel,
+  });
 
   final FinancialPeriodDto period;
+  final String emptyLabel;
 
   @override
   Widget build(BuildContext context) {
     final visibleLines = period.lines.where((line) => line.value != null).toList();
     if (visibleLines.isEmpty) {
-      return Text(
-        'Sem valores neste trimestre.',
-        style: Theme.of(context).textTheme.bodySmall,
-      );
+      return Text(emptyLabel, style: Theme.of(context).textTheme.bodySmall);
     }
 
     return Column(

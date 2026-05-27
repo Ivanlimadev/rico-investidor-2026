@@ -12,6 +12,10 @@ class StockScreenerItemDto {
     this.marketCap,
     this.volume,
     this.logoUrl,
+    this.dividendYield12m,
+    this.priceEarnings,
+    this.returnOnEquity,
+    this.priceToBook,
     this.provider = 'brapi',
   });
 
@@ -24,6 +28,10 @@ class StockScreenerItemDto {
   final double? marketCap;
   final double? volume;
   final String? logoUrl;
+  final double? dividendYield12m;
+  final double? priceEarnings;
+  final double? returnOnEquity;
+  final double? priceToBook;
   final String provider;
 
   bool get isPositive => changePercent >= 0;
@@ -45,6 +53,10 @@ class StockScreenerItemDto {
       marketCap: numVal('market_cap'),
       volume: numVal('volume'),
       logoUrl: json['logo_url'] as String?,
+      dividendYield12m: numVal('dividend_yield_12m'),
+      priceEarnings: numVal('price_earnings'),
+      returnOnEquity: numVal('return_on_equity'),
+      priceToBook: numVal('price_to_book'),
       provider: json['provider'] as String? ?? 'brapi',
     );
   }
