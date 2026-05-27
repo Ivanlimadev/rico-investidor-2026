@@ -51,6 +51,24 @@ class StockScreenerResponse(BaseModel):
     provider: str = "brapi"
 
 
+class StockCatalogItem(BaseModel):
+    symbol: str
+    name: str
+    category: str
+    sector: str | None = None
+    logo_url: str | None = None
+    provider: str = "brapi"
+
+
+class StockCatalogResponse(BaseModel):
+    quote_type: str
+    items: list[StockCatalogItem] = Field(default_factory=list)
+    count: int
+    total: int
+    sectors: list[str] = Field(default_factory=list)
+    provider: str = "brapi"
+
+
 class StockMarketStats(BaseModel):
     open: float | None = None
     day_high: float | None = None

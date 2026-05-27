@@ -10,6 +10,7 @@ from app.clients.brapi.models import (
     StockFundamentalHistoryResponse,
     StockCompareResponse,
     StockPerformanceResponse,
+    StockCatalogResponse,
 )
 from app.clients.bolsai.models import FiiCandlesResponse
 from app.config import settings
@@ -55,6 +56,8 @@ class QuoteService:
         self._performance_cache: TtlCache[StockPerformanceResponse] = TtlCache(
             settings.quote_cache_ttl_seconds,
         )
+        catalog_ttl = settings.quote_cache_ttl_seconds * 24
+        self._catalog_cache: TtlCache[StockCatalogResponse] = TtlCache(catalog_ttl)
 
     @staticmethod
     def provider() -> DataProvider:
@@ -115,7 +118,47 @@ class QuoteService:
         ][:limit]
 
         result = MarketQuoteListResponse(items=filtered, count=len(filtered))
+        if not filtered and len(q) >= 2:
+            result = await self._search_catalog(q, limit=limit)
         self._list_cache.set(cache_key, result)
+        return result
+
+    async def _search_catalog(self, query: str, *, limit: int) -> MarketQuoteListResponse:
+        lowered = query.lower()
+        items: list[MarketQuote] = []
+        seen: set[str] = set()
+
+        for slug in ("acoes_br", "bdr", "etf"):
+            catalog = await self.get_stock_catalog(slug)
+            for entry in catalog.items:
+                if entry.symbol in seen:
+                    continue
+                haystack = f"{entry.symbol} {entry.name}".lower()
+                if lowered not in haystack:
+                    continue
+                seen.add(entry.symbol)
+                items.append(
+                    MarketQuote(
+                        symbol=entry.symbol,
+                        name=entry.name,
+                        price=0,
+                        change_percent=0,
+                        category=entry.category,
+                    )
+                )
+                if len(items) >= limit:
+                    return MarketQuoteListResponse(items=items, count=len(items))
+
+        return MarketQuoteListResponse(items=items, count=len(items))
+
+    async def get_stock_catalog(self, category_slug: str) -> StockCatalogResponse:
+        cache_key = f"catalog:{category_slug}"
+        cached = self._catalog_cache.get(cache_key)
+        if cached:
+            return cached
+
+        result = await self._client.load_stock_catalog(category_slug)
+        self._catalog_cache.set(cache_key, result)
         return result
 
     async def list_by_category(

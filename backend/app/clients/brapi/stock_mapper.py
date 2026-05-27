@@ -26,6 +26,8 @@ from app.clients.brapi.models import (
     StockCompareItem,
     StockScreenerItem,
     StockScreenerResponse,
+    StockCatalogItem,
+    StockCatalogResponse,
 )
 
 STOCK_DETAIL_MODULES = "summaryProfile,financialData,defaultKeyStatistics"
@@ -63,6 +65,26 @@ def normalize_sort_by(sort_by: str) -> str:
     if normalized in VALID_SORT_BY:
         return normalized
     return "volume"
+
+
+def map_catalog_item(item: dict, *, target_class: AssetClass | None = None) -> StockCatalogItem | None:
+    symbol = str(item.get("stock") or "").upper().strip()
+    if not symbol:
+        return None
+
+    asset_class = infer_category(symbol, item.get("type"))
+    if asset_class == AssetClass.FII:
+        return None
+    if target_class is not None and asset_class != target_class:
+        return None
+
+    return StockCatalogItem(
+        symbol=symbol,
+        name=item.get("name") or symbol,
+        category=category_to_slug(asset_class),
+        sector=item.get("sector"),
+        logo_url=item.get("logo"),
+    )
 
 
 def map_screener_item(item: dict) -> StockScreenerItem:

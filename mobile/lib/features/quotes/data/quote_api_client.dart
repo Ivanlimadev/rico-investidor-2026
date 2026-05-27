@@ -1,4 +1,5 @@
 import 'package:rico_investidor/core/network/api_client.dart';
+import 'package:rico_investidor/features/quotes/models/stock_catalog.dart';
 import 'package:rico_investidor/features/quotes/models/stock_compare.dart';
 import 'package:rico_investidor/features/quotes/models/stock_financials.dart';
 import 'package:rico_investidor/features/quotes/models/stock_fundamental_history.dart';
@@ -180,6 +181,14 @@ class QuoteApiClient {
     return _client.getJson(
       '/v1/quotes/featured',
       fromJson: QuoteListResponse.fromJson,
+    );
+  }
+
+  Future<StockCatalogResponseDto> getCatalog(String categorySlug) {
+    return _client.getJson(
+      '/v1/quotes/catalog',
+      query: {'category': categorySlug},
+      fromJson: StockCatalogResponseDto.fromJson,
     );
   }
 

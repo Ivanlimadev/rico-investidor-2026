@@ -42,6 +42,14 @@ async def list_market_quotes(
     return await quote_service.list_by_category(category_slug, limit=limit, page=page)
 
 
+@router.get("/catalog")
+async def get_stock_catalog(
+    category: str = Query(default="acoes_br", pattern="^(acoes_br|bdr|etf)$"),
+):
+    """Catálogo B3 cacheado — símbolos, nomes e setores para busca offline."""
+    return await quote_service.get_stock_catalog(category)
+
+
 @router.get("/screener")
 async def screener_quotes(
     sector: str | None = Query(default=None, max_length=80),

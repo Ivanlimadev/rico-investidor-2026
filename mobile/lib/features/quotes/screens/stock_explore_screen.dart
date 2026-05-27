@@ -26,11 +26,18 @@ class StockExploreScreen extends StatefulWidget {
 }
 
 class _StockExploreScreenState extends State<StockExploreScreen> {
+  static const _pageSize = 30;
+
   late String _presetId;
   late List<StockScreenerPreset> _presets;
   List<StockScreenerItemDto> _items = [];
+  List<String> _sectors = [];
+  String? _selectedSector;
+  int _page = 1;
   int _total = 0;
+  int _totalPages = 1;
   bool _loading = true;
+  bool _loadingMore = false;
   String? _error;
 
   @override
@@ -38,7 +45,7 @@ class _StockExploreScreenState extends State<StockExploreScreen> {
     super.initState();
     _presets = presetsForCategory(_categorySlug);
     _presetId = _presets.first.id;
-    _load();
+    _load(reset: true);
   }
 
   String get _categorySlug {
@@ -49,28 +56,70 @@ class _StockExploreScreenState extends State<StockExploreScreen> {
     };
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  StockScreenerPreset get _activePreset => _presets.firstWhere((p) => p.id == _presetId);
 
-    final preset = _presets.firstWhere((p) => p.id == _presetId);
-    try {
-      final response = await widget.repository.screener(preset.toQuery());
-      if (!mounted) return;
+  bool get _canLoadMore => _page < _totalPages && !_loading && !_loadingMore;
+
+  Future<void> _load({required bool reset}) async {
+    if (reset) {
       setState(() {
-        _items = response.items;
+        _loading = true;
+        _error = null;
+        _page = 1;
+        _items = [];
+      });
+    } else {
+      setState(() => _loadingMore = true);
+    }
+
+    final preset = _activePreset;
+    final page = reset ? 1 : _page + 1;
+
+    try {
+      final response = await widget.repository.screener(
+        preset.toQuery(
+          limit: _pageSize,
+          page: page,
+          sectorOverride: _selectedSector,
+        ),
+      );
+      if (!mounted) return;
+
+      setState(() {
+        if (reset) {
+          _items = response.items;
+          if (response.sectors.isNotEmpty) {
+            _sectors = response.sectors;
+          }
+        } else {
+          _items = [..._items, ...response.items];
+        }
+        _page = response.page;
         _total = response.total ?? response.count;
+        _totalPages = response.totalPages ?? 1;
         _loading = false;
+        _loadingMore = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = e.toString();
         _loading = false;
+        _loadingMore = false;
       });
     }
+  }
+
+  void _selectPreset(String presetId) {
+    if (_presetId == presetId) return;
+    setState(() => _presetId = presetId);
+    _load(reset: true);
+  }
+
+  void _selectSector(String? sector) {
+    if (_selectedSector == sector) return;
+    setState(() => _selectedSector = sector);
+    _load(reset: true);
   }
 
   @override
@@ -95,18 +144,40 @@ class _StockExploreScreenState extends State<StockExploreScreen> {
                 return FilterChip(
                   label: Text(preset.label),
                   selected: _presetId == preset.id,
-                  onSelected: (_) {
-                    setState(() => _presetId = preset.id);
-                    _load();
-                  },
+                  onSelected: (_) => _selectPreset(preset.id),
                 );
               },
             ),
           ),
+          if (_sectors.isNotEmpty)
+            SizedBox(
+              height: 44,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+                itemCount: _sectors.length + 1,
+                separatorBuilder: (context, index) => const SizedBox(width: 8),
+                itemBuilder: (context, index) {
+                  if (index == 0) {
+                    return FilterChip(
+                      label: const Text('Todos setores'),
+                      selected: _selectedSector == null,
+                      onSelected: (_) => _selectSector(null),
+                    );
+                  }
+                  final sector = _sectors[index - 1];
+                  return FilterChip(
+                    label: Text(sectorLabel(sector)),
+                    selected: _selectedSector == sector,
+                    onSelected: (_) => _selectSector(sector),
+                  );
+                },
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: Text(
-              '$_total ativos · Brapi',
+              '$_total ativos · página $_page/$_totalPages · Brapi',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
@@ -130,9 +201,26 @@ class _StockExploreScreenState extends State<StockExploreScreen> {
 
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-      itemCount: _items.length,
+      itemCount: _items.length + (_canLoadMore || _loadingMore ? 1 : 0),
       separatorBuilder: (context, index) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
+        if (index >= _items.length) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: OutlinedButton.icon(
+              onPressed: _loadingMore ? null : () => _load(reset: false),
+              icon: _loadingMore
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.expand_more),
+              label: Text(_loadingMore ? 'Carregando…' : 'Carregar mais'),
+            ),
+          );
+        }
+
         final item = _items[index];
         return StockScreenerTile(
           item: item,

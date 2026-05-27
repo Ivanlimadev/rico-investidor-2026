@@ -24,6 +24,7 @@ from app.clients.brapi.models import (
     StockPerformanceResponse,
     BrazilMacroResponse,
     DictionaryResponse,
+    StockCatalogResponse,
 )
 from app.clients.brapi.stock_mapper import (
     DEFAULT_STOCK_BENCHMARK,
@@ -34,6 +35,7 @@ from app.clients.brapi.stock_mapper import (
     limit_to_range,
     map_market_quote,
     map_market_stats,
+    map_catalog_item,
     map_screener_item,
     map_stock_candles,
     map_stock_dividends,
@@ -59,7 +61,7 @@ from app.clients.bolsai.models import (
 from app.config import settings
 from app.core.exceptions import UpstreamError
 from app.domain.fii.ticker import normalize_fii_ticker
-from app.domain.quotes.category_map import infer_category
+from app.domain.quotes.category_map import BRAPI_LIST_TYPE, CATEGORY_SLUGS, infer_category
 from app.providers.registry import AssetClass
 
 
@@ -193,6 +195,49 @@ class BrapiClient:
         stocks = data.get("stocks") or []
         return [self._map_list_item(item) for item in stocks if item.get("stock")]
 
+    async def load_stock_catalog(self, category_slug: str) -> StockCatalogResponse:
+        asset_class = CATEGORY_SLUGS.get(category_slug)
+        if asset_class is None:
+            raise UpstreamError(f"Categoria inválida: {category_slug}", status_code=400)
+
+        quote_type = BRAPI_LIST_TYPE[asset_class]
+        items: list = []
+        sectors: set[str] = set()
+        page = 1
+        total_count = 0
+
+        while True:
+            data = await self._get(
+                "/quote/list",
+                {
+                    "limit": 100,
+                    "page": page,
+                    "sortBy": "volume",
+                    "sortOrder": "desc",
+                    "type": quote_type,
+                },
+            )
+            total_count = int(data.get("totalCount") or total_count or 0)
+            for raw in data.get("stocks") or []:
+                mapped = map_catalog_item(raw, target_class=asset_class)
+                if mapped is None:
+                    continue
+                items.append(mapped)
+                if mapped.sector:
+                    sectors.add(mapped.sector)
+
+            if not data.get("hasNextPage"):
+                break
+            page += 1
+
+        return StockCatalogResponse(
+            quote_type=quote_type,
+            items=items,
+            count=len(items),
+            total=total_count or len(items),
+            sectors=sorted(sectors),
+        )
+
     async def screener_quotes(
         self,
         *,
@@ -238,6 +283,7 @@ class BrapiClient:
                 sort_by=sort_by,
                 sort_order=sort_order,
                 limit=limit,
+                page=page,
                 min_dividend_yield=min_dividend_yield,
                 max_dividend_yield=max_dividend_yield,
                 min_price_earnings=min_price_earnings,
@@ -290,6 +336,7 @@ class BrapiClient:
         sort_by: str,
         sort_order: str,
         limit: int,
+        page: int,
         min_dividend_yield: float | None,
         max_dividend_yield: float | None,
         min_price_earnings: float | None,
@@ -299,9 +346,9 @@ class BrapiClient:
         min_price_to_book: float | None,
         max_price_to_book: float | None,
     ) -> StockScreenerResponse:
-        pool_limit = min(max(limit * 4, 80), 100)
+        pool_limit = min(max(limit * page * 4, 80), 200)
         params: dict[str, str | int] = {
-            "limit": pool_limit,
+            "limit": min(pool_limit, 100),
             "page": 1,
             "sortBy": "market_cap_basic",
             "sortOrder": "desc",
@@ -351,14 +398,17 @@ class BrapiClient:
             )
         ]
         sorted_items = sort_screener_items(filtered, sort_by=sort_by, sort_order=sort_order)
-        items = sorted_items[:limit]
+        total = len(sorted_items)
+        start = max(page - 1, 0) * limit
+        items = sorted_items[start : start + limit]
+        total_pages = (total + limit - 1) // limit if limit else 1
 
         return StockScreenerResponse(
             items=items,
             count=len(items),
-            total=len(filtered),
-            page=1,
-            total_pages=1 if items else 0,
+            total=total,
+            page=page,
+            total_pages=total_pages or (1 if items else 0),
             sectors=data.get("availableSectors") or [],
         )
 

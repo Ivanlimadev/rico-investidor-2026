@@ -31,14 +31,18 @@ class StockScreenerPreset {
   final double? minPriceToBook;
   final double? maxPriceToBook;
 
-  Map<String, String> toQuery({int limit = 50}) {
+  Map<String, String> toQuery({int limit = 30, int page = 1, String? sectorOverride}) {
     final query = <String, String>{
       'sort_by': sortBy,
       'sort_order': sortOrder,
       'type': type,
       'limit': '$limit',
+      'page': '$page',
     };
-    if (sector != null) query['sector'] = sector!;
+    final effectiveSector = sectorOverride ?? sector;
+    if (effectiveSector != null && effectiveSector.isNotEmpty) {
+      query['sector'] = effectiveSector;
+    }
     void addDouble(String key, double? value) {
       if (value != null) query[key] = '$value';
     }
@@ -106,30 +110,6 @@ const stockScreenerPresets = [
     sortOrder: 'asc',
     maxPriceToBook: 1.5,
   ),
-  StockScreenerPreset(
-    id: 'finance',
-    label: 'Financeiro',
-    sector: 'Finance',
-    sortBy: 'volume',
-  ),
-  StockScreenerPreset(
-    id: 'energy',
-    label: 'Energia',
-    sector: 'Energy Minerals',
-    sortBy: 'volume',
-  ),
-  StockScreenerPreset(
-    id: 'utilities',
-    label: 'Utilidades',
-    sector: 'Utilities',
-    sortBy: 'volume',
-  ),
-  StockScreenerPreset(
-    id: 'retail',
-    label: 'Varejo',
-    sector: 'Retail Trade',
-    sortBy: 'volume',
-  ),
 ];
 
 const bdrScreenerPresets = [
@@ -175,6 +155,14 @@ String sectorLabel(String? sector) {
     'Producer Manufacturing' => 'Indústria',
     'Transportation' => 'Transporte',
     'Communications' => 'Comunicações',
+    'Non-Energy Minerals' => 'Mineração',
+    'Process Industries' => 'Indústria proc.',
+    'Electronic Technology' => 'Eletrônicos',
+    'Consumer Non-Durables' => 'Consumo NC',
+    'Consumer Durables' => 'Consumo dur.',
+    'Distribution Services' => 'Distribuição',
+    'Commercial Services' => 'Serviços com.',
+    'Industrial Services' => 'Serviços ind.',
     _ => sector,
   };
 }

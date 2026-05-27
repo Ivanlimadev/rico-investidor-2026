@@ -1,6 +1,7 @@
 import 'package:rico_investidor/features/fii/utils/fii_quote_chart.dart';
 import 'package:rico_investidor/features/fii/utils/fii_ticker.dart';
 import 'package:rico_investidor/features/quotes/data/quote_api_client.dart';
+import 'package:rico_investidor/features/quotes/models/stock_catalog.dart';
 import 'package:rico_investidor/features/quotes/models/stock_compare.dart';
 import 'package:rico_investidor/features/quotes/models/stock_fundamental_history.dart';
 import 'package:rico_investidor/features/quotes/models/stock_financials.dart';
@@ -17,6 +18,7 @@ class QuoteRepository {
   QuoteRepository({QuoteApiClient? api}) : _api = api ?? QuoteApiClient();
 
   final QuoteApiClient _api;
+  final Map<MarketCategory, List<StockCatalogItemDto>> _catalogByCategory = {};
 
   bool supportsCategory(MarketCategory category) {
     return switch (category) {
@@ -31,8 +33,56 @@ class QuoteRepository {
   }
 
   Future<List<AssetItem>> search(String query, {int limit = 12}) async {
-    final response = await _api.search(query, limit: limit);
-    return response.items.map((e) => e.toAssetItem()).toList();
+    final q = query.trim();
+    if (q.length < 2) return const [];
+
+    try {
+      final response = await _api.search(q, limit: limit);
+      if (response.items.isNotEmpty) {
+        return response.items.map((e) => e.toAssetItem()).toList();
+      }
+    } catch (_) {}
+
+    return _searchCatalog(q, limit: limit);
+  }
+
+  Future<List<StockCatalogItemDto>> loadCatalog(MarketCategory category) async {
+    final cached = _catalogByCategory[category];
+    if (cached != null) return cached;
+
+    final slug = _categorySlug(category);
+    final response = await _api.getCatalog(slug);
+    _catalogByCategory[category] = response.items;
+    return response.items;
+  }
+
+  Future<List<AssetItem>> _searchCatalog(String query, {required int limit}) async {
+    final lower = query.toLowerCase();
+    final results = <AssetItem>[];
+    final seen = <String>{};
+
+    for (final category in [MarketCategory.acoesBr, MarketCategory.bdr, MarketCategory.etf]) {
+      if (!supportsCategory(category)) continue;
+      final catalog = await loadCatalog(category);
+      for (final item in catalog) {
+        if (!seen.add(item.symbol)) continue;
+        final haystack = '${item.symbol} ${item.name}'.toLowerCase();
+        if (haystack.contains(lower)) {
+          results.add(item.toAssetItem());
+          if (results.length >= limit) return results;
+        }
+      }
+    }
+
+    return results;
+  }
+
+  String _categorySlug(MarketCategory category) {
+    return switch (category) {
+      MarketCategory.bdr => 'bdr',
+      MarketCategory.etf => 'etf',
+      _ => 'acoes_br',
+    };
   }
 
   Future<List<AssetItem>> listByCategory(MarketCategory category, {int limit = 30}) async {
