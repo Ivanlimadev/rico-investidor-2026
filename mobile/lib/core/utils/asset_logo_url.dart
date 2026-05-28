@@ -43,9 +43,46 @@ String? brapiLogoUrlFor(String symbol) {
   return 'https://icons.brapi.dev/icons/$normalized.svg';
 }
 
-/// Sempre usa a API local; ignora SVG/URLs externas da Brapi.
+/// Ícones raster — mais rápidos que SVG em listas pequenas.
+String cryptoIconPngUrlFor(String symbol) {
+  final slug = symbol.trim().toLowerCase();
+  return 'https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/32@2x/icon/$slug.png';
+}
+
+/// SVG colorido — legado / detalhes grandes.
+String cryptoIconSvgUrlFor(String symbol) {
+  final slug = symbol.trim().toLowerCase();
+  return 'https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/svg/color/$slug.svg';
+}
+
+bool isCryptoIconUrl(String? url) {
+  if (url == null || url.isEmpty) return false;
+  return url.contains('cryptocurrency-icons');
+}
+
+bool looksLikeCryptoSymbol(String symbol) {
+  final normalized = symbol.trim().toUpperCase();
+  if (normalized.contains('-') || normalized.contains('/')) return false;
+  if (normalized.length < 2 || normalized.length > 12) return false;
+  if (RegExp(r'\d$').hasMatch(normalized) && normalized.length >= 5) return false;
+  return RegExp(r'^[A-Z0-9]+$').hasMatch(normalized);
+}
+
+/// Sempre usa a API local para B3/FII; cripto usa CDN de ícones (SVG).
 String? resolveAssetLogoUrl(String symbol, String? logoUrl, {required bool isFii}) {
-  return assetLogoApiUrl(symbol, isFii: isFii);
+  if (isFii) {
+    return assetLogoApiUrl(symbol, isFii: true);
+  }
+
+  if (logoUrl != null && logoUrl.isNotEmpty && isCryptoIconUrl(logoUrl)) {
+    return cryptoIconPngUrlFor(symbol);
+  }
+
+  if (looksLikeCryptoSymbol(symbol)) {
+    return cryptoIconPngUrlFor(symbol);
+  }
+
+  return assetLogoApiUrl(symbol, isFii: false);
 }
 
 bool isSvgLogoUrl(String? url) {

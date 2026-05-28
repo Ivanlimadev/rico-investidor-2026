@@ -57,6 +57,12 @@ async def crypto_stream_info():
     }
 
 
+@router.get("/movers")
+async def crypto_daily_movers(limit: int = Query(default=5, ge=1, le=10)):
+    """Maiores altas e baixas do dia entre pares USDT com liquidez."""
+    return await crypto_service.get_daily_movers(limit=limit)
+
+
 @router.get("/{symbol}")
 async def get_crypto_quote(symbol: str):
     """Cotação 24h de uma criptomoeda."""

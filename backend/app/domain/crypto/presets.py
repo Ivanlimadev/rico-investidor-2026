@@ -98,6 +98,13 @@ CRYPTO_EXPLORE_GROUPS: dict[str, tuple[str, ...] | None] = {
 QUOTE_ASSET = "USDT"
 DISPLAY_CURRENCY = "USD"
 
+MOVER_STABLECOINS: frozenset[str] = frozenset(
+    {"USDT", "USDC", "FDUSD", "TUSD", "USDP", "DAI", "EUR", "AEUR", "BUSD"}
+)
+MIN_MOVER_QUOTE_VOLUME_USDT = 500_000
+DEFAULT_MOVER_LIMIT = 5
+MAX_MOVER_LIMIT = 10
+
 VALID_KLINE_INTERVALS: frozenset[str] = frozenset({"1m", "5m", "15m", "1h", "4h", "1d", "1w"})
 
 # preset_id -> (interval, limit)

@@ -17,47 +17,61 @@ enum AssetLogoStyle {
 
 final _svgCache = <String, String>{};
 final _rasterCache = <String, Uint8List>{};
-const _networkTimeout = Duration(seconds: 8);
-const _svgTimeout = Duration(seconds: 12);
-const _maxLogoCacheEntries = 128;
+final _inFlightSvg = <String, Future<String?>>{};
+final _inFlightRaster = <String, Future<Uint8List?>>{};
+const _networkTimeout = Duration(seconds: 6);
+const _svgTimeout = Duration(seconds: 8);
+const _maxLogoCacheEntries = 512;
 
 void _trimLogoCache<K, V>(Map<K, V> cache) {
   if (cache.length <= _maxLogoCacheEntries) return;
   cache.remove(cache.keys.first);
 }
 
-Future<String?> loadAssetLogoSvg(String url) async {
+Future<String?> loadAssetLogoSvg(String url) {
   final cached = _svgCache[url];
-  if (cached != null) return cached;
+  if (cached != null) return Future.value(cached);
 
-  try {
-    final response = await http.get(Uri.parse(url)).timeout(_svgTimeout);
-    final body = response.body;
-    if (response.statusCode == 200 && body.contains('<svg')) {
-      _svgCache[url] = body;
-      _trimLogoCache(_svgCache);
-      return body;
-    }
-  } catch (_) {}
-
-  return null;
+  return _inFlightSvg.putIfAbsent(url, () async {
+    try {
+      final response = await http.get(Uri.parse(url)).timeout(_svgTimeout);
+      final body = response.body;
+      if (response.statusCode == 200 && body.contains('<svg')) {
+        _svgCache[url] = body;
+        _trimLogoCache(_svgCache);
+        return body;
+      }
+    } catch (_) {}
+    return null;
+  }).whenComplete(() => _inFlightSvg.remove(url));
 }
 
-Future<Uint8List?> loadAssetLogoRaster(String url) async {
+Future<Uint8List?> loadAssetLogoRaster(String url) {
   final cached = _rasterCache[url];
-  if (cached != null) return cached;
+  if (cached != null) return Future.value(cached);
 
-  try {
-    final response = await http.get(Uri.parse(url)).timeout(_networkTimeout);
-    final bytes = response.bodyBytes;
-    if (response.statusCode == 200 && bytes.length > 64) {
-      _rasterCache[url] = bytes;
-      _trimLogoCache(_rasterCache);
-      return bytes;
-    }
-  } catch (_) {}
+  return _inFlightRaster.putIfAbsent(url, () async {
+    try {
+      final response = await http.get(Uri.parse(url)).timeout(_networkTimeout);
+      final bytes = response.bodyBytes;
+      if (response.statusCode == 200 && bytes.length > 64) {
+        _rasterCache[url] = bytes;
+        _trimLogoCache(_rasterCache);
+        return bytes;
+      }
+    } catch (_) {}
+    return null;
+  }).whenComplete(() => _inFlightRaster.remove(url));
+}
 
-  return null;
+Future<void> precacheCryptoLogos(Iterable<String> symbols) async {
+  final urls = symbols
+      .where(looksLikeCryptoSymbol)
+      .map(cryptoIconPngUrlFor)
+      .toSet();
+  if (urls.isEmpty) return;
+
+  await Future.wait(urls.map(loadAssetLogoRaster), eagerError: false);
 }
 
 class AssetLogo extends StatelessWidget {
@@ -96,6 +110,23 @@ class AssetLogo extends StatelessWidget {
 
     final resolvedUrl = resolveAssetLogoUrl(symbol, logoUrl, isFii: isFii);
 
+    if (looksLikeCryptoSymbol(symbol) &&
+        resolvedUrl != null &&
+        isRasterLogoUrl(resolvedUrl)) {
+      return SizedBox(
+        width: size,
+        height: size,
+        child: _CryptoNetworkLogo(
+          url: resolvedUrl,
+          symbol: symbol,
+          size: size,
+          borderRadius: borderRadius,
+          isFii: isFii,
+          style: style,
+        ),
+      );
+    }
+
     return SizedBox(
       width: size,
       height: size,
@@ -122,6 +153,70 @@ class AssetLogo extends StatelessWidget {
 bool _looksLikeFii(String symbol) {
   final normalized = symbol.trim().toUpperCase();
   return RegExp(r'^[A-Z]{4}\d{2}$').hasMatch(normalized);
+}
+
+class _CryptoNetworkLogo extends StatelessWidget {
+  const _CryptoNetworkLogo({
+    required this.url,
+    required this.symbol,
+    required this.size,
+    required this.borderRadius,
+    required this.isFii,
+    required this.style,
+  });
+
+  final String url;
+  final String symbol;
+  final double size;
+  final double borderRadius;
+  final bool isFii;
+  final AssetLogoStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final cacheSize = (size * dpr).round().clamp(32, 128);
+    final vibrant = style == AssetLogoStyle.vibrant;
+    final innerSize = vibrant ? size : size * 0.84;
+
+    Widget placeholder({bool loading = false}) {
+      return _TickerFallback(
+        symbol: symbol,
+        size: size,
+        borderRadius: borderRadius,
+        isFii: isFii,
+        style: style,
+        loading: loading,
+      );
+    }
+
+    final image = Image.network(
+      url,
+      width: innerSize,
+      height: innerSize,
+      fit: vibrant ? BoxFit.cover : BoxFit.contain,
+      cacheWidth: cacheSize,
+      cacheHeight: cacheSize,
+      gaplessPlayback: true,
+      filterQuality: FilterQuality.low,
+      errorBuilder: (context, error, stackTrace) => placeholder(),
+      frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+        if (wasSynchronouslyLoaded || frame != null) return child;
+        return placeholder();
+      },
+    );
+
+    return _LogoImageShell(
+      symbol: symbol,
+      size: size,
+      borderRadius: borderRadius,
+      isFii: isFii,
+      style: style,
+      child: vibrant
+          ? image
+          : Padding(padding: EdgeInsets.all(size * 0.08), child: image),
+    );
+  }
 }
 
 class _BundledAssetLogo extends StatelessWidget {
@@ -229,6 +324,32 @@ class _RemoteAssetLogoState extends State<_RemoteAssetLogo> {
     );
   }
 
+  Widget _buildCryptoPng() {
+    final pngUrl = cryptoIconPngUrlFor(widget.symbol);
+    return FutureBuilder<Uint8List?>(
+      future: loadAssetLogoRaster(pngUrl),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return _fallback(loading: true);
+        }
+
+        final bytes = snapshot.data;
+        if (bytes != null) {
+          return _LogoImageShell(
+            symbol: widget.symbol,
+            size: widget.size,
+            borderRadius: widget.borderRadius,
+            isFii: widget.isFii,
+            style: widget.style,
+            image: MemoryImage(bytes),
+          );
+        }
+
+        return _fallback();
+      },
+    );
+  }
+
   Widget _buildBundled() {
     final assetPath = localLogoAssetPath(widget.symbol);
     if (assetPath == null) return _fallback();
@@ -300,6 +421,10 @@ class _RemoteAssetLogoState extends State<_RemoteAssetLogo> {
             return _buildSvg(svg);
           }
 
+          if (looksLikeCryptoSymbol(widget.symbol)) {
+            return _buildCryptoPng();
+          }
+
           return _buildBundled();
         },
       );
@@ -345,7 +470,13 @@ class _LogoImageShell extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final logoBackground = isDark ? const Color(0xFF232B36) : const Color(0xFFF4F6F8);
     final logoBorder = isDark ? Colors.white.withValues(alpha: 0.1) : Colors.black.withValues(alpha: 0.08);
-    final glowColor = (isFii ? MarketCategory.fiis : MarketCategory.acoesBr).theme.accentColor;
+    final glowColor = (isFii
+            ? MarketCategory.fiis
+            : looksLikeCryptoSymbol(symbol)
+                ? MarketCategory.cripto
+                : MarketCategory.acoesBr)
+        .theme
+        .accentColor;
 
     final content = child ??
         Image(
@@ -469,7 +600,11 @@ class _TickerFallback extends StatelessWidget {
   final AssetLogoStyle style;
   final bool loading;
 
-  MarketCategory get _category => isFii ? MarketCategory.fiis : MarketCategory.acoesBr;
+  MarketCategory get _category {
+    if (isFii) return MarketCategory.fiis;
+    if (looksLikeCryptoSymbol(symbol)) return MarketCategory.cripto;
+    return MarketCategory.acoesBr;
+  }
 
   String get _label {
     final normalized = symbol.trim().toUpperCase();

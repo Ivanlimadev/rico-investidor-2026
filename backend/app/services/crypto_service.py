@@ -13,11 +13,18 @@ from app.domain.crypto.models import (
     CryptoHistoryResponse,
     CryptoListResponse,
     CryptoMarketSnapshot,
+    CryptoMoversResponse,
     CryptoOrderBook,
     CryptoRecentTradesResponse,
     CryptoQuote,
 )
-from app.domain.crypto.presets import CRYPTO_EXPLORE_GROUPS, FEATURED_CRYPTO_SYMBOLS
+from app.domain.crypto.presets import (
+    CRYPTO_EXPLORE_GROUPS,
+    FEATURED_CRYPTO_SYMBOLS,
+    MAX_MOVER_LIMIT,
+    MIN_MOVER_QUOTE_VOLUME_USDT,
+    MOVER_STABLECOINS,
+)
 
 
 class CryptoService:
@@ -27,6 +34,7 @@ class CryptoService:
         self._rates_cache: TtlCache[CryptoListResponse] = TtlCache(ttl)
         self._available_cache: TtlCache[CryptoAvailableResponse] = TtlCache(ttl * 4)
         self._history_cache: TtlCache[CryptoHistoryResponse] = TtlCache(ttl * 2)
+        self._movers_cache: TtlCache[CryptoMoversResponse] = TtlCache(ttl)
 
     def _order_quotes(self, symbols: list[str], quotes: CryptoListResponse) -> list[CryptoQuote]:
         by_symbol = {item.symbol: item for item in quotes.items}
@@ -58,6 +66,39 @@ class CryptoService:
     async def count_coins(self) -> int:
         available = await self.list_available()
         return available.count
+
+    async def get_daily_movers(self, *, limit: int = 5) -> CryptoMoversResponse:
+        safe_limit = max(1, min(limit, MAX_MOVER_LIMIT))
+        cache_key = f"movers:{safe_limit}"
+        cached = self._movers_cache.get(cache_key)
+        if cached:
+            return cached
+
+        all_rates = await self._client.get_all_usdt_tickers()
+        eligible = [
+            quote
+            for quote in all_rates.items
+            if quote.symbol not in MOVER_STABLECOINS
+            and (quote.volume or 0) >= MIN_MOVER_QUOTE_VOLUME_USDT
+        ]
+        gainers = sorted(
+            [quote for quote in eligible if quote.change_percent > 0],
+            key=lambda quote: quote.change_percent,
+            reverse=True,
+        )[:safe_limit]
+        losers = sorted(
+            [quote for quote in eligible if quote.change_percent < 0],
+            key=lambda quote: quote.change_percent,
+        )[:safe_limit]
+
+        result = CryptoMoversResponse(
+            gainers=gainers,
+            losers=losers,
+            limit=safe_limit,
+            provider="binance",
+        )
+        self._movers_cache.set(cache_key, result)
+        return result
 
     async def explore(
         self,

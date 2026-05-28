@@ -49,6 +49,7 @@ class BinanceClient:
         self._base_url = (base_url or settings.binance_base_url).rstrip("/")
         ttl = settings.quote_cache_ttl_seconds * 4
         self._usdt_pairs_cache: TtlCache[list[str]] = TtlCache(ttl)
+        self._all_tickers_cache: TtlCache[CryptoListResponse] = TtlCache(settings.quote_cache_ttl_seconds)
 
     async def _get(self, path: str, *, params: dict | None = None) -> object:
         url = f"{self._base_url}/{path.lstrip('/')}"
@@ -111,6 +112,25 @@ class BinanceClient:
             if query in coin.lower() or query in CRYPTO_NAMES.get(coin, "").lower()
         ]
         return CryptoAvailableResponse(coins=filtered, count=len(filtered), provider="binance")
+
+    async def get_all_usdt_tickers(self, *, currency: str = DISPLAY_CURRENCY) -> CryptoListResponse:
+        cached = self._all_tickers_cache.get("all")
+        if cached is not None:
+            return cached
+
+        data = await self._get("/api/v3/ticker/24hr")
+        if not isinstance(data, list):
+            raise UpstreamError("Resposta Binance inválida", status_code=502)
+
+        allowed = set(await self._list_usdt_pairs())
+        filtered = [
+            row
+            for row in data
+            if isinstance(row, dict) and str(row.get("symbol") or "") in allowed
+        ]
+        result = map_ticker_24hr_batch(filtered, currency=currency)
+        self._all_tickers_cache.set("all", result)
+        return result
 
     async def get_crypto_rates(self, coins: list[str], *, currency: str = DISPLAY_CURRENCY) -> CryptoListResponse:
         normalized = [normalize_crypto_symbol(coin) for coin in coins if coin.strip()]

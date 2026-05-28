@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/widgets/asset_card_header.dart';
+import 'package:rico_investidor/core/widgets/asset_logo.dart';
 import 'package:rico_investidor/features/crypto/data/crypto_mini_ticker_stream.dart';
 import 'package:rico_investidor/features/crypto/data/crypto_repository.dart';
 import 'package:rico_investidor/features/crypto/models/crypto_models.dart';
@@ -110,6 +111,7 @@ class _CryptoExploreScreenState extends State<CryptoExploreScreen> {
         _loading = false;
         _loadingMore = false;
       });
+      precacheCryptoLogos(response.items.map((item) => item.symbol));
       _syncTicker();
     } catch (e) {
       if (!mounted) return;

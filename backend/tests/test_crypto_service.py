@@ -68,3 +68,28 @@ def test_explore_filters_major_group():
 
     assert result.total == 2
     assert {item.symbol for item in result.items} == {"BTC", "ETH"}
+
+
+def test_get_daily_movers_returns_gainers_and_losers():
+    client = AsyncMock()
+    client.get_all_usdt_tickers = AsyncMock(
+        return_value=CryptoListResponse(
+            items=[
+                CryptoQuote(symbol="BTC", name="Bitcoin", price=100.0, change_percent=5.0, volume=1_000_000, provider="binance"),
+                CryptoQuote(symbol="ETH", name="Ethereum", price=50.0, change_percent=2.0, volume=900_000, provider="binance"),
+                CryptoQuote(symbol="DOGE", name="Dogecoin", price=1.0, change_percent=-8.0, volume=800_000, provider="binance"),
+                CryptoQuote(symbol="SHIB", name="Shiba Inu", price=0.1, change_percent=-3.0, volume=700_000, provider="binance"),
+                CryptoQuote(symbol="USDC", name="USD Coin", price=1.0, change_percent=0.1, volume=5_000_000, provider="binance"),
+                CryptoQuote(symbol="PEPE", name="Pepe", price=0.01, change_percent=10.0, volume=100, provider="binance"),
+            ],
+            count=6,
+            provider="binance",
+        )
+    )
+
+    service = CryptoService(client=client)
+    result = asyncio.run(service.get_daily_movers(limit=2))
+
+    assert [item.symbol for item in result.gainers] == ["BTC", "ETH"]
+    assert [item.symbol for item in result.losers] == ["DOGE", "SHIB"]
+    assert result.limit == 2

@@ -106,3 +106,10 @@ class CryptoMarketSnapshot(BaseModel):
     order_book: CryptoOrderBook
     trades: CryptoRecentTradesResponse
     provider: str = "binance"
+
+
+class CryptoMoversResponse(BaseModel):
+    gainers: list[CryptoQuote]
+    losers: list[CryptoQuote]
+    limit: int
+    provider: str = "binance"

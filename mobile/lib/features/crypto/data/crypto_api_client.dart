@@ -74,4 +74,12 @@ class CryptoApiClient {
       fromJson: CryptoExploreResponseDto.fromJson,
     );
   }
+
+  Future<CryptoMoversResponseDto> getMovers({int limit = 5}) {
+    return _client.getJson(
+      '/v1/crypto/movers',
+      query: {'limit': '$limit'},
+      fromJson: CryptoMoversResponseDto.fromJson,
+    );
+  }
 }

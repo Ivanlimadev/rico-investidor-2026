@@ -275,6 +275,31 @@ class CryptoListResponseDto {
   }
 }
 
+class CryptoMoversResponseDto {
+  const CryptoMoversResponseDto({
+    required this.gainers,
+    required this.losers,
+    required this.limit,
+  });
+
+  final List<CryptoQuoteDto> gainers;
+  final List<CryptoQuoteDto> losers;
+  final int limit;
+
+  factory CryptoMoversResponseDto.fromJson(Map<String, dynamic> json) {
+    List<CryptoQuoteDto> quotes(String key) {
+      final raw = json[key] as List<dynamic>? ?? const [];
+      return raw.map((item) => CryptoQuoteDto.fromJson(item as Map<String, dynamic>)).toList();
+    }
+
+    return CryptoMoversResponseDto(
+      gainers: quotes('gainers'),
+      losers: quotes('losers'),
+      limit: json['limit'] as int? ?? quotes('gainers').length,
+    );
+  }
+}
+
 class CryptoHistoryResponseDto {
   const CryptoHistoryResponseDto({
     required this.symbol,

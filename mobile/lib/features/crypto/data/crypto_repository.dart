@@ -8,6 +8,7 @@ class CryptoRepository {
 
   final CryptoApiClient _api;
   final _listCache = SessionCache<List<CryptoQuoteDto>>(ttl: const Duration(minutes: 5));
+  final _moversCache = SessionCache<CryptoMoversResponseDto>(ttl: const Duration(minutes: 5));
   final Map<String, SessionCache<CryptoDetailDto>> _detailCache = {};
 
   SessionCache<CryptoDetailDto> _cacheFor(String symbol) {
@@ -71,6 +72,15 @@ class CryptoRepository {
   Future<List<CryptoQuoteDto>> searchQuotes(String query, {int limit = 8}) async {
     final response = await explore(search: query, limit: limit);
     return response.items;
+  }
+
+  Future<CryptoMoversResponseDto> getMovers({int limit = 5}) async {
+    final cached = _moversCache.get();
+    if (cached != null) return cached;
+
+    final response = await _api.getMovers(limit: limit);
+    _moversCache.set(response);
+    return response;
   }
 }
 
