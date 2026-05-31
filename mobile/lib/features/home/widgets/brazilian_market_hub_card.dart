@@ -17,9 +17,7 @@ class BrazilianMarketHubCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final countLabel = totalAssets != null && totalAssets! > 0
-        ? '$totalAssets ativos · $categoryCount categorias'
-        : '$categoryCount categorias · B3 e mercado local';
+    const countLabel = 'B3 e mercado local';
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),

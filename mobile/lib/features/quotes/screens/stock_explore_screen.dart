@@ -41,7 +41,6 @@ class _StockExploreScreenState extends State<StockExploreScreen> {
   List<String> _sectors = [];
   String? _selectedSector;
   int _page = 1;
-  int _total = 0;
   int _totalPages = 1;
   bool _loading = true;
   bool _loadingMore = false;
@@ -122,7 +121,6 @@ class _StockExploreScreenState extends State<StockExploreScreen> {
           _items = [..._items, ...response.items];
         }
         _page = response.page;
-        _total = response.total ?? response.count;
         _totalPages = response.totalPages ?? 1;
         _loading = false;
         _loadingMore = false;
@@ -222,7 +220,7 @@ class _StockExploreScreenState extends State<StockExploreScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: Text(
-              '$_total ativos · página $_page/$_totalPages · Brapi',
+              'Página $_page/$_totalPages · Brapi',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),

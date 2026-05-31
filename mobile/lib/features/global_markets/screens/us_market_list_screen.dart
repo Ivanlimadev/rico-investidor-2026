@@ -163,8 +163,6 @@ class _UsMarketListScreenState extends State<UsMarketListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final subtitle = _total != null ? '${_total!} ativos · NASDAQ, NYSE e Arca' : 'NASDAQ, NYSE e Arca';
-
     return Scaffold(
       appBar: AppBar(
         title: Column(
@@ -172,7 +170,7 @@ class _UsMarketListScreenState extends State<UsMarketListScreen> {
           children: [
             Text(widget.category.title),
             Text(
-              subtitle,
+              'NASDAQ, NYSE e Arca',
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
                   ),

@@ -17,9 +17,7 @@ class UsMarketHubCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final countLabel = totalAssets != null && totalAssets! > 0
-        ? '$totalAssets em destaque · $categoryCount categorias'
-        : '$categoryCount categorias · NYSE e NASDAQ';
+    const countLabel = 'NYSE e NASDAQ';
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),

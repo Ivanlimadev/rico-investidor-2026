@@ -142,10 +142,6 @@ class _CountryMarketCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final exchangeLabel = group.exchangeCount == 1
-        ? '1 bolsa'
-        : '${group.exchangeCount} bolsas';
-
     return Card(
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -157,21 +153,11 @@ class _CountryMarketCard extends StatelessWidget {
               CountryFlagImage(countryCode: group.countryCode, size: 32),
               const SizedBox(width: 14),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      group.countryName,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w800,
-                          ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      exchangeLabel,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
+                child: Text(
+                  group.countryName,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
                 ),
               ),
               Icon(

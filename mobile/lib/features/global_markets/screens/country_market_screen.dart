@@ -136,10 +136,6 @@ class _CountryMarketScreenState extends State<CountryMarketScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final subtitle = widget.exchangeCount != null && widget.exchangeCount! > 0
-        ? '${widget.exchangeCount} bolsas · ${widget.countryCode}'
-        : widget.countryCode;
-
     return Scaffold(
       appBar: AppBar(
         title: Row(
@@ -147,18 +143,7 @@ class _CountryMarketScreenState extends State<CountryMarketScreen> {
             CountryFlagImage(countryCode: widget.countryCode, size: 22),
             const SizedBox(width: 10),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(widget.countryName),
-                  Text(
-                    subtitle,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
-                        ),
-                  ),
-                ],
-              ),
+              child: Text(widget.countryName),
             ),
           ],
         ),

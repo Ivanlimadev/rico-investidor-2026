@@ -92,16 +92,13 @@ class _CountryHubScreenState extends State<CountryHubScreen> {
     );
   }
 
-  List<_CountryHubAction> _quickActions(CountryHubResponseDto data) {
+  List<_CountryHubAction> _quickActions() {
     final code = widget.countryCode.toUpperCase();
-    final totalLabel = data.totalMarket != null && data.totalMarket! > 0
-        ? '${data.totalMarket} ativos'
-        : 'Ver todos';
 
     final actions = <_CountryHubAction>[
       _CountryHubAction(
         title: 'Ranking completo',
-        subtitle: totalLabel,
+        subtitle: 'Ver todos',
         icon: Icons.leaderboard_outlined,
         onTap: _openRanking,
       ),
@@ -129,10 +126,6 @@ class _CountryHubScreenState extends State<CountryHubScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final subtitle = widget.exchangeCount != null && widget.exchangeCount! > 0
-        ? '${widget.exchangeCount} bolsas · ${widget.countryCode}'
-        : widget.countryCode;
-
     return Scaffold(
       appBar: AppBar(
         title: Row(
@@ -140,18 +133,7 @@ class _CountryHubScreenState extends State<CountryHubScreen> {
             CountryFlagImage(countryCode: widget.countryCode, size: 22),
             const SizedBox(width: 10),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(widget.countryName),
-                  Text(
-                    subtitle,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
-                        ),
-                  ),
-                ],
-              ),
+              child: Text(widget.countryName),
             ),
           ],
         ),
@@ -180,7 +162,7 @@ class _CountryHubScreenState extends State<CountryHubScreen> {
           }
 
           final data = snapshot.data!;
-          final actions = _quickActions(data);
+          final actions = _quickActions();
 
           return RefreshIndicator(
             onRefresh: _refresh,

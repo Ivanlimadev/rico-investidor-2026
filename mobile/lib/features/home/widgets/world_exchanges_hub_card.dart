@@ -15,9 +15,7 @@ class WorldExchangesHubCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final countLabel = totalExchanges != null && totalExchanges! > 0
-        ? '$totalExchanges bolsas · por país'
-        : 'Explorar por país';
+    const countLabel = 'Explorar por país';
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),

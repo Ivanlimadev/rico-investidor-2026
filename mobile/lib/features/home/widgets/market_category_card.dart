@@ -73,15 +73,17 @@ class MarketCategoryCard extends StatelessWidget {
                     color: const Color(0xFFFFF5EE),
                   ),
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  isDemo ? 'Demo' : '${assetCount ?? 0} ativos',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w600,
-                    color: const Color(0xFFFFE0CC).withValues(alpha: isDemo ? 0.75 : 0.55),
+                if (isDemo) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    'Demo',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w600,
+                      color: const Color(0xFFFFE0CC).withValues(alpha: 0.75),
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ),
