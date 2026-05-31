@@ -9,25 +9,20 @@ from app.domain.crypto.models import (
 from app.services.crypto_service import CryptoService
 
 
-def test_explore_paginates_and_fetches_rates():
+def test_explore_paginates_and_ranks_by_volume():
     client = AsyncMock()
-    client.get_crypto_rates.side_effect = [
-        CryptoListResponse(
+    # O explore monta a página a partir do snapshot 24h e rankeia por volume.
+    client.get_all_usdt_tickers = AsyncMock(
+        return_value=CryptoListResponse(
             items=[
-                CryptoQuote(symbol="BTC", name="Bitcoin", price=377479.0, change_percent=-1.359, provider="binance"),
-                CryptoQuote(symbol="ETH", name="Ethereum", price=19200.0, change_percent=1.2, provider="binance"),
+                CryptoQuote(symbol="DOGE", name="Dogecoin", price=1.5, change_percent=0.5, volume=1_000_000, provider="binance"),
+                CryptoQuote(symbol="BTC", name="Bitcoin", price=377479.0, change_percent=-1.359, volume=3_000_000, provider="binance"),
+                CryptoQuote(symbol="ETH", name="Ethereum", price=19200.0, change_percent=1.2, volume=2_000_000, provider="binance"),
             ],
-            count=2,
+            count=3,
             provider="binance",
-        ),
-        CryptoListResponse(
-            items=[
-                CryptoQuote(symbol="DOGE", name="Dogecoin", price=1.5, change_percent=0.5, provider="binance"),
-            ],
-            count=1,
-            provider="binance",
-        ),
-    ]
+        )
+    )
 
     service = CryptoService(client=client)
     service.list_available = AsyncMock(  # type: ignore[method-assign]
@@ -41,6 +36,7 @@ def test_explore_paginates_and_fetches_rates():
     assert len(page1.items) == 2
     assert page1.items[0].symbol == "BTC"
     assert page1.items[0].price == 377479.0
+    assert page1.items[1].symbol == "ETH"
 
     page2 = asyncio.run(service.explore(page=2, limit=2))
     assert page2.page == 2
@@ -53,13 +49,14 @@ def test_explore_filters_major_group():
     service.list_available = AsyncMock(  # type: ignore[method-assign]
         return_value=CryptoAvailableResponse(coins=["BTC", "ETH", "SHIB"], count=3, provider="binance")
     )
-    service._client.get_crypto_rates = AsyncMock(  # type: ignore[attr-defined]
+    service._client.get_all_usdt_tickers = AsyncMock(  # type: ignore[attr-defined]
         return_value=CryptoListResponse(
             items=[
-                CryptoQuote(symbol="BTC", name="Bitcoin", price=377479.0, provider="binance"),
-                CryptoQuote(symbol="ETH", name="Ethereum", price=19200.0, provider="binance"),
+                CryptoQuote(symbol="BTC", name="Bitcoin", price=377479.0, volume=3_000_000, provider="binance"),
+                CryptoQuote(symbol="ETH", name="Ethereum", price=19200.0, volume=2_000_000, provider="binance"),
+                CryptoQuote(symbol="SHIB", name="Shiba Inu", price=0.1, volume=1_000_000, provider="binance"),
             ],
-            count=2,
+            count=3,
             provider="binance",
         )
     )

@@ -1,3 +1,5 @@
+import 'package:rico_investidor/core/search/asset_search_config.dart';
+import 'package:rico_investidor/core/search/asset_search_ranking.dart';
 import 'package:rico_investidor/features/crypto/data/crypto_repository.dart';
 import 'package:rico_investidor/features/crypto/models/crypto_models.dart';
 import 'package:rico_investidor/features/currency/data/currency_repository.dart';
@@ -12,8 +14,6 @@ import 'package:rico_investidor/features/fii/utils/fii_ticker.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/market_category.dart';
-
-import 'package:rico_investidor/core/search/asset_search_config.dart';
 
 class AssetSearchService {
   AssetSearchService({
@@ -33,34 +33,70 @@ class AssetSearchService {
     final q = query.trim();
     if (q.length < kMinAssetSearchLength) return const [];
 
+    final normalized = q.toUpperCase();
     final seen = <String>{};
     final results = <AssetItem>[];
 
-    await Future.wait([
-      _appendQuoteSearch(q, seen, results),
-      _appendCurrencySearch(q, seen, results),
-      _appendTreasurySearch(q, seen, results),
-      _appendIndicesSearch(q, seen, results),
-      _appendCryptoSearch(q, seen, results),
-      _appendFiiSearch(q, seen, results),
-      _appendUsMarketResults(q, seen, results),
-    ]);
+    if (shouldTryExactSymbolLookup(normalized)) {
+      final exact = await findBySymbolAsync(normalized);
+      if (exact != null && seen.add(exact.symbol)) {
+        results.add(exact);
+      }
+    }
 
-    return results;
+    final tasks = <Future<void>>[];
+
+    tasks.add(_appendCryptoSearch(q, seen, results, limit: 8));
+
+    if (shouldRunB3QuoteSearch(normalized)) {
+      tasks.add(_appendQuoteSearch(q, seen, results, limit: 8));
+    }
+
+    if (looksLikeB3TickerQuery(normalized) ||
+        normalized.endsWith('11') ||
+        q.length >= 3 ||
+        b3TickerRoot(normalized) != null) {
+      tasks.add(_appendFiiSearch(q, seen, results, limit: 8));
+    }
+
+    if (b3TickerRoot(normalized) != null) {
+      tasks.add(_appendB3RootQuoteSearch(q, seen, results, limit: 8));
+    }
+
+    if (_looksLikeUsTicker(normalized) || q.length >= 2) {
+      tasks.add(_appendUsMarketResults(q, seen, results, limit: 6));
+    }
+
+    if (looksLikeCurrencySearchQuery(q)) {
+      tasks.add(_appendCurrencySearch(q, seen, results, limit: 4));
+    }
+
+    if (looksLikeTreasurySearchQuery(q)) {
+      tasks.add(_appendTreasurySearch(q, seen, results, limit: 4));
+    }
+
+    if (looksLikeIndexSearchQuery(normalized)) {
+      tasks.add(_appendIndicesSearch(q, seen, results, limit: 4));
+    }
+
+    await Future.wait(tasks);
+
+    final ranked = rankAndDedupeSearchResults(results, q);
+    return ranked.take(kMaxSearchResults).toList();
   }
 
-  Future<void> _appendQuoteSearch(String q, Set<String> seen, List<AssetItem> results) async {
+  Future<void> _appendQuoteSearch(String q, Set<String> seen, List<AssetItem> results, {required int limit}) async {
     try {
-      final stocks = await quoteRepository.search(q, limit: 8);
+      final stocks = await quoteRepository.search(q, limit: limit);
       for (final asset in stocks) {
         if (seen.add(asset.symbol)) results.add(asset);
       }
     } catch (_) {}
   }
 
-  Future<void> _appendCurrencySearch(String q, Set<String> seen, List<AssetItem> results) async {
+  Future<void> _appendCurrencySearch(String q, Set<String> seen, List<AssetItem> results, {required int limit}) async {
     try {
-      final currencies = await currencyRepository.searchQuotes(q, limit: 6);
+      final currencies = await currencyRepository.searchQuotes(q, limit: limit);
       for (final quote in currencies) {
         if (seen.add(quote.pair)) {
           results.add(quote.toAssetItem());
@@ -69,9 +105,9 @@ class AssetSearchService {
     } catch (_) {}
   }
 
-  Future<void> _appendTreasurySearch(String q, Set<String> seen, List<AssetItem> results) async {
+  Future<void> _appendTreasurySearch(String q, Set<String> seen, List<AssetItem> results, {required int limit}) async {
     try {
-      final bonds = await treasuryRepository.searchBonds(q, limit: 6);
+      final bonds = await treasuryRepository.searchBonds(q, limit: limit);
       for (final bond in bonds) {
         if (seen.add(bond.symbol)) {
           results.add(bond.toAssetItem());
@@ -80,9 +116,9 @@ class AssetSearchService {
     } catch (_) {}
   }
 
-  Future<void> _appendIndicesSearch(String q, Set<String> seen, List<AssetItem> results) async {
+  Future<void> _appendIndicesSearch(String q, Set<String> seen, List<AssetItem> results, {required int limit}) async {
     try {
-      final indices = await indicesRepository.searchIndices(q, limit: 6);
+      final indices = await indicesRepository.searchIndices(q, limit: limit);
       for (final quote in indices) {
         if (seen.add(quote.symbol)) {
           results.add(quote.toAssetItem());
@@ -91,9 +127,9 @@ class AssetSearchService {
     } catch (_) {}
   }
 
-  Future<void> _appendCryptoSearch(String q, Set<String> seen, List<AssetItem> results) async {
+  Future<void> _appendCryptoSearch(String q, Set<String> seen, List<AssetItem> results, {required int limit}) async {
     try {
-      final crypto = await cryptoRepository.searchQuotes(q, limit: 8);
+      final crypto = await cryptoRepository.searchQuotes(q, limit: limit);
       for (final quote in crypto) {
         if (seen.add(quote.symbol)) {
           results.add(quote.toAssetItem());
@@ -102,13 +138,39 @@ class AssetSearchService {
     } catch (_) {}
   }
 
-  Future<void> _appendFiiSearch(String q, Set<String> seen, List<AssetItem> results) async {
+  Future<void> _appendFiiSearch(String q, Set<String> seen, List<AssetItem> results, {required int limit}) async {
     try {
-      final fiis = await fiiRepository.search(q, limit: 8);
-      for (final fii in fiis) {
-        if (seen.add(fii.ticker)) {
-          results.add(await fiiRepository.summaryToAsset(fii));
+      final fiis = await fiiRepository.search(q, limit: limit);
+      for (final summary in fiis) {
+        final asset = fiiRepository.summaryToSearchAsset(summary);
+        if (seen.add(asset.symbol)) results.add(asset);
+      }
+
+      final root = b3TickerRoot(q);
+      if (root != null) {
+        final related = await fiiRepository.searchByRoot(q, limit: limit);
+        for (final summary in related) {
+          final asset = fiiRepository.summaryToSearchAsset(summary);
+          if (seen.add(asset.symbol)) results.add(asset);
         }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _appendB3RootQuoteSearch(
+    String q,
+    Set<String> seen,
+    List<AssetItem> results, {
+    required int limit,
+  }) async {
+    final root = b3TickerRoot(q);
+    if (root == null) return;
+
+    try {
+      final stocks = await quoteRepository.search(root, limit: limit);
+      for (final asset in stocks) {
+        if (!asset.symbol.toUpperCase().startsWith(root)) continue;
+        if (seen.add(asset.symbol)) results.add(asset);
       }
     } catch (_) {}
   }
@@ -145,7 +207,7 @@ class AssetSearchService {
     }
 
     final normalizedCrypto = normalizeCryptoSymbol(symbol);
-    if (categoryForSymbol(symbol) == MarketCategory.cripto || _looksLikeCryptoSymbol(symbol)) {
+    if (categoryForSymbol(symbol) == MarketCategory.cripto || looksLikeObviousCryptoTicker(symbol)) {
       try {
         final detail = await cryptoRepository.getDetail(normalizedCrypto);
         return detail.quote.toAssetItem();
@@ -173,7 +235,7 @@ class AssetSearchService {
     if (normalizedCurrency.contains('-BRL')) return MarketCategory.moeda;
     if (symbol.trim().toLowerCase().startsWith('tesouro-')) return MarketCategory.tesouroDireto;
     if (_looksLikeIndexSymbol(symbol)) return MarketCategory.indices;
-    if (_looksLikeCryptoSymbol(symbol)) return MarketCategory.cripto;
+    if (looksLikeObviousCryptoTicker(symbol)) return MarketCategory.cripto;
     if (isFiiTicker(symbol)) return MarketCategory.fiis;
     if (symbol.endsWith('34')) return MarketCategory.bdr;
     if (symbol.endsWith('11')) return MarketCategory.etf;
@@ -184,26 +246,38 @@ class AssetSearchService {
   Future<void> _appendUsMarketResults(
     String query,
     Set<String> seen,
-    List<AssetItem> results,
-  ) async {
-    for (final category in ['stocks', 'reits']) {
-      try {
-        final response = await globalMarketRepository.listUsMarketWithRetry(
-          category: category,
-          page: 1,
-          limit: category == 'stocks' ? 8 : 4,
-          search: query,
-        );
-        final mappedCategory =
-            category == 'reits' ? MarketCategory.reits : MarketCategory.stocks;
-        for (final quote in response.items) {
-          final asset = quote.toUsAssetItem(category: mappedCategory);
-          if (seen.add(asset.symbol)) {
-            results.add(asset);
-          }
+    List<AssetItem> results, {
+    required int limit,
+  }) async {
+    try {
+      final response = await globalMarketRepository.listUsMarketWithRetry(
+        category: 'stocks',
+        page: 1,
+        limit: limit,
+        search: query,
+      );
+      for (final quote in response.items) {
+        final asset = quote.toUsAssetItem();
+        if (seen.add(asset.symbol)) {
+          results.add(asset);
         }
-      } catch (_) {}
-    }
+      }
+    } catch (_) {}
+
+    try {
+      final response = await globalMarketRepository.listUsMarketWithRetry(
+        category: 'reits',
+        page: 1,
+        limit: (limit / 2).ceil().clamp(2, limit),
+        search: query,
+      );
+      for (final quote in response.items) {
+        final asset = quote.toUsAssetItem(category: MarketCategory.reits);
+        if (seen.add(asset.symbol)) {
+          results.add(asset);
+        }
+      }
+    } catch (_) {}
   }
 }
 
@@ -235,12 +309,4 @@ bool _looksLikeIndexSymbol(String symbol) {
         'IEE',
         'UTIL',
       }.contains(normalized);
-}
-
-bool _looksLikeCryptoSymbol(String symbol) {
-  final normalized = symbol.trim().toUpperCase();
-  if (normalized.contains('-') || normalized.contains('/')) return false;
-  if (normalized.length < 2 || normalized.length > 12) return false;
-  if (RegExp(r'\d$').hasMatch(normalized) && normalized.length >= 5) return false;
-  return RegExp(r'^[A-Z0-9]+$').hasMatch(normalized);
 }

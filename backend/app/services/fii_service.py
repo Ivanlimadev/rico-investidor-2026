@@ -84,7 +84,7 @@ class FiiService:
         matches = [
             item
             for item in catalog
-            if q in item.ticker.lower() or q in item.name.lower()
+            if self._matches_fii_search(q, item.ticker, item.name)
         ]
 
         return FiiSearchResponse(
@@ -93,6 +93,16 @@ class FiiService:
             total=len(matches),
             fiis=matches[:limit],
         )
+
+    @staticmethod
+    def _matches_fii_search(q: str, ticker: str, name: str) -> bool:
+        ticker_l = ticker.lower()
+        name_l = name.lower()
+        if q in ticker_l or q in name_l:
+            return True
+        if len(q) >= 4 and q[:4].isalpha() and ticker_l.startswith(q[:4]):
+            return True
+        return False
 
     async def get_fii(self, ticker: str) -> FiiDetail:
         normalized = normalize_fii_ticker(ticker)

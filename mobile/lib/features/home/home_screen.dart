@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/app/main_shell_screen.dart';
-import 'package:rico_investidor/features/dividends/dividends_screen.dart';
+import 'package:rico_investidor/features/crypto/screens/crypto_explore_screen.dart';
 import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
 import 'package:rico_investidor/features/home/data/home_repository.dart';
 import 'package:rico_investidor/features/home/screens/world_exchanges_hub_screen.dart';
 import 'package:rico_investidor/features/home/widgets/portfolio_allocation_card.dart';
+import 'package:rico_investidor/features/home/widgets/crypto_market_hub_card.dart';
 import 'package:rico_investidor/features/home/widgets/portfolio_summary_row.dart';
 import 'package:rico_investidor/features/home/widgets/preferred_market_section.dart';
 import 'package:rico_investidor/features/home/widgets/world_exchanges_hub_card.dart';
 import 'package:rico_investidor/features/portfolio/portfolio_screen.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
+import 'package:rico_investidor/features/menu/account_menu_items.dart';
 import 'package:rico_investidor/features/settings/settings_screen.dart';
 import 'package:rico_investidor/models/subscription_plan.dart';
 import 'package:rico_investidor/models/user_profile.dart';
@@ -31,6 +34,9 @@ class HomeScreen extends StatefulWidget {
     required this.onToggleTheme,
     required this.preferredMarket,
     required this.onChangePreferredMarket,
+    required this.onLogin,
+    required this.onRegister,
+    required this.onLogout,
     this.globalMarketRepository,
   });
 
@@ -46,6 +52,9 @@ class HomeScreen extends StatefulWidget {
   final VoidCallback onToggleTheme;
   final MarketPreference preferredMarket;
   final VoidCallback onChangePreferredMarket;
+  final VoidCallback onLogin;
+  final VoidCallback onRegister;
+  final LogoutCallback onLogout;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -60,6 +69,17 @@ class _HomeScreenState extends State<HomeScreen> {
       MaterialPageRoute<void>(
         builder: (_) => WorldExchangesHubScreen(
           repository: _globalMarketRepository,
+          fiiRepository: widget.fiiRepository,
+          quoteRepository: widget.quoteRepository,
+        ),
+      ),
+    );
+  }
+
+  void _openCrypto(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => CryptoExploreScreen(
           fiiRepository: widget.fiiRepository,
           quoteRepository: widget.quoteRepository,
         ),
@@ -91,6 +111,9 @@ class _HomeScreenState extends State<HomeScreen> {
               context,
               profile: widget.profile,
               onProfileChanged: widget.onProfileChanged,
+              onLogin: widget.onLogin,
+              onRegister: widget.onRegister,
+              onLogout: widget.onLogout,
             ),
             icon: CircleAvatar(
               radius: 14,
@@ -124,10 +147,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 fiiRepository: widget.fiiRepository,
                 quoteRepository: widget.quoteRepository,
               ),
-              onDividendsTap: () => openDividendsScreen(
-                context,
-                portfolio: widget.portfolio,
-              ),
             ),
           ),
           SliverToBoxAdapter(
@@ -144,11 +163,14 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           SliverToBoxAdapter(
             child: PreferredMarketSection(
-              preference: widget.preferredMarket,
+              // Lê do AppShellScope (InheritedWidget) — atravessa o Navigator
+              // aninhado das abas, que captura o HomeScreen só na 1ª montagem.
+              // Sem isso, trocar de mercado não atualizava a home.
+              preference: AppShellScope.of(context).preferredMarket,
               globalMarketRepository: _globalMarketRepository,
               fiiRepository: widget.fiiRepository,
               quoteRepository: widget.quoteRepository,
-              onChangePreferred: widget.onChangePreferredMarket,
+              onChangePreferred: AppShellScope.of(context).onChangePreferredMarket,
             ),
           ),
           SliverToBoxAdapter(
@@ -164,6 +186,11 @@ class _HomeScreenState extends State<HomeScreen> {
             child: WorldExchangesHubCard(
               totalExchanges: null,
               onTap: () => _openWorldExchanges(context),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: CryptoMarketHubCard(
+              onTap: () => _openCrypto(context),
             ),
           ),
           const SliverToBoxAdapter(

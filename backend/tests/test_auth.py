@@ -43,6 +43,17 @@ def test_protected_route_requires_token(client, auth_env):
     assert response.status_code == 401
 
 
+def test_logo_paths_are_public_in_auth_middleware():
+    from app.core.auth_middleware import AuthMiddleware
+
+    assert AuthMiddleware._is_public("/v1/quotes/PETR4/logo.png")
+    assert AuthMiddleware._is_public("/v1/fiis/HGLG11/logo.png")
+    assert AuthMiddleware._is_public("/v1/global-markets/AAPL/logo.png")
+    assert AuthMiddleware._is_public("/v1/crypto/BTC/logo.png")
+    assert not AuthMiddleware._is_public("/v1/quotes/PETR4")
+    assert not AuthMiddleware._is_public("/v1/meta/providers")
+
+
 def test_protected_route_accepts_valid_token(client, auth_env):
     token = client.post("/v1/auth/anonymous", json={"device_id": "device-xyz-98765"}).json()[
         "access_token"
@@ -59,7 +70,7 @@ def test_register_and_login(client, auth_env):
         "/v1/auth/register",
         json={
             "email": "investidor@example.com",
-            "password": "senha-forte-123",
+            "password": "Senha-forte123!",
             "name": "Investidor",
         },
     )
@@ -68,7 +79,7 @@ def test_register_and_login(client, auth_env):
 
     login = client.post(
         "/v1/auth/login",
-        json={"email": "investidor@example.com", "password": "senha-forte-123"},
+        json={"email": "investidor@example.com", "password": "Senha-forte123!"},
     )
     assert login.status_code == 200
     login_token = login.json()["access_token"]
@@ -86,7 +97,7 @@ def test_login_invalid_password(client, auth_env):
         "/v1/auth/register",
         json={
             "email": "outro@example.com",
-            "password": "senha-forte-123",
+            "password": "Senha-forte123!",
             "name": "Outro",
         },
     )

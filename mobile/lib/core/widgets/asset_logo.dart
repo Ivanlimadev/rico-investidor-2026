@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:http/http.dart' as http;
+import 'package:rico_investidor/core/auth/auth_session.dart';
 import 'package:rico_investidor/core/utils/asset_logo_url.dart';
 import 'package:rico_investidor/models/market_category.dart';
 import 'package:rico_investidor/models/market_category_theme.dart';
@@ -46,13 +47,15 @@ Future<String?> loadAssetLogoSvg(String url) {
   }).whenComplete(() => _inFlightSvg.remove(url));
 }
 
-Future<Uint8List?> loadAssetLogoRaster(String url) {
+Future<Uint8List?> loadAssetLogoRaster(String url, {Map<String, String>? headers}) async {
   final cached = _rasterCache[url];
   if (cached != null) return Future.value(cached);
 
   return _inFlightRaster.putIfAbsent(url, () async {
     try {
-      final response = await http.get(Uri.parse(url)).timeout(_networkTimeout);
+      final response = await http
+          .get(Uri.parse(url), headers: headers ?? const {})
+          .timeout(_networkTimeout);
       final bytes = response.bodyBytes;
       if (response.statusCode == 200 && bytes.length > 64) {
         _rasterCache[url] = bytes;
@@ -64,14 +67,44 @@ Future<Uint8List?> loadAssetLogoRaster(String url) {
   }).whenComplete(() => _inFlightRaster.remove(url));
 }
 
+Map<String, String> _logoRequestHeaders(String url) {
+  if (!isLocalApiLogoUrl(url)) return const {};
+  final token = authSession.accessToken;
+  if (token == null || token.isEmpty) return const {};
+  return {'Authorization': 'Bearer $token'};
+}
+
+Future<void> warmAssetLogoSymbols(Iterable<String> symbols) async {
+  await Future.wait(
+    symbols.map((symbol) async {
+      if (hasBundledLogo(symbol)) return;
+      final isFii = looksLikeFiiTicker(symbol);
+      final resolved = resolveAssetLogoUrl(symbol, null, isFii: isFii);
+      for (final url in logoDownloadCandidates(
+        symbol: symbol,
+        isFii: isFii,
+        resolvedUrl: resolved,
+      )) {
+        final bytes = await loadAssetLogoRaster(url, headers: _logoRequestHeaders(url));
+        if (bytes != null) return;
+      }
+    }),
+    eagerError: false,
+  );
+}
+
 Future<void> precacheCryptoLogos(Iterable<String> symbols) async {
   final urls = symbols
       .where(looksLikeCryptoSymbol)
-      .map(cryptoIconPngUrlFor)
+      .map(cryptoLogoApiUrl)
+      .whereType<String>()
       .toSet();
   if (urls.isEmpty) return;
 
-  await Future.wait(urls.map(loadAssetLogoRaster), eagerError: false);
+  await Future.wait(
+    urls.map((url) => loadAssetLogoRaster(url, headers: _logoRequestHeaders(url))),
+    eagerError: false,
+  );
 }
 
 class AssetLogo extends StatelessWidget {
@@ -92,7 +125,7 @@ class AssetLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isFii = _looksLikeFii(symbol);
+    final isFii = looksLikeFiiTicker(symbol);
 
     if (hasBundledLogo(symbol)) {
       return SizedBox(
@@ -149,11 +182,6 @@ class AssetLogo extends StatelessWidget {
             ),
     );
   }
-}
-
-bool _looksLikeFii(String symbol) {
-  final normalized = symbol.trim().toUpperCase();
-  return RegExp(r'^[A-Z]{4}\d{2}$').hasMatch(normalized);
 }
 
 class _CryptoNetworkLogo extends StatelessWidget {
@@ -306,18 +334,15 @@ class _RemoteAssetLogoState extends State<_RemoteAssetLogo> {
       return;
     }
 
-    final candidates = <String>[];
-    if (widget.url.isNotEmpty) {
-      candidates.add(widget.url);
-    }
-    final b3Url = b3IconPngUrlFor(widget.symbol);
-    if (b3Url != null && !candidates.contains(b3Url)) {
-      candidates.add(b3Url);
-    }
+    final candidates = logoDownloadCandidates(
+      symbol: widget.symbol,
+      isFii: widget.isFii,
+      resolvedUrl: widget.url,
+    );
 
     Uint8List? bytes;
     for (final url in candidates) {
-      bytes = await loadAssetLogoRaster(url);
+      bytes = await loadAssetLogoRaster(url, headers: _logoRequestHeaders(url));
       if (bytes != null) break;
     }
 

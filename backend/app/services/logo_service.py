@@ -1,6 +1,7 @@
 import httpx
 
-from app.clients.brapi.stock_mapper import b3_icon_png_url
+from app.clients.binance.crypto_mapper import crypto_logo_source_urls
+from app.clients.brapi.stock_mapper import b3_logo_source_urls
 from app.clients.marketstack.stock_mapper import us_logo_source_url
 from app.config import settings
 from app.core.cache import TtlCache
@@ -72,17 +73,81 @@ class LogoService:
         self._disk.set(cache_key, content)
         return content
 
+    async def _get_multi(
+        self, cache_key: str, source_urls: list[str], *, label: str
+    ) -> bytes:
+        """Igual a `_get`, mas tenta múltiplas origens em ordem.
+
+        Só envenena o cache negativo quando TODAS as origens responderam 404/
+        inválido; erros transitórios (rede) viram 502 sem bloquear o símbolo.
+        """
+        cached = self._memory.get(cache_key)
+        if cached is not None:
+            return cached
+
+        on_disk = self._disk.get(cache_key)
+        if on_disk is not None:
+            self._memory.set(cache_key, on_disk)
+            return on_disk
+
+        if self._negative.is_blocked(cache_key):
+            raise UpstreamError(f"Logo não encontrado: {label}", status_code=404)
+
+        client = get_http_client()
+        transient_error: Exception | None = None
+
+        for source_url in source_urls:
+            try:
+                response = await client.get(source_url, timeout=15.0)
+            except httpx.RequestError as exc:
+                transient_error = exc
+                continue
+
+            if response.status_code >= 400:
+                continue
+
+            content = response.content
+            if len(content) < 64:
+                continue
+
+            self._memory.set(cache_key, content)
+            self._disk.set(cache_key, content)
+            return content
+
+        if transient_error is not None:
+            raise UpstreamError(
+                f"Falha ao baixar logo: {transient_error.__class__.__name__}",
+                status_code=502,
+            ) from transient_error
+
+        self._negative.mark(cache_key)
+        raise UpstreamError(f"Logo não encontrado: {label}", status_code=404)
+
     async def get_png(self, ticker: str) -> bytes:
         normalized = ticker.upper().strip()
         if not normalized:
             raise UpstreamError("Ticker inválido", status_code=400)
-        return await self._get(normalized, b3_icon_png_url(normalized), label=normalized)
+        return await self._get_multi(
+            normalized,
+            b3_logo_source_urls(normalized),
+            label=normalized,
+        )
 
     async def get_us_png(self, symbol: str) -> bytes:
         normalized = symbol.upper().strip()
         if not normalized:
             raise UpstreamError("Ticker inválido", status_code=400)
         return await self._get(f"us:{normalized}", us_logo_source_url(normalized), label=normalized)
+
+    async def get_crypto_png(self, symbol: str) -> bytes:
+        normalized = symbol.upper().strip()
+        if not normalized:
+            raise UpstreamError("Ticker inválido", status_code=400)
+        return await self._get_multi(
+            f"crypto:{normalized}",
+            crypto_logo_source_urls(normalized),
+            label=normalized,
+        )
 
 
 logo_service = LogoService()

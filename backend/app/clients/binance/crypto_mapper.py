@@ -42,6 +42,20 @@ def crypto_icon_url(symbol: str) -> str:
     return f"https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/svg/color/{slug}.svg"
 
 
+def crypto_logo_source_urls(symbol: str) -> list[str]:
+    """Fontes de logo PNG por símbolo, em ordem de preferência.
+
+    CoinCap cobre a grande maioria das moedas listadas na Binance; o repositório
+    spothq cobre alguns casos que faltam. O proxy tenta na ordem e cacheia o
+    primeiro PNG válido encontrado.
+    """
+    slug = normalize_crypto_symbol(symbol).lower()
+    return [
+        f"https://assets.coincap.io/assets/icons/{slug}@2x.png",
+        f"https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/128/color/{slug}.png",
+    ]
+
+
 def crypto_display_name(symbol: str) -> str:
     base = normalize_crypto_symbol(symbol)
     return CRYPTO_NAMES.get(base, base)

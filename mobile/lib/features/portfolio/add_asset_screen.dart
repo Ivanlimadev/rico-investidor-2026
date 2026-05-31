@@ -4,7 +4,7 @@ import 'package:rico_investidor/core/search/unified_asset_search.dart';
 import 'package:rico_investidor/core/widgets/asset_country_flag.dart';
 import 'package:rico_investidor/core/utils/parse_decimal.dart';
 import 'package:rico_investidor/models/asset_item.dart';
-import 'package:rico_investidor/models/dividend_payment.dart';
+import 'package:rico_investidor/models/holding_currency.dart';
 import 'package:rico_investidor/state/portfolio_state.dart';
 
 class AddAssetScreen extends StatefulWidget {
@@ -26,11 +26,8 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
   final _unifiedSearch = UnifiedAssetSearchRunner();
   final _quantityController = TextEditingController(text: '1');
   final _averagePriceController = TextEditingController();
-  final _dividendAmountController = TextEditingController();
-  DateTime? _dividendDate;
   AssetItem? _selected;
   UnifiedAssetSearchSnapshot _searchSnapshot = const UnifiedAssetSearchSnapshot.idle();
-  bool _includeDividend = false;
 
   @override
   void initState() {
@@ -50,7 +47,6 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
     _searchController.dispose();
     _quantityController.dispose();
     _averagePriceController.dispose();
-    _dividendAmountController.dispose();
     super.dispose();
   }
 
@@ -89,18 +85,6 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
     });
   }
 
-  Future<void> _pickDividendDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _dividendDate ?? DateTime.now(),
-      firstDate: DateTime(2015),
-      lastDate: DateTime.now(),
-    );
-    if (picked != null) {
-      setState(() => _dividendDate = picked);
-    }
-  }
-
   void _save() {
     if (_selected == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -124,24 +108,6 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
       return;
     }
 
-    DividendPayment? initialDividend;
-    if (_includeDividend) {
-      final amount = parseDecimalInput(_dividendAmountController.text);
-      if (amount == null || amount <= 0 || _dividendDate == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Preencha valor e data do dividendo')),
-        );
-        return;
-      }
-      initialDividend = DividendPayment(
-        id: '',
-        symbol: _selected!.symbol,
-        name: _selected!.name,
-        amount: amount,
-        date: _dividendDate!,
-      );
-    }
-
     widget.portfolio.addHolding(
       symbol: _selected!.symbol,
       name: _selected!.name,
@@ -149,7 +115,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
       averagePrice: averagePrice,
       currentPrice: _selected!.price > 0 ? _selected!.price : null,
       changePercent: _selected!.price > 0 ? _selected!.changePercent : null,
-      initialDividend: initialDividend,
+      category: _selected!.category,
     );
 
     Navigator.pop(context, true);
@@ -225,44 +191,21 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
             TextField(
               controller: _averagePriceController,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                labelText: 'Preço médio (R\$)',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: (_selected?.category != null
+                        ? holdingCurrencyForCategory(_selected!.category)
+                        : HoldingCurrency.brl)
+                    .averagePriceLabel,
+                border: const OutlineInputBorder(),
               ),
             ),
-            const SizedBox(height: 24),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Registrar dividendo recebido'),
-              subtitle: const Text('Opcional — valor e data do provento'),
-              value: _includeDividend,
-              onChanged: (v) => setState(() => _includeDividend = v),
+            const SizedBox(height: 12),
+            Text(
+              'Os proventos serão calculados automaticamente com base no histórico da API.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
+                  ),
             ),
-            if (_includeDividend) ...[
-              const SizedBox(height: 8),
-              TextField(
-                controller: _dividendAmountController,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
-                  labelText: 'Dividendos recebidos (R\$)',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Data do provento'),
-                subtitle: Text(
-                  _dividendDate == null
-                      ? 'Toque para escolher'
-                      : '${_dividendDate!.day.toString().padLeft(2, '0')}/'
-                          '${_dividendDate!.month.toString().padLeft(2, '0')}/'
-                          '${_dividendDate!.year}',
-                ),
-                trailing: const Icon(Icons.calendar_today_outlined),
-                onTap: _pickDividendDate,
-              ),
-            ],
             const SizedBox(height: 28),
             FilledButton(onPressed: _save, child: const Text('Salvar na carteira')),
           ],

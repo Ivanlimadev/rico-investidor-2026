@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/app/main_shell_screen.dart';
-import 'package:rico_investidor/features/dividends/dividends_screen.dart';
+import 'package:rico_investidor/features/dividends/widgets/portfolio_dividends_section.dart';
 import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/home/widgets/portfolio_allocation_card.dart';
 import 'package:rico_investidor/features/home/widgets/portfolio_summary_row.dart';
@@ -10,11 +10,13 @@ import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/fii/utils/fii_ticker.dart';
 import 'package:rico_investidor/features/portfolio/add_asset_screen.dart';
 import 'package:rico_investidor/features/portfolio/widgets/portfolio_favorites_gadget.dart';
+import 'package:rico_investidor/features/portfolio/widgets/confirm_remove_holding_dialog.dart';
 import 'package:rico_investidor/features/portfolio/widgets/portfolio_holding_card.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/market_category.dart';
 import 'package:rico_investidor/models/portfolio_holding.dart';
 import 'package:rico_investidor/navigation/open_asset_detail.dart';
+import 'package:rico_investidor/services/portfolio_fx_service.dart';
 import 'package:rico_investidor/services/portfolio_price_service.dart';
 import 'package:rico_investidor/state/portfolio_state.dart';
 
@@ -46,6 +48,10 @@ class _PortfolioTabScreenState extends State<PortfolioTabScreen> {
 
   Future<void> _refreshPrices() async {
     setState(() => _refreshing = true);
+    final rate = await portfolioFxService.fetchUsdBrlRate();
+    if (rate != null) {
+      widget.portfolio.usdBrlRate = rate;
+    }
     if (widget.portfolio.holdings.isNotEmpty) {
       await _priceService.refreshAll(widget.portfolio);
     }
@@ -62,6 +68,14 @@ class _PortfolioTabScreenState extends State<PortfolioTabScreen> {
       ),
     );
     if (added == true) widget.onPortfolioChanged();
+  }
+
+  Future<void> _confirmRemoveHolding(PortfolioHolding holding) async {
+    final confirmed = await confirmRemovePortfolioHolding(context, holding);
+    if (!confirmed || !mounted) return;
+
+    widget.portfolio.removeHolding(holding.id);
+    widget.onPortfolioChanged();
   }
 
   @override
@@ -121,11 +135,18 @@ class _PortfolioTabScreenState extends State<PortfolioTabScreen> {
               PortfolioSummaryRow(
                 summary: widget.portfolio.buildSummary(),
                 onPortfolioTap: () {},
-                onDividendsTap: () => openDividendsScreen(
-                  context,
-                  portfolio: widget.portfolio,
-                ),
+                showDividendsCard: false,
               ),
+              if (widget.portfolio.usdBrlRate != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+                  child: Text(
+                    'Carteira em US\$ · USD/BRL ${widget.portfolio.usdBrlRate!.toStringAsFixed(2)}',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                        ),
+                  ),
+                ),
               PortfolioAllocationCard(
                 portfolio: widget.portfolio,
                 onTap: _openAddAsset,
@@ -137,10 +158,10 @@ class _PortfolioTabScreenState extends State<PortfolioTabScreen> {
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               for (final holding in holdings)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
                   child: PortfolioHoldingCard(
                     holding: holding,
                     showDayChange: true,
@@ -150,8 +171,16 @@ class _PortfolioTabScreenState extends State<PortfolioTabScreen> {
                       fiiRepository: widget.fiiRepository,
                       quoteRepository: widget.quoteRepository,
                     ),
+                    onDelete: () => _confirmRemoveHolding(holding),
                   ),
                 ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                child: PortfolioDividendsSection(
+                  portfolio: widget.portfolio,
+                  onPortfolioChanged: widget.onPortfolioChanged,
+                ),
+              ),
             ],
           ],
         ),

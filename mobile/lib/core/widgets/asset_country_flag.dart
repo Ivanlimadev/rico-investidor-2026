@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:rico_investidor/core/search/asset_search_config.dart';
 import 'package:rico_investidor/core/widgets/asset_card_header.dart';
 import 'package:rico_investidor/core/widgets/asset_logo.dart';
 import 'package:rico_investidor/models/asset_item.dart';
@@ -296,9 +297,12 @@ class AssetSearchLeading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final flagSize = searchGridFlagSizeForLogo(logoSize);
+    final stackSize = logoSize + flagSize * 0.35;
+
     return SizedBox(
-      width: logoSize + 4,
-      height: logoSize + 4,
+      width: stackSize,
+      height: stackSize,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -324,7 +328,7 @@ class AssetSearchLeading extends StatelessWidget {
               ),
               child: Padding(
                 padding: const EdgeInsets.all(1.5),
-                child: AssetCountryFlag(asset: asset, size: 11),
+                child: AssetCountryFlag(asset: asset, size: flagSize),
               ),
             ),
           ),

@@ -38,4 +38,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
     @staticmethod
     def _is_public(path: str) -> bool:
-        return path in _PUBLIC_PATHS
+        if path in _PUBLIC_PATHS:
+            return True
+        # Logos são assets cacheáveis — não exigem JWT (Image.network não envia Bearer).
+        if path.endswith("/logo.png"):
+            return True
+        return False

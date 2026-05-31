@@ -1,15 +1,28 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/main_shell_screen.dart';
+import 'package:rico_investidor/core/auth/auth_session.dart';
 import 'package:rico_investidor/core/theme/app_theme.dart';
+import 'package:rico_investidor/features/auth/data/auth_repository.dart';
+import 'package:rico_investidor/features/auth/screens/auth_welcome_screen.dart';
+import 'package:rico_investidor/features/auth/screens/login_screen.dart';
+import 'package:rico_investidor/features/auth/screens/register_screen.dart';
 import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
 import 'package:rico_investidor/features/home/data/home_repository.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/home/home_screen.dart';
 import 'package:rico_investidor/features/onboarding/market_onboarding_screen.dart';
+import 'package:rico_investidor/features/onboarding/premium_intro_screen.dart';
 import 'package:rico_investidor/models/user_profile.dart';
+import 'package:rico_investidor/services/account_onboarding_storage.dart';
 import 'package:rico_investidor/services/asset_search_service.dart';
+import 'package:rico_investidor/features/home/data/preferred_market_preloader.dart';
+import 'package:rico_investidor/services/app_bootstrap_service.dart';
 import 'package:rico_investidor/services/market_preference_storage.dart';
+import 'package:rico_investidor/services/portfolio_dividend_service.dart';
+import 'package:rico_investidor/services/portfolio_fx_service.dart';
 import 'package:rico_investidor/services/portfolio_price_service.dart';
 import 'package:rico_investidor/services/portfolio_storage.dart';
 import 'package:rico_investidor/state/portfolio_state.dart';
@@ -32,6 +45,9 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
   MarketPreference? _preferredMarket;
   bool _preferenceLoaded = false;
+  bool _accountLoaded = false;
+  bool _accountOnboardingCompleted = false;
+  bool _introCompleted = false;
   late PortfolioState _portfolio = createInitialPortfolioState(
     searchService: assetSearchService,
   );
@@ -52,6 +68,7 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
       holdings: _portfolio.holdings,
       dividends: _portfolio.dividends,
     );
+    unawaited(_syncPortfolioDividends());
   }
 
   Future<void> _loadPortfolio() async {
@@ -62,18 +79,128 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
         searchService: assetSearchService,
         holdings: saved.holdings,
         dividends: saved.dividends,
+        usdBrlRate: _portfolio.usdBrlRate,
       );
     });
+    unawaited(_syncPortfolioDividends());
+  }
+
+  Future<void> _loadPortfolioFx() async {
+    final rate = await portfolioFxService.fetchUsdBrlRate();
+    if (!mounted || rate == null) return;
+    setState(() => _portfolio.usdBrlRate = rate);
+  }
+
+  Future<void> _syncPortfolioDividends() async {
+    await portfolioDividendService.syncPortfolioDividends(_portfolio);
+    if (!mounted) return;
+    setState(() {});
+    await _portfolioStorage.save(
+      holdings: _portfolio.holdings,
+      dividends: _portfolio.dividends,
+    );
   }
 
   @override
   void initState() {
     super.initState();
     _loadPortfolio();
+    _loadAccountState();
     _loadPreference();
+    unawaited(_loadPortfolioFx());
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_warmIntroData());
+      unawaited(_syncPortfolioDividends());
       Future<void>.delayed(const Duration(seconds: 2), _refreshPortfolioPrices);
     });
+  }
+
+  Future<void> _warmIntroData() async {
+    final preference = await marketPreferenceStorage.load();
+    await appBootstrapService.warmIntro(
+      preferredMarket: preference,
+      quoteRepository: _quoteRepository,
+      globalMarketRepository: _globalMarketRepository,
+      fiiRepository: _fiiRepository,
+    );
+  }
+
+  Future<void> _loadAccountState() async {
+    final onboardingDone = await accountOnboardingStorage.isCompleted();
+    var profile = createDefaultProfile();
+
+    if (authSession.accessToken != null) {
+      try {
+        profile = await authRepository.fetchProfile();
+        if (profile.isRegistered) {
+          await accountOnboardingStorage.markCompleted();
+        }
+      } catch (_) {
+        // Sem /me (auth desligado ou offline) — mantém perfil local.
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _profile = profile;
+      _accountOnboardingCompleted = onboardingDone || profile.isRegistered;
+      _accountLoaded = true;
+    });
+  }
+
+  Future<void> _completeAccountOnboarding() async {
+    await accountOnboardingStorage.markCompleted();
+    UserProfile profile = createDefaultProfile();
+    try {
+      profile = await authRepository.fetchProfile();
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() {
+      _accountOnboardingCompleted = true;
+      _profile = profile;
+    });
+  }
+
+  Future<void> _skipAccountOnboarding() async {
+    await accountOnboardingStorage.markCompleted();
+    if (!mounted) return;
+    setState(() => _accountOnboardingCompleted = true);
+  }
+
+  void _openLogin() {
+    _navigatorKey.currentState?.push(
+      MaterialPageRoute<void>(
+        builder: (context) => LoginScreen(
+          onSuccess: () async {
+            Navigator.of(context).pop();
+            await _completeAccountOnboarding();
+          },
+        ),
+      ),
+    );
+  }
+
+  void _openRegister() {
+    _navigatorKey.currentState?.push(
+      MaterialPageRoute<void>(
+        builder: (context) => RegisterScreen(
+          onSuccess: () async {
+            Navigator.of(context).pop();
+            await _completeAccountOnboarding();
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<void> _logout() async {
+    await authRepository.logout();
+    UserProfile profile = createDefaultProfile();
+    try {
+      profile = await authRepository.fetchProfile();
+    } catch (_) {}
+    if (!mounted) return;
+    setState(() => _profile = profile);
   }
 
   Future<void> _loadPreference() async {
@@ -87,8 +214,17 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
 
   Future<void> _confirmPreference(MarketPreference preference) async {
     await marketPreferenceStorage.save(preference);
+    preferredMarketPreloader.invalidate();
     if (!mounted) return;
     setState(() => _preferredMarket = preference);
+    unawaited(
+      appBootstrapService.warmIntro(
+        preferredMarket: preference,
+        quoteRepository: _quoteRepository,
+        globalMarketRepository: _globalMarketRepository,
+        fiiRepository: _fiiRepository,
+      ),
+    );
   }
 
   void _changePreferredMarket() {
@@ -110,6 +246,7 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
   Future<void> _refreshPortfolioPrices() async {
     if (!mounted) return;
     final before = _portfolio.totalBalance;
+    await _loadPortfolioFx();
     final ok = await PortfolioPriceService(
       quoteRepository: _quoteRepository,
     ).refreshAll(_portfolio);
@@ -138,8 +275,21 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
   }
 
   Widget _buildHome() {
-    if (!_preferenceLoaded) {
+    if (!_introCompleted) {
+      return PremiumIntroScreen(
+        onFinished: () => setState(() => _introCompleted = true),
+      );
+    }
+
+    if (!_preferenceLoaded || !_accountLoaded) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    if (!_accountOnboardingCompleted) {
+      return AuthWelcomeScreen(
+        onCompleted: _completeAccountOnboarding,
+        onSkip: _skipAccountOnboarding,
+      );
     }
 
     final preference = _preferredMarket;
@@ -162,6 +312,9 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
       onToggleTheme: _toggleTheme,
       preferredMarket: preference,
       onChangePreferredMarket: _changePreferredMarket,
+      onLogin: _openLogin,
+      onRegister: _openRegister,
+      onLogout: _logout,
     );
   }
 }

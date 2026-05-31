@@ -3,7 +3,9 @@ import 'package:rico_investidor/core/utils/currency_format.dart';
 import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/portfolio/add_asset_screen.dart';
+import 'package:rico_investidor/features/portfolio/widgets/confirm_remove_holding_dialog.dart';
 import 'package:rico_investidor/features/portfolio/widgets/portfolio_holding_card.dart';
+import 'package:rico_investidor/models/portfolio_holding.dart';
 import 'package:rico_investidor/services/portfolio_price_service.dart';
 import 'package:rico_investidor/state/portfolio_state.dart';
 
@@ -74,6 +76,14 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
     }
   }
 
+  Future<void> _confirmRemoveHolding(PortfolioHolding holding) async {
+    final confirmed = await confirmRemovePortfolioHolding(context, holding);
+    if (!confirmed || !mounted) return;
+
+    widget.portfolio.removeHolding(holding.id);
+    widget.onPortfolioChanged();
+  }
+
   @override
   Widget build(BuildContext context) {
     final holdings = widget.portfolio.holdings;
@@ -117,8 +127,11 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                   ),
                   const SizedBox(height: 10),
                   for (final holding in holdings) ...[
-                    PortfolioHoldingCard(holding: holding),
-                    const SizedBox(height: 10),
+                    PortfolioHoldingCard(
+                      holding: holding,
+                      onDelete: () => _confirmRemoveHolding(holding),
+                    ),
+                    const SizedBox(height: 8),
                   ],
                 ],
               ),
@@ -186,10 +199,10 @@ class _TotalHeader extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Patrimônio total', style: Theme.of(context).textTheme.labelLarge),
+                  Text('Patrimônio total (US\$)', style: Theme.of(context).textTheme.labelLarge),
                   const SizedBox(height: 6),
                   Text(
-                    formatBrl(total),
+                    formatUsd(total),
                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                           fontWeight: FontWeight.w700,
                         ),

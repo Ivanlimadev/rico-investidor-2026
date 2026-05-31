@@ -8,12 +8,18 @@ void openSettingsScreen(
   BuildContext context, {
   required UserProfile profile,
   required ProfileChanged onProfileChanged,
+  required VoidCallback onLogin,
+  required VoidCallback onRegister,
+  required LogoutCallback onLogout,
 }) {
   Navigator.of(context).push(
     MaterialPageRoute<void>(
       builder: (_) => SettingsScreen(
         profile: profile,
         onProfileChanged: onProfileChanged,
+        onLogin: onLogin,
+        onRegister: onRegister,
+        onLogout: onLogout,
       ),
     ),
   );
@@ -24,10 +30,16 @@ class SettingsScreen extends StatefulWidget {
     super.key,
     required this.profile,
     required this.onProfileChanged,
+    required this.onLogin,
+    required this.onRegister,
+    required this.onLogout,
   });
 
   final UserProfile profile;
   final ProfileChanged onProfileChanged;
+  final VoidCallback onLogin;
+  final VoidCallback onRegister;
+  final LogoutCallback onLogout;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -70,6 +82,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           AccountMenuItems(
             profile: _profile,
             onProfileChanged: _handleProfileChanged,
+            onLogin: widget.onLogin,
+            onRegister: widget.onRegister,
+            onLogout: widget.onLogout,
           ),
           const SizedBox(height: 24),
         ],

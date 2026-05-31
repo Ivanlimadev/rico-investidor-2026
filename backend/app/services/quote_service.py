@@ -140,7 +140,7 @@ class QuoteService:
                 if entry.symbol in seen:
                     continue
                 haystack = f"{entry.symbol} {entry.name}".lower()
-                if lowered not in haystack:
+                if not self._catalog_entry_matches(lowered, entry.symbol, entry.name):
                     continue
                 seen.add(entry.symbol)
                 items.append(
@@ -156,6 +156,15 @@ class QuoteService:
                     return MarketQuoteListResponse(items=items, count=len(items))
 
         return MarketQuoteListResponse(items=items, count=len(items))
+
+    @staticmethod
+    def _catalog_entry_matches(query: str, symbol: str, name: str) -> bool:
+        haystack = f"{symbol} {name}".lower()
+        if query in haystack:
+            return True
+        if len(query) >= 4 and query[:4].isalpha() and symbol.lower().startswith(query[:4]):
+            return True
+        return False
 
     async def get_stock_catalog(self, category_slug: str) -> StockCatalogResponse:
         cache_key = f"catalog:{category_slug}"

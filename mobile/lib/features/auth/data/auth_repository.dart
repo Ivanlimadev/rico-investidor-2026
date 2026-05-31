@@ -1,6 +1,8 @@
 import 'package:rico_investidor/core/auth/auth_session.dart';
 import 'package:rico_investidor/core/network/api_client.dart';
 import 'package:rico_investidor/core/network/api_exception.dart';
+import 'package:rico_investidor/models/subscription_plan.dart';
+import 'package:rico_investidor/models/user_profile.dart';
 
 class AuthRepository {
   AuthRepository({ApiClient? client}) : _client = client ?? apiClient;
@@ -9,6 +11,24 @@ class AuthRepository {
 
   Future<Map<String, dynamic>> me() {
     return _client.getJson('/v1/auth/me', fromJson: (json) => json);
+  }
+
+  Future<UserProfile> fetchProfile() async {
+    final json = await me();
+    return UserProfile(
+      displayName: (json['name'] as String?)?.trim().isNotEmpty == true
+          ? json['name'] as String
+          : 'Investidor',
+      plan: SubscriptionPlan.free,
+      email: json['email'] as String?,
+      userId: json['id'] as String?,
+      isAnonymous: json['is_anonymous'] as bool? ?? true,
+    );
+  }
+
+  Future<void> logout() async {
+    await authSession.clear();
+    await authSession.ensureAuthenticated();
   }
 
   Future<void> login({required String email, required String password}) async {

@@ -120,6 +120,27 @@ class CryptoService:
             allowed = {normalize_crypto_symbol(symbol) for symbol in group_symbols}
             coins = [coin for coin in coins if coin in allowed]
 
+        # Snapshot único (cacheado) com a cotação 24h de todos os pares USDT.
+        # Serve tanto para rankear por liquidez quanto para montar os itens da
+        # página, evitando uma chamada batch extra que pode falhar com um par
+        # inválido e derrubar a listagem inteira.
+        snapshot = await self._client.get_all_usdt_tickers()
+        by_base = {
+            normalize_crypto_symbol(quote.symbol): quote for quote in snapshot.items
+        }
+
+        # Mantém apenas moedas com cotação 24h ativa (negociáveis no momento).
+        coins = [coin for coin in coins if normalize_crypto_symbol(coin) in by_base]
+
+        # Sem busca textual, rankeia por liquidez (volume 24h) para que as moedas
+        # mais relevantes — e com logo disponível — apareçam primeiro.
+        if not (search and search.strip()):
+            coins = sorted(
+                coins,
+                key=lambda coin: by_base[normalize_crypto_symbol(coin)].volume or 0.0,
+                reverse=True,
+            )
+
         total = len(coins)
         total_pages = max(1, (total + safe_limit - 1) // safe_limit)
         safe_page = min(safe_page, total_pages)
@@ -137,8 +158,7 @@ class CryptoService:
                 provider="binance",
             )
 
-        rates = await self._client.get_crypto_rates(page_coins)
-        items = self._order_quotes(page_coins, rates)
+        items = [by_base[normalize_crypto_symbol(coin)] for coin in page_coins]
 
         return CryptoExploreResponse(
             items=items,

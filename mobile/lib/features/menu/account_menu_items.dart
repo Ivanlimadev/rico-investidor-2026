@@ -4,17 +4,24 @@ import 'package:rico_investidor/models/subscription_plan.dart';
 import 'package:rico_investidor/models/user_profile.dart';
 
 typedef ProfileChanged = void Function(UserProfile profile);
+typedef LogoutCallback = Future<void> Function();
 
 class AccountMenuItems extends StatelessWidget {
   const AccountMenuItems({
     super.key,
     required this.profile,
     required this.onProfileChanged,
+    required this.onLogin,
+    required this.onRegister,
+    required this.onLogout,
     this.dense = false,
   });
 
   final UserProfile profile;
   final ProfileChanged onProfileChanged;
+  final VoidCallback onLogin;
+  final VoidCallback onRegister;
+  final LogoutCallback onLogout;
   final bool dense;
 
   Future<void> _showComingSoon(BuildContext context, String feature) async {
@@ -87,6 +94,33 @@ class AccountMenuItems extends StatelessWidget {
     }
   }
 
+  Future<void> _confirmLogout(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Sair da conta'),
+        content: const Text('Você continuará usando o app como visitante neste dispositivo.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Sair'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && context.mounted) {
+      await onLogout();
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Você saiu da conta')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final plan = profile.plan;
@@ -94,6 +128,30 @@ class AccountMenuItems extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (profile.isRegistered && profile.email != null)
+          ListTile(
+            dense: dense,
+            leading: const Icon(Icons.email_outlined),
+            title: const Text('E-mail'),
+            subtitle: Text(profile.email!),
+          ),
+        if (!profile.isRegistered) ...[
+          ListTile(
+            dense: dense,
+            leading: const Icon(Icons.login),
+            title: const Text('Entrar'),
+            subtitle: const Text('Acesse sua conta existente'),
+            onTap: onLogin,
+          ),
+          ListTile(
+            dense: dense,
+            leading: const Icon(Icons.person_add_outlined),
+            title: const Text('Criar conta'),
+            subtitle: const Text('Cadastre-se com e-mail e senha'),
+            onTap: onRegister,
+          ),
+          const Divider(height: 8),
+        ],
         ListTile(
           dense: dense,
           leading: const Icon(Icons.photo_camera_outlined),
@@ -151,6 +209,15 @@ class AccountMenuItems extends StatelessWidget {
           ),
           onTap: () => _confirmDeleteAccount(context),
         ),
+        if (profile.isRegistered) ...[
+          const Divider(height: 8),
+          ListTile(
+            dense: dense,
+            leading: const Icon(Icons.logout),
+            title: const Text('Sair da conta'),
+            onTap: () => _confirmLogout(context),
+          ),
+        ],
       ],
     );
   }

@@ -2,11 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/widgets/asset_country_flag.dart';
 import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
-import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
 import 'package:rico_investidor/features/global_markets/screens/country_hub_screen.dart';
 import 'package:rico_investidor/features/global_markets/screens/country_market_screen.dart';
 import 'package:rico_investidor/features/global_markets/widgets/market_hub_section_grid.dart';
-import 'package:rico_investidor/features/home/data/brazilian_hub_sections.dart';
+import 'package:rico_investidor/features/home/data/preferred_market_preloader.dart';
 import 'package:rico_investidor/features/home/screens/brazilian_market_hub_screen.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/quotes/screens/stock_explore_screen.dart';
@@ -50,31 +49,24 @@ class _PreferredMarketSectionState extends State<PreferredMarketSection> {
   void didUpdateWidget(covariant PreferredMarketSection oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.preference.code != widget.preference.code) {
-      setState(() => _future = _load());
+      setState(() {
+        _future = _load();
+      });
     }
   }
 
-  Future<List<MarketHubSectionData>> _load() async {
-    if (widget.preference.isBrazil) {
-      return loadBrazilianHubSections(widget.quoteRepository);
-    }
-    final hub = await widget.globalMarketRepository.getCountryHub(widget.preference.code);
-    return hub.sections
-        .map(
-          (section) => MarketHubSectionData(
-            id: section.id,
-            title: section.title,
-            assets: section.items
-                .map((quote) => quote.toUsAssetItem(category: MarketCategory.stocks))
-                .toList(),
-          ),
-        )
-        .where((section) => section.assets.isNotEmpty)
-        .toList();
+  Future<List<MarketHubSectionData>> _load() {
+    return preferredMarketPreloader.load(
+      preference: widget.preference,
+      quoteRepository: widget.quoteRepository,
+      globalMarketRepository: widget.globalMarketRepository,
+    );
   }
 
   void _reload() {
-    setState(() => _future = _load());
+    setState(() {
+      _future = _load();
+    });
   }
 
   void _openAsset(AssetItem asset) {

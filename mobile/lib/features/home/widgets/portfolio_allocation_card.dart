@@ -40,7 +40,7 @@ class PortfolioAllocationCard extends StatelessWidget {
                 Text(
                   slices.isEmpty
                       ? 'Adicione ativos para ver o gráfico'
-                      : formatBrl(total),
+                      : formatUsd(total),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                   ),

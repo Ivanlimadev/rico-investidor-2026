@@ -8,6 +8,7 @@ import 'package:rico_investidor/features/home/data/home_repository.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/finances/finances_tab_screen.dart';
 import 'package:rico_investidor/features/home/home_screen.dart';
+import 'package:rico_investidor/features/menu/account_menu_items.dart';
 import 'package:rico_investidor/features/menu/menu_tab_screen.dart';
 import 'package:rico_investidor/features/portfolio/portfolio_tab_screen.dart';
 import 'package:rico_investidor/features/search/search_tab_screen.dart';
@@ -38,6 +39,9 @@ class MainShellScreen extends StatefulWidget {
     required this.onToggleTheme,
     required this.preferredMarket,
     required this.onChangePreferredMarket,
+    required this.onLogin,
+    required this.onRegister,
+    required this.onLogout,
   });
 
   final UserProfile profile;
@@ -51,6 +55,9 @@ class MainShellScreen extends StatefulWidget {
   final VoidCallback onToggleTheme;
   final MarketPreference preferredMarket;
   final VoidCallback onChangePreferredMarket;
+  final VoidCallback onLogin;
+  final VoidCallback onRegister;
+  final LogoutCallback onLogout;
 
   @override
   State<MainShellScreen> createState() => _MainShellScreenState();
@@ -60,6 +67,15 @@ class _MainShellScreenState extends State<MainShellScreen> {
   AppTab _tab = AppTab.home;
   final Set<AppTab> _loadedTabs = {AppTab.home};
   String? _pendingSearchQuery;
+
+  // Abas exibidas na barra inferior. Comunidade e Finanças ficam ocultas
+  // (código preservado) para acelerar o lançamento; basta reincluí-las aqui.
+  static const List<AppTab> _visibleTabs = [
+    AppTab.home,
+    AppTab.portfolio,
+    AppTab.search,
+    AppTab.menu,
+  ];
 
   final _navigatorKeys = List.generate(
     AppTab.values.length,
@@ -120,6 +136,8 @@ class _MainShellScreenState extends State<MainShellScreen> {
       goToSearch: _goToSearch,
       portfolio: widget.portfolio,
       onPortfolioChanged: widget.onPortfolioChanged,
+      preferredMarket: widget.preferredMarket,
+      onChangePreferredMarket: widget.onChangePreferredMarket,
       child: Scaffold(
         body: IndexedStack(
           index: _index,
@@ -138,6 +156,9 @@ class _MainShellScreenState extends State<MainShellScreen> {
                 onToggleTheme: widget.onToggleTheme,
                 preferredMarket: widget.preferredMarket,
                 onChangePreferredMarket: widget.onChangePreferredMarket,
+                onLogin: widget.onLogin,
+                onRegister: widget.onRegister,
+                onLogout: widget.onLogout,
               ),
             ),
             _tabRoot(
@@ -172,13 +193,17 @@ class _MainShellScreenState extends State<MainShellScreen> {
                 quoteRepository: widget.quoteRepository,
                 isDarkMode: widget.isDarkMode,
                 onToggleTheme: widget.onToggleTheme,
+                onLogin: widget.onLogin,
+                onRegister: widget.onRegister,
+                onLogout: widget.onLogout,
               ),
             ),
           ],
         ),
         bottomNavigationBar: AppBottomNavBar(
-          selectedIndex: _index,
-          onDestinationSelected: (index) => _selectTab(AppTab.values[index]),
+          selectedIndex:
+              _visibleTabs.indexOf(_tab).clamp(0, _visibleTabs.length - 1),
+          onDestinationSelected: (index) => _selectTab(_visibleTabs[index]),
           destinations: const [
             AppBottomNavItem(
               icon: Icons.home_outlined,
@@ -194,16 +219,6 @@ class _MainShellScreenState extends State<MainShellScreen> {
               icon: Icons.search,
               selectedIcon: Icons.search,
               label: 'Buscar',
-            ),
-            AppBottomNavItem(
-              icon: Icons.groups_outlined,
-              selectedIcon: Icons.groups,
-              label: 'Comunidade',
-            ),
-            AppBottomNavItem(
-              icon: Icons.savings_outlined,
-              selectedIcon: Icons.savings,
-              label: 'Finanças',
             ),
             AppBottomNavItem(
               icon: Icons.menu,

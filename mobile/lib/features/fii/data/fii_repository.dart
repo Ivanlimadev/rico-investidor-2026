@@ -1,4 +1,5 @@
 import 'package:rico_investidor/core/cache/session_cache.dart';
+import 'package:rico_investidor/core/utils/asset_logo_url.dart';
 import 'package:rico_investidor/features/fii/data/fii_api_client.dart';
 import 'package:rico_investidor/features/fii/utils/fii_related.dart';
 import 'package:rico_investidor/features/fii/utils/fii_screener_presets.dart';
@@ -77,14 +78,50 @@ class FiiRepository {
       final catalog = await loadCatalog();
       final lower = q.toLowerCase();
       return catalog
-          .where(
-            (f) =>
-                f.ticker.toLowerCase().contains(lower) ||
-                f.name.toLowerCase().contains(lower),
-          )
+          .where((f) => _matchesFiiSearchQuery(f, lower))
           .take(limit)
           .toList();
     }
+  }
+
+  bool _matchesFiiSearchQuery(FiiSummary fii, String lowerQuery) {
+    final ticker = fii.ticker.toLowerCase();
+    final name = fii.name.toLowerCase();
+    if (ticker.contains(lowerQuery) || name.contains(lowerQuery)) return true;
+
+    final root = _fourLetterRoot(lowerQuery.toUpperCase());
+    if (root != null && ticker.startsWith(root.toLowerCase())) return true;
+
+    return false;
+  }
+
+  Future<List<FiiSummary>> searchByRoot(String query, {int limit = 12}) async {
+    final root = _fourLetterRoot(query);
+    if (root == null) return const [];
+
+    final catalog = await loadCatalog();
+    return catalog
+        .where((f) => f.ticker.toUpperCase().startsWith(root))
+        .take(limit)
+        .toList();
+  }
+
+  String? _fourLetterRoot(String query) {
+    final normalized = query.trim().toUpperCase().replaceAll('.SA', '');
+    final match = RegExp(r'^([A-Z]{4})').firstMatch(normalized);
+    return match?.group(1);
+  }
+
+  /// Ativo leve para listas/busca — sem fetch de detalhe; logo via proxy local.
+  AssetItem summaryToSearchAsset(FiiSummary summary) {
+    return AssetItem(
+      symbol: summary.ticker,
+      name: summary.name,
+      category: MarketCategory.fiis,
+      price: 0,
+      changePercent: 0,
+      logoUrl: assetLogoApiUrl(summary.ticker, isFii: true),
+    );
   }
 
   Future<FiiDetail> getDetail(String ticker) async {
@@ -232,6 +269,7 @@ class FiiRepository {
         category: MarketCategory.fiis,
         price: detail.closePrice ?? 0,
         changePercent: 0,
+        logoUrl: assetLogoApiUrl(detail.ticker, isFii: true),
       );
     } catch (_) {
       return null;
@@ -241,21 +279,17 @@ class FiiRepository {
   Future<AssetItem> summaryToAsset(FiiSummary summary) async {
     try {
       final detail = await getDetail(summary.ticker);
+      final asset = summaryToSearchAsset(summary);
       return AssetItem(
         symbol: detail.ticker,
         name: detail.name,
-        category: MarketCategory.fiis,
+        category: asset.category,
         price: detail.closePrice ?? 0,
-        changePercent: 0,
+        changePercent: asset.changePercent,
+        logoUrl: asset.logoUrl,
       );
     } catch (_) {
-      return AssetItem(
-        symbol: summary.ticker,
-        name: summary.name,
-        category: MarketCategory.fiis,
-        price: 0,
-        changePercent: 0,
-      );
+      return summaryToSearchAsset(summary);
     }
   }
 

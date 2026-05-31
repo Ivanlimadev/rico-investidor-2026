@@ -24,6 +24,9 @@ class MainMenuDrawer extends StatelessWidget {
       context,
       profile: profile,
       onProfileChanged: onProfileChanged,
+      onLogin: () {},
+      onRegister: () {},
+      onLogout: () async {},
     );
   }
 

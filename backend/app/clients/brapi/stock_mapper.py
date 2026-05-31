@@ -177,6 +177,16 @@ def b3_icon_png_url(symbol: str) -> str:
     )
 
 
+def b3_logo_source_urls(symbol: str) -> list[str]:
+    """Fontes PNG para ações/FIIs B3 — tentadas em ordem pelo proxy."""
+    normalized = symbol.upper().strip()
+    return [
+        b3_icon_png_url(normalized),
+        f"https://financialmodelingprep.com/image-stock/{normalized}.SA.png",
+        f"https://assets.parqet.com/logos/symbol/{normalized}.SA?format=png",
+    ]
+
+
 def brapi_icon_svg_url(symbol: str) -> str:
     return f"https://icons.brapi.dev/icons/{symbol.upper().strip()}.svg"
 

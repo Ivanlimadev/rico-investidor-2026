@@ -6,7 +6,7 @@ String? b3IconPngUrlFor(String symbol) {
   return 'https://raw.githubusercontent.com/thefintz/icones-b3/main/icones/$normalized.png';
 }
 
-/// Logo via API local — mesmo host da cotação (funciona no simulador/dispositivo).
+/// Logo via API local — proxy cacheado (icones-b3 + fallbacks).
 String? assetLogoApiUrl(String symbol, {required bool isFii}) {
   final normalized = symbol.trim().toUpperCase();
   if (normalized.isEmpty) return null;
@@ -29,6 +29,13 @@ const bundledLogoSymbols = {
   'BBAS3',
   'RENT3',
   'HGLG11',
+  'B3SA3',
+  'ELET3',
+  'PRIO3',
+  'SUZB3',
+  'GGBR4',
+  'BOVA11',
+  'IVVB11',
 };
 
 bool hasBundledLogo(String symbol) {
@@ -48,10 +55,10 @@ String? brapiLogoUrlFor(String symbol) {
   return 'https://icons.brapi.dev/icons/$normalized.svg';
 }
 
-/// Ícones raster — mais rápidos que SVG em listas pequenas.
+/// Ícones raster — fallback direto quando o proxy local estiver offline.
 String cryptoIconPngUrlFor(String symbol) {
   final slug = symbol.trim().toLowerCase();
-  return 'https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/32@2x/icon/$slug.png';
+  return 'https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/128/color/$slug.png';
 }
 
 /// SVG colorido — legado / detalhes grandes.
@@ -62,7 +69,7 @@ String cryptoIconSvgUrlFor(String symbol) {
 
 bool isCryptoIconUrl(String? url) {
   if (url == null || url.isEmpty) return false;
-  return url.contains('cryptocurrency-icons');
+  return url.contains('cryptocurrency-icons') || url.contains('coincap.io');
 }
 
 bool looksLikeCryptoSymbol(String symbol) {
@@ -80,9 +87,18 @@ String? globalMarketLogoApiUrl(String symbol) {
   return '${ApiConfig.baseUrl}/v1/global-markets/${Uri.encodeComponent(normalized)}/logo.png';
 }
 
+/// Logo via API local — criptomoedas (proxy cacheado: CoinCap + fallback).
+String? cryptoLogoApiUrl(String symbol) {
+  final normalized = symbol.trim().toUpperCase();
+  if (normalized.isEmpty) return null;
+  return '${ApiConfig.baseUrl}/v1/crypto/${Uri.encodeComponent(normalized)}/logo.png';
+}
+
 bool isUsExternalLogoUrl(String? url) {
   if (url == null || url.isEmpty) return false;
-  return url.contains('financialmodelingprep.com') || url.contains('parqet.com');
+  return url.contains('financialmodelingprep.com') ||
+      url.contains('parqet.com') ||
+      url.contains('marketstack.com');
 }
 
 bool looksLikeB3Ticker(String symbol) {
@@ -90,15 +106,17 @@ bool looksLikeB3Ticker(String symbol) {
   return RegExp(r'^[A-Z]{4}\d{1,2}$').hasMatch(normalized);
 }
 
-/// Sempre usa a API local para FII; B3 usa PNG direto (icones-b3); cripto usa CDN.
+bool looksLikeFiiTicker(String symbol) {
+  final normalized = symbol.trim().toUpperCase();
+  return RegExp(r'^[A-Z]{4}\d{2}$').hasMatch(normalized);
+}
+
+/// Ordem de resolução: proxy local (cache) → fallbacks externos só no widget.
 String? resolveAssetLogoUrl(String symbol, String? logoUrl, {required bool isFii}) {
-  if (isFii) {
+  if (isFii || looksLikeFiiTicker(symbol)) {
     return assetLogoApiUrl(symbol, isFii: true);
   }
 
-  // URL já resolvida para o proxy local (ex.: /v1/global-markets/NVDA/logo.png).
-  // Sem este short-circuit, tickers como NVDA/AAPL/TM caem no ramo de cripto
-  // (heurística looksLikeCryptoSymbol) e a logo correta é descartada.
   if (isApiLogoUrl(logoUrl)) {
     return logoUrl;
   }
@@ -108,21 +126,52 @@ String? resolveAssetLogoUrl(String symbol, String? logoUrl, {required bool isFii
   }
 
   if (logoUrl != null && logoUrl.isNotEmpty && isCryptoIconUrl(logoUrl)) {
-    return cryptoIconPngUrlFor(symbol);
+    return cryptoLogoApiUrl(symbol);
   }
 
   if (looksLikeCryptoSymbol(symbol)) {
-    return cryptoIconPngUrlFor(symbol);
+    return cryptoLogoApiUrl(symbol);
   }
 
   if (looksLikeB3Ticker(symbol)) {
-    if (logoUrl != null && logoUrl.isNotEmpty && isRasterLogoUrl(logoUrl)) {
-      return logoUrl;
-    }
-    return b3IconPngUrlFor(symbol);
+    return assetLogoApiUrl(symbol, isFii: false);
+  }
+
+  if (logoUrl != null && logoUrl.isNotEmpty && isRasterLogoUrl(logoUrl)) {
+    return logoUrl;
   }
 
   return assetLogoApiUrl(symbol, isFii: false);
+}
+
+/// URLs a tentar ao baixar o PNG (proxy primeiro, depois CDN direto).
+List<String> logoDownloadCandidates({
+  required String symbol,
+  required bool isFii,
+  String? resolvedUrl,
+}) {
+  final seen = <String>{};
+  final urls = <String>[];
+
+  void add(String? url) {
+    if (url == null || url.isEmpty || !seen.add(url)) return;
+    urls.add(url);
+  }
+
+  add(resolvedUrl);
+  add(assetLogoApiUrl(symbol, isFii: isFii));
+  if (looksLikeB3Ticker(symbol) || isFii) {
+    add(b3IconPngUrlFor(symbol));
+  }
+  if (looksLikeCryptoSymbol(symbol)) {
+    add(cryptoLogoApiUrl(symbol));
+    add(cryptoIconPngUrlFor(symbol));
+  }
+  if (!looksLikeB3Ticker(symbol) && !isFii && !looksLikeCryptoSymbol(symbol)) {
+    add(globalMarketLogoApiUrl(symbol));
+  }
+
+  return urls;
 }
 
 bool isSvgLogoUrl(String? url) {
@@ -143,4 +192,9 @@ bool isRasterLogoUrl(String? url) {
 bool isApiLogoUrl(String? url) {
   if (url == null || url.isEmpty) return false;
   return url.contains('/logo.png');
+}
+
+bool isLocalApiLogoUrl(String? url) {
+  if (url == null || url.isEmpty) return false;
+  return isApiLogoUrl(url) && url.startsWith(ApiConfig.baseUrl);
 }

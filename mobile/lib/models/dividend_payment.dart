@@ -5,6 +5,8 @@ class DividendPayment {
     required this.name,
     required this.amount,
     required this.date,
+    this.kind,
+    this.amountPerShare,
   });
 
   final String id;
@@ -12,6 +14,8 @@ class DividendPayment {
   final String name;
   final double amount;
   final DateTime date;
+  final String? kind;
+  final double? amountPerShare;
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -19,6 +23,8 @@ class DividendPayment {
         'name': name,
         'amount': amount,
         'date': date.toIso8601String(),
+        if (kind != null) 'kind': kind,
+        if (amountPerShare != null) 'amount_per_share': amountPerShare,
       };
 
   factory DividendPayment.fromJson(Map<String, dynamic> json) {
@@ -28,11 +34,13 @@ class DividendPayment {
       name: json['name'] as String,
       amount: (json['amount'] as num).toDouble(),
       date: DateTime.parse(json['date'] as String),
+      kind: json['kind'] as String?,
+      amountPerShare: (json['amount_per_share'] as num?)?.toDouble(),
     );
   }
 }
 
-enum DividendChartGranularity { day, month, year }
+enum DividendChartGranularity { month, year }
 
 class DividendChartPoint {
   const DividendChartPoint({

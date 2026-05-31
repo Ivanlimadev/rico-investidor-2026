@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Query
+from fastapi.responses import Response
 
 from app.config import settings
 from app.domain.crypto.presets import CRYPTO_CHART_PRESETS, VALID_KLINE_INTERVALS
 from app.services.crypto_service import crypto_service
+from app.services.logo_service import logo_service
 
 router = APIRouter(prefix="/crypto", tags=["crypto"])
 
@@ -67,6 +69,18 @@ async def crypto_daily_movers(limit: int = Query(default=5, ge=1, le=10)):
 async def get_crypto_quote(symbol: str):
     """Cotação 24h de uma criptomoeda."""
     return await crypto_service.get_quote(symbol)
+
+
+@router.get("/{symbol}/logo.png")
+async def get_crypto_logo_png(symbol: str):
+    """Logo PNG de criptomoeda — proxy cacheado (CoinCap + fallback)."""
+    data = await logo_service.get_crypto_png(symbol)
+    max_age = settings.logo_http_max_age_seconds
+    return Response(
+        content=data,
+        media_type="image/png",
+        headers={"Cache-Control": f"public, max-age={max_age}, immutable, stale-while-revalidate=86400"},
+    )
 
 
 @router.get("/{symbol}/market")

@@ -46,25 +46,35 @@ class ProfileHeader extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 4),
-              Row(
-                children: [
-                  Icon(
-                    profile.plan.isPro ? Icons.workspace_premium : Icons.lock_open,
-                    size: 16,
-                    color: profile.plan.isPro
-                        ? Theme.of(context).colorScheme.secondary
-                        : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55),
-                  ),
-                  const SizedBox(width: 4),
-                  Flexible(
-                    child: Text(
-                      'Plano ${profile.plan.label}',
-                      style: Theme.of(context).textTheme.bodySmall,
-                      overflow: TextOverflow.ellipsis,
+              if (profile.isRegistered && profile.email != null)
+                Text(
+                  profile.email!,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
+                      ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                )
+              else
+                Row(
+                  children: [
+                    Icon(
+                      profile.plan.isPro ? Icons.workspace_premium : Icons.lock_open,
+                      size: 16,
+                      color: profile.plan.isPro
+                          ? Theme.of(context).colorScheme.secondary
+                          : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55),
                     ),
-                  ),
-                ],
-              ),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        profile.isRegistered ? 'Conta ativa' : 'Visitante · Plano ${profile.plan.label}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
             ],
           ),
         ),
