@@ -9,6 +9,8 @@ import 'package:rico_investidor/core/widgets/asset_card_header.dart';
 import 'package:rico_investidor/features/crypto/widgets/crypto_live_market_list.dart';
 import 'package:rico_investidor/features/crypto/data/crypto_repository.dart';
 import 'package:rico_investidor/features/crypto/screens/crypto_explore_screen.dart';
+import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
+import 'package:rico_investidor/features/global_markets/screens/us_market_list_screen.dart';
 import 'package:rico_investidor/features/currency/data/currency_repository.dart';
 import 'package:rico_investidor/features/currency/screens/currency_explore_screen.dart';
 import 'package:rico_investidor/features/indices/data/indices_repository.dart';
@@ -32,11 +34,13 @@ class MarketListScreen extends StatefulWidget {
     required this.category,
     required this.fiiRepository,
     required this.quoteRepository,
+    this.globalMarketRepository,
   });
 
   final MarketCategory category;
   final FiiRepository fiiRepository;
   final QuoteRepository quoteRepository;
+  final GlobalMarketRepository? globalMarketRepository;
 
   @override
   State<MarketListScreen> createState() => _MarketListScreenState();
@@ -44,6 +48,9 @@ class MarketListScreen extends StatefulWidget {
 
 class _MarketListScreenState extends State<MarketListScreen> {
   late Future<List<AssetItem>> _loadFuture;
+
+  GlobalMarketRepository get _globalMarketRepository =>
+      widget.globalMarketRepository ?? globalMarketRepository;
 
   @override
   void initState() {
@@ -86,6 +93,14 @@ class _MarketListScreenState extends State<MarketListScreen> {
       return items;
     }
 
+    if (widget.category == MarketCategory.stocks || widget.category == MarketCategory.reits) {
+      final items = await _globalMarketRepository.listByCategory(widget.category);
+      if (items.isEmpty) {
+        throw StateError('Lista vazia');
+      }
+      return items;
+    }
+
     if (widget.category.isDemo) {
       return MockMarketData.byCategory(widget.category);
     }
@@ -111,6 +126,15 @@ class _MarketListScreenState extends State<MarketListScreen> {
   Widget build(BuildContext context) {
     if (widget.category == MarketCategory.fiis) {
       return FiiListScreen(repository: widget.fiiRepository);
+    }
+
+    if (widget.category == MarketCategory.stocks || widget.category == MarketCategory.reits) {
+      return UsMarketListScreen(
+        category: widget.category,
+        repository: _globalMarketRepository,
+        fiiRepository: widget.fiiRepository,
+        quoteRepository: widget.quoteRepository,
+      );
     }
 
     return Scaffold(

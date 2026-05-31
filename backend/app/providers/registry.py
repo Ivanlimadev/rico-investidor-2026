@@ -12,6 +12,7 @@ class AssetClass(str, Enum):
 
 class DataProvider(str, Enum):
     BRAPI = "brapi"
+    MARKETSTACK = "marketstack"
     POLYGON = "polygon"
 
 
@@ -24,6 +25,8 @@ def provider_for(asset_class: AssetClass) -> DataProvider:
         AssetClass.BDR,
     }:
         return DataProvider.BRAPI
+    if asset_class == AssetClass.STOCK_US:
+        return DataProvider.MARKETSTACK
     raise NotImplementedError(
         f"Provedor ainda não configurado para {asset_class.value}."
     )

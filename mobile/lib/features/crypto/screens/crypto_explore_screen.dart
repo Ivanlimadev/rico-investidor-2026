@@ -1,7 +1,7 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
+import 'package:rico_investidor/core/search/asset_search_config.dart';
+import 'package:rico_investidor/core/search/unified_asset_search.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/widgets/asset_card_header.dart';
 import 'package:rico_investidor/core/widgets/asset_logo.dart';
@@ -33,12 +33,12 @@ class _CryptoExploreScreenState extends State<CryptoExploreScreen> {
   static const _pageSize = 30;
 
   final _searchController = TextEditingController();
-  Timer? _debounce;
+  final _unifiedSearch = UnifiedAssetSearchRunner();
 
   CryptoRepository get _repository => widget.repository ?? cryptoRepository;
 
+  UnifiedAssetSearchSnapshot _searchSnapshot = const UnifiedAssetSearchSnapshot.idle();
   String _groupId = cryptoExploreGroups.first.id;
-  String _search = '';
   List<CryptoQuoteDto> _items = [];
   int _page = 1;
   int _total = 0;
@@ -65,7 +65,7 @@ class _CryptoExploreScreenState extends State<CryptoExploreScreen> {
 
   @override
   void dispose() {
-    _debounce?.cancel();
+    _unifiedSearch.dispose();
     _searchController.dispose();
     _tickerStream?.close();
     super.dispose();
@@ -92,7 +92,6 @@ class _CryptoExploreScreenState extends State<CryptoExploreScreen> {
 
     try {
       final response = await _repository.explore(
-        search: _search.isEmpty ? null : _search,
         group: _groupId,
         page: page,
         limit: _pageSize,
@@ -124,26 +123,24 @@ class _CryptoExploreScreenState extends State<CryptoExploreScreen> {
   }
 
   void _selectGroup(String groupId) {
-    if (_groupId == groupId) return;
+    if (_groupId == groupId || _searchSnapshot.active) return;
     setState(() => _groupId = groupId);
     _load(reset: true);
   }
 
   void _onSearchChanged(String value) {
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 350), () {
-      final trimmed = value.trim();
-      if (trimmed == _search) return;
-      setState(() => _search = trimmed);
-      _load(reset: true);
+    _unifiedSearch.search(value, (snapshot) {
+      if (!mounted) return;
+      setState(() => _searchSnapshot = snapshot);
+      if (!snapshot.active) {
+        _load(reset: true);
+      }
     });
   }
 
   void _clearSearch() {
     _searchController.clear();
-    if (_search.isEmpty) return;
-    setState(() => _search = '');
-    _load(reset: true);
+    _onSearchChanged('');
   }
 
   @override
@@ -160,10 +157,10 @@ class _CryptoExploreScreenState extends State<CryptoExploreScreen> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: SearchBar(
               controller: _searchController,
-              hintText: 'Buscar moeda (BTC, ETH, DOGE…)',
+              hintText: kUnifiedAssetSearchHint,
               leading: const Icon(Icons.search),
               trailing: [
-                if (_search.isNotEmpty)
+                if (_searchSnapshot.query.isNotEmpty)
                   IconButton(
                     tooltip: 'Limpar',
                     onPressed: _clearSearch,
@@ -173,30 +170,41 @@ class _CryptoExploreScreenState extends State<CryptoExploreScreen> {
               onChanged: _onSearchChanged,
             ),
           ),
-          SizedBox(
-            height: 44,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              itemCount: cryptoExploreGroups.length,
-              separatorBuilder: (context, index) => const SizedBox(width: 8),
-              itemBuilder: (context, index) {
-                final group = cryptoExploreGroups[index];
-                return FilterChip(
-                  label: Text(group.label),
-                  selected: _groupId == group.id,
-                  onSelected: (_) => _selectGroup(group.id),
-                );
-              },
+          if (!_searchSnapshot.active) ...[
+            SizedBox(
+              height: 44,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                itemCount: cryptoExploreGroups.length,
+                separatorBuilder: (context, index) => const SizedBox(width: 8),
+                itemBuilder: (context, index) {
+                  final group = cryptoExploreGroups[index];
+                  return FilterChip(
+                    label: Text(group.label),
+                    selected: _groupId == group.id,
+                    onSelected: (_) => _selectGroup(group.id),
+                  );
+                },
+              ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Text(
-              '$_total moedas · página $_page/$_totalPages · USD · Binance',
-              style: Theme.of(context).textTheme.bodySmall,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text(
+                '$_total moedas · página $_page/$_totalPages · USD · Binance',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             ),
-          ),
+          ] else
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: Text(
+                _searchSnapshot.loading
+                    ? 'Buscando em todas as classes…'
+                    : '${_searchSnapshot.results.length} resultados · busca global',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
           Expanded(child: _buildBody()),
         ],
       ),
@@ -204,6 +212,14 @@ class _CryptoExploreScreenState extends State<CryptoExploreScreen> {
   }
 
   Widget _buildBody() {
+    if (_searchSnapshot.active) {
+      return UnifiedAssetResultsBody(
+        snapshot: _searchSnapshot,
+        fiiRepository: widget.fiiRepository ?? fiiRepository,
+        quoteRepository: widget.quoteRepository ?? quoteRepository,
+      );
+    }
+
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_error != null) {
       return Center(

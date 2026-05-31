@@ -116,6 +116,12 @@ class FeaturedAssetCard extends StatelessWidget {
   }
 
   String _formatPrice(AssetItem asset) {
+    if (asset.category == MarketCategory.stocks || asset.category == MarketCategory.reits) {
+      if (asset.price >= 1000) {
+        return '\$${asset.price.toStringAsFixed(0)}';
+      }
+      return '\$${asset.price.toStringAsFixed(2)}';
+    }
     if (asset.category == MarketCategory.cripto && asset.symbol == 'BTC') {
       return 'R\$ ${(asset.price / 1000).toStringAsFixed(1)}k';
     }

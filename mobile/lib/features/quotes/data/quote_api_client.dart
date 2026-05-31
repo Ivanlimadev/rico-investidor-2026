@@ -19,9 +19,19 @@ class MarketQuoteDto {
     required this.changePercent,
     required this.category,
     this.provider = 'brapi',
+    this.exchange,
     this.logoUrl,
     this.dividendYield12m,
     this.priceToBook,
+    this.open,
+    this.high,
+    this.low,
+    this.volume,
+    this.previousClose,
+    this.sessionDate,
+    this.splitFactor,
+    this.dividendAmount,
+    this.adjClose,
   });
 
   final String symbol;
@@ -30,9 +40,19 @@ class MarketQuoteDto {
   final double changePercent;
   final String category;
   final String provider;
+  final String? exchange;
   final String? logoUrl;
   final double? dividendYield12m;
   final double? priceToBook;
+  final double? open;
+  final double? high;
+  final double? low;
+  final double? volume;
+  final double? previousClose;
+  final String? sessionDate;
+  final double? splitFactor;
+  final double? dividendAmount;
+  final double? adjClose;
 
   factory MarketQuoteDto.fromJson(Map<String, dynamic> json) {
     double? numVal(String key) {
@@ -41,16 +61,33 @@ class MarketQuoteDto {
       return (value as num).toDouble();
     }
 
+    final price = numVal('price');
+    if (price == null) {
+      throw FormatException('Cotação sem preço para ${json['symbol']}');
+    }
+
     return MarketQuoteDto(
-      symbol: json['symbol'] as String,
-      name: json['name'] as String,
-      price: (json['price'] as num).toDouble(),
-      changePercent: (json['change_percent'] as num).toDouble(),
+      symbol: json['symbol'] as String? ?? '',
+      name: (json['name'] as String?)?.trim().isNotEmpty == true
+          ? json['name'] as String
+          : (json['symbol'] as String? ?? ''),
+      price: price,
+      changePercent: numVal('change_percent') ?? 0,
       category: json['category'] as String? ?? 'acoes_br',
       provider: json['provider'] as String? ?? 'brapi',
+      exchange: json['exchange'] as String?,
       logoUrl: json['logo_url'] as String?,
       dividendYield12m: numVal('dividend_yield_12m'),
       priceToBook: numVal('price_to_book'),
+      open: numVal('open'),
+      high: numVal('high'),
+      low: numVal('low'),
+      volume: numVal('volume'),
+      previousClose: numVal('previous_close'),
+      sessionDate: json['session_date'] as String?,
+      splitFactor: numVal('split_factor'),
+      dividendAmount: numVal('dividend_amount'),
+      adjClose: numVal('adj_close'),
     );
   }
 
@@ -64,6 +101,7 @@ class MarketQuoteDto {
       logoUrl: resolveAssetLogoUrl(symbol, logoUrl, isFii: false),
       dividendYield12m: dividendYield12m,
       priceToBook: priceToBook,
+      exchangeMic: exchange,
     );
   }
 
@@ -73,6 +111,8 @@ class MarketQuoteDto {
       'etf' => MarketCategory.etf,
       'etf_intl' => MarketCategory.etfInternacional,
       'fiis' => MarketCategory.fiis,
+      'stocks' => MarketCategory.stocks,
+      'reits' => MarketCategory.reits,
       _ => MarketCategory.acoesBr,
     };
   }

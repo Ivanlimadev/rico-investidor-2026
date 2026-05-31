@@ -22,7 +22,10 @@ import 'package:rico_investidor/features/fii/widgets/fii_properties_state_pie_ca
 import 'package:rico_investidor/features/fii/utils/fii_property_state.dart';
 import 'package:rico_investidor/features/fii/widgets/fii_quote_hero_card.dart';
 import 'package:rico_investidor/features/fii/widgets/fii_simulator_card.dart';
+import 'package:rico_investidor/core/widgets/asset_quick_actions.dart';
+import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/fii_models.dart';
+import 'package:rico_investidor/models/market_category.dart';
 
 class FiiDetailScreen extends StatefulWidget {
   const FiiDetailScreen({
@@ -142,11 +145,22 @@ class _FiiDetailScreenState extends State<FiiDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final actionAsset = _detail == null
+        ? null
+        : AssetItem(
+            symbol: _detail!.ticker,
+            name: _detail!.name,
+            category: MarketCategory.fiis,
+            price: _detail!.closePrice ?? 0,
+            changePercent: 0,
+          );
+
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.ticker),
         actions: [
           const ShellHomeButton(),
+          if (actionAsset != null) ...AssetQuickActions.appBarActions(context, actionAsset),
           IconButton(
             tooltip: 'Comparar FIIs',
             onPressed: () => Navigator.of(context).push(

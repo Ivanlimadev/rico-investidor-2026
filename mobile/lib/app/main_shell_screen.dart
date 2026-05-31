@@ -12,6 +12,7 @@ import 'package:rico_investidor/features/menu/menu_tab_screen.dart';
 import 'package:rico_investidor/features/portfolio/portfolio_tab_screen.dart';
 import 'package:rico_investidor/features/search/search_tab_screen.dart';
 import 'package:rico_investidor/models/user_profile.dart';
+import 'package:rico_investidor/services/market_preference_storage.dart';
 import 'package:rico_investidor/state/portfolio_state.dart';
 
 enum AppTab {
@@ -35,6 +36,8 @@ class MainShellScreen extends StatefulWidget {
     required this.quoteRepository,
     required this.isDarkMode,
     required this.onToggleTheme,
+    required this.preferredMarket,
+    required this.onChangePreferredMarket,
   });
 
   final UserProfile profile;
@@ -46,6 +49,8 @@ class MainShellScreen extends StatefulWidget {
   final QuoteRepository quoteRepository;
   final bool isDarkMode;
   final VoidCallback onToggleTheme;
+  final MarketPreference preferredMarket;
+  final VoidCallback onChangePreferredMarket;
 
   @override
   State<MainShellScreen> createState() => _MainShellScreenState();
@@ -54,6 +59,7 @@ class MainShellScreen extends StatefulWidget {
 class _MainShellScreenState extends State<MainShellScreen> {
   AppTab _tab = AppTab.home;
   final Set<AppTab> _loadedTabs = {AppTab.home};
+  String? _pendingSearchQuery;
 
   final _navigatorKeys = List.generate(
     AppTab.values.length,
@@ -84,6 +90,20 @@ class _MainShellScreenState extends State<MainShellScreen> {
     });
   }
 
+  void _goToSearch({String? query}) {
+    if (query != null && query.trim().isNotEmpty) {
+      _pendingSearchQuery = query.trim();
+    }
+    if (_tab == AppTab.search) {
+      _navigatorKeys[AppTab.search.index].currentState?.popUntil((route) => route.isFirst);
+    }
+    _selectTab(AppTab.search);
+  }
+
+  void _consumePendingSearchQuery() {
+    _pendingSearchQuery = null;
+  }
+
   Widget _tabRoot(AppTab tab, Widget root) {
     if (!_loadedTabs.contains(tab)) return const SizedBox.shrink();
     return TabRootNavigator(
@@ -97,6 +117,9 @@ class _MainShellScreenState extends State<MainShellScreen> {
     return AppShellScope(
       currentTab: _tab,
       goToHome: _goToHome,
+      goToSearch: _goToSearch,
+      portfolio: widget.portfolio,
+      onPortfolioChanged: widget.onPortfolioChanged,
       child: Scaffold(
         body: IndexedStack(
           index: _index,
@@ -113,6 +136,8 @@ class _MainShellScreenState extends State<MainShellScreen> {
                 quoteRepository: widget.quoteRepository,
                 isDarkMode: widget.isDarkMode,
                 onToggleTheme: widget.onToggleTheme,
+                preferredMarket: widget.preferredMarket,
+                onChangePreferredMarket: widget.onChangePreferredMarket,
               ),
             ),
             _tabRoot(
@@ -130,6 +155,8 @@ class _MainShellScreenState extends State<MainShellScreen> {
                 portfolio: widget.portfolio,
                 fiiRepository: widget.fiiRepository,
                 quoteRepository: widget.quoteRepository,
+                initialQuery: _pendingSearchQuery,
+                onInitialQueryApplied: _consumePendingSearchQuery,
               ),
             ),
             _tabRoot(AppTab.community, const CommunityTabScreen()),

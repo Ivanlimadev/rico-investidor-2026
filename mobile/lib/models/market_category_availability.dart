@@ -1,6 +1,6 @@
 import 'package:rico_investidor/models/market_category.dart';
 
-/// Categorias com cotações reais (Brapi / backend).
+/// Categorias com cotações reais (Brapi / Marketstack / backend).
 const liveMarketCategories = {
   MarketCategory.acoesBr,
   MarketCategory.fiis,
@@ -11,13 +11,12 @@ const liveMarketCategories = {
   MarketCategory.tesouroDireto,
   MarketCategory.indices,
   MarketCategory.cripto,
-};
-
-/// Categorias apenas ilustrativas até integração futura.
-const demoMarketCategories = {
   MarketCategory.stocks,
   MarketCategory.reits,
 };
+
+/// Categorias apenas ilustrativas até integração futura.
+const demoMarketCategories = <MarketCategory>{};
 
 extension MarketCategoryAvailability on MarketCategory {
   bool get hasLiveData => liveMarketCategories.contains(this);

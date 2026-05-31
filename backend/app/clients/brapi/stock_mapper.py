@@ -120,7 +120,7 @@ def map_screener_item(item: dict) -> StockScreenerItem:
         sector=item.get("sector"),
         market_cap=float(market_cap) if market_cap is not None else None,
         volume=float(volume) if volume is not None else None,
-        logo_url=item.get("logo"),
+        logo_url=resolve_logo_url(symbol, item.get("logo")),
     )
 
 

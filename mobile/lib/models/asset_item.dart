@@ -10,6 +10,7 @@ class AssetItem {
     this.logoUrl,
     this.dividendYield12m,
     this.priceToBook,
+    this.exchangeMic,
   });
 
   final String symbol;
@@ -20,6 +21,7 @@ class AssetItem {
   final String? logoUrl;
   final double? dividendYield12m;
   final double? priceToBook;
+  final String? exchangeMic;
 
   bool get isPositive => changePercent >= 0;
 }

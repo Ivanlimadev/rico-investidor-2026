@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/widgets/asset_card_header.dart';
+import 'package:rico_investidor/core/widgets/asset_quick_actions.dart';
 import 'package:rico_investidor/features/indices/data/indices_repository.dart';
 import 'package:rico_investidor/features/indices/models/indices_models.dart';
 import 'package:rico_investidor/features/indices/widgets/index_history_chart.dart';
+import 'package:rico_investidor/models/asset_item.dart';
 
 class IndexDetailScreen extends StatefulWidget {
   const IndexDetailScreen({
@@ -23,6 +25,7 @@ class IndexDetailScreen extends StatefulWidget {
 class _IndexDetailScreenState extends State<IndexDetailScreen> {
   late Future<IndexDetailDto> _loadFuture;
   IndexDetailDto? _extendedDetail;
+  AssetItem? _actionAsset;
 
   IndicesRepository get _repository => widget.repository ?? indicesRepository;
 
@@ -30,6 +33,7 @@ class _IndexDetailScreenState extends State<IndexDetailScreen> {
   void initState() {
     super.initState();
     _loadFuture = _repository.getDetail(widget.symbol).then((detail) {
+      if (mounted) setState(() => _actionAsset = detail.quote.toAssetItem());
       _loadExtendedHistory();
       return detail;
     });
@@ -50,7 +54,10 @@ class _IndexDetailScreenState extends State<IndexDetailScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Índice'),
-        actions: const [ShellHomeButton()],
+        actions: [
+          const ShellHomeButton(),
+          if (_actionAsset != null) ...AssetQuickActions.appBarActions(context, _actionAsset!),
+        ],
       ),
       body: FutureBuilder<IndexDetailDto>(
         future: _loadFuture,

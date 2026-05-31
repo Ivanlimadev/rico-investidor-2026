@@ -4,6 +4,8 @@ import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
 import 'package:rico_investidor/core/widgets/asset_card_header.dart';
 import 'package:rico_investidor/core/widgets/asset_logo.dart';
+import 'package:rico_investidor/core/widgets/asset_quick_actions.dart';
+import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/features/fii/widgets/fii_history_charts.dart';
 import 'package:rico_investidor/core/widgets/asset_returns_card.dart';
 import 'package:rico_investidor/features/quotes/widgets/stock_corporate_actions_card.dart';
@@ -45,17 +47,42 @@ class StockDetailScreen extends StatefulWidget {
 class _StockDetailScreenState extends State<StockDetailScreen> {
   late Future<StockQuoteDetailDto> _loadFuture;
   StockQuoteDetailDto? _extendedDetail;
+  AssetItem? _actionAsset;
+
+  AssetItem _actionAssetFrom(StockQuoteDetailDto detail) {
+    final quote = detail.quote;
+    return AssetItem(
+      symbol: widget.ticker,
+      name: quote.name,
+      category: widget.category,
+      price: quote.price,
+      changePercent: quote.changePercent,
+      logoUrl: detail.profile.logoUrl,
+      dividendYield12m: detail.fundamentals.dividendYield12m,
+    );
+  }
+
+  void _applyActionAsset(StockQuoteDetailDto detail) {
+    final asset = _actionAssetFrom(detail);
+    if (_actionAsset?.symbol == asset.symbol &&
+        _actionAsset?.price == asset.price) {
+      return;
+    }
+    setState(() => _actionAsset = asset);
+  }
 
   @override
   void initState() {
     super.initState();
     if (widget.initialDetail != null) {
+      _actionAsset = _actionAssetFrom(widget.initialDetail!);
       _loadFuture = Future.value(widget.initialDetail);
       _loadExtendedDetail();
       return;
     }
 
     _loadFuture = widget.repository.getStockDetail(widget.ticker).then((detail) {
+      _applyActionAsset(detail);
       _loadExtendedDetail();
       return detail;
     });
@@ -80,6 +107,7 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
         title: Text(widget.ticker),
         actions: [
           const ShellHomeButton(),
+          if (_actionAsset != null) ...AssetQuickActions.appBarActions(context, _actionAsset!),
           IconButton(
             tooltip: 'Comparar',
             onPressed: () => Navigator.of(context).push(

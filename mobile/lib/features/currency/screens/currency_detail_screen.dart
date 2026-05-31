@@ -3,9 +3,11 @@ import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
 import 'package:rico_investidor/core/widgets/asset_card_header.dart';
+import 'package:rico_investidor/core/widgets/asset_quick_actions.dart';
 import 'package:rico_investidor/features/currency/data/currency_repository.dart';
 import 'package:rico_investidor/features/currency/models/currency_models.dart';
 import 'package:rico_investidor/features/currency/widgets/currency_history_chart.dart';
+import 'package:rico_investidor/models/asset_item.dart';
 
 class CurrencyDetailScreen extends StatefulWidget {
   const CurrencyDetailScreen({
@@ -24,6 +26,7 @@ class CurrencyDetailScreen extends StatefulWidget {
 class _CurrencyDetailScreenState extends State<CurrencyDetailScreen> {
   late Future<CurrencyDetailDto> _loadFuture;
   CurrencyDetailDto? _extendedDetail;
+  AssetItem? _actionAsset;
 
   CurrencyRepository get _repository => widget.repository ?? currencyRepository;
 
@@ -31,6 +34,7 @@ class _CurrencyDetailScreenState extends State<CurrencyDetailScreen> {
   void initState() {
     super.initState();
     _loadFuture = _repository.getDetail(widget.pair).then((detail) {
+      if (mounted) setState(() => _actionAsset = detail.quote.toAssetItem());
       _loadExtendedHistory();
       return detail;
     });
@@ -51,7 +55,10 @@ class _CurrencyDetailScreenState extends State<CurrencyDetailScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(normalized),
-        actions: const [ShellHomeButton()],
+        actions: [
+          const ShellHomeButton(),
+          if (_actionAsset != null) ...AssetQuickActions.appBarActions(context, _actionAsset!),
+        ],
       ),
       body: FutureBuilder<CurrencyDetailDto>(
         future: _loadFuture,

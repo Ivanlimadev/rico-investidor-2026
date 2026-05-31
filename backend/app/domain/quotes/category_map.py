@@ -34,7 +34,17 @@ INTERNATIONAL_ETF_PREFIXES = (
     "USDV",
 )
 
-FEATURED_STOCK_TICKERS = ("PETR4", "VALE3", "ITUB4", "MGLU3")
+FEATURED_STOCK_TICKERS = (
+    "PETR4",
+    "VALE3",
+    "ITUB4",
+    "BBDC4",
+    "ABEV3",
+    "WEGE3",
+    "BBAS3",
+    "MGLU3",
+    "RENT3",
+)
 
 
 def infer_category(symbol: str, brapi_type: str | None) -> AssetClass:

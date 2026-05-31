@@ -1,0 +1,343 @@
+import 'package:rico_investidor/core/cache/session_cache.dart';
+import 'package:rico_investidor/core/network/api_exception.dart';
+import 'package:rico_investidor/features/global_markets/data/global_market_api_client.dart';
+import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
+import 'package:rico_investidor/features/global_markets/utils/marketstack_errors.dart';
+import 'package:rico_investidor/features/quotes/data/quote_api_client.dart';
+import 'package:rico_investidor/features/quotes/models/stock_compare.dart';
+import 'package:rico_investidor/features/quotes/models/stock_quote_detail.dart';
+import 'package:rico_investidor/models/asset_item.dart';
+import 'package:rico_investidor/models/market_category.dart';
+
+class GlobalMarketRepository {
+  GlobalMarketRepository({GlobalMarketApiClient? api}) : _api = api ?? GlobalMarketApiClient();
+
+  final GlobalMarketApiClient _api;
+  final _featuredCache = SessionCache<List<AssetItem>>(ttl: const Duration(minutes: 5));
+  final _exchangesCache = SessionCache<WorldExchangesResponseDto>(ttl: const Duration(hours: 6));
+  Future<List<AssetItem>>? _featuredFuture;
+
+  Future<List<AssetItem>> listFeaturedUsAssets() {
+    final cached = _featuredCache.get();
+    if (cached != null) return Future.value(cached);
+    return _featuredFuture ??= _loadFeaturedUs();
+  }
+
+  void invalidateFeaturedCache() {
+    _featuredCache.clear();
+    _featuredFuture = null;
+  }
+
+  Future<List<AssetItem>> _loadFeaturedUs() async {
+    final response = await _withRetry(
+      () => _api.listFeaturedUs(),
+      fallbackMessage: 'Não foi possível carregar destaques EUA.',
+    );
+    final items = response.items.map((e) => e.toUsAssetItem()).toList();
+    _featuredCache.set(items);
+    return items;
+  }
+
+  Future<List<AssetItem>> listByCategory(MarketCategory category) async {
+    final slug = switch (category) {
+      MarketCategory.reits => 'reits',
+      MarketCategory.stocks => 'stocks',
+      _ => 'stocks',
+    };
+    final response = await listUsMarketWithRetry(category: slug, page: 1, limit: 30);
+    final mappedCategory = category == MarketCategory.reits ? MarketCategory.reits : MarketCategory.stocks;
+    return response.items.map((e) => e.toUsAssetItem(category: mappedCategory)).toList();
+  }
+
+  Future<WorldExchangesResponseDto> listWorldExchanges() async {
+    final cached = _exchangesCache.get();
+    if (cached != null) return cached;
+    final response = await _api.listWorldExchanges();
+    _exchangesCache.set(response);
+    return response;
+  }
+
+  Future<ExchangeMarketListResponseDto> listCountryMarket(
+    String countryCode, {
+    int page = 1,
+    int limit = 25,
+    String? search,
+  }) {
+    return listCountryMarketWithRetry(
+      countryCode,
+      page: page,
+      limit: limit,
+      search: search,
+    );
+  }
+
+  Future<ExchangeMarketListResponseDto> listCountryMarketWithRetry(
+    String countryCode, {
+    int page = 1,
+    int limit = 25,
+    String? search,
+  }) {
+    return _withRetry(
+      () => _api.listCountryMarket(
+        countryCode,
+        page: page,
+        limit: limit,
+        search: search,
+      ),
+      fallbackMessage: 'Não foi possível carregar o mercado deste país.',
+    );
+  }
+
+  Future<CountryHubResponseDto> getCountryHub(String countryCode) {
+    return _withRetry(
+      () => _api.getCountryHub(countryCode),
+      fallbackMessage: 'Não foi possível carregar o hub deste país.',
+    );
+  }
+
+  Future<ExchangeMarketListResponseDto> listExchangeMarket(
+    String mic, {
+    String? exchangeName,
+    String? countryCode,
+    int page = 1,
+    int limit = 25,
+    String? search,
+  }) {
+    return listExchangeMarketWithRetry(
+      mic,
+      exchangeName: exchangeName,
+      countryCode: countryCode,
+      page: page,
+      limit: limit,
+      search: search,
+    );
+  }
+
+  Future<ExchangeMarketListResponseDto> listExchangeMarketWithRetry(
+    String mic, {
+    String? exchangeName,
+    String? countryCode,
+    int page = 1,
+    int limit = 25,
+    String? search,
+  }) {
+    return _withRetry(
+      () => _api.listExchangeMarket(
+        mic,
+        exchangeName: exchangeName,
+        countryCode: countryCode,
+        page: page,
+        limit: limit,
+        search: search,
+      ),
+      fallbackMessage: 'Não foi possível carregar os ativos desta bolsa.',
+    );
+  }
+
+  Future<ExchangeMarketListResponseDto> listUsMarket({
+    required String category,
+    int page = 1,
+    int limit = 25,
+    String? search,
+  }) {
+    return _api.listUsMarket(
+      category: category,
+      page: page,
+      limit: limit,
+      search: search,
+    );
+  }
+
+  Future<ExchangeMarketListResponseDto> listUsMarketWithRetry({
+    required String category,
+    int page = 1,
+    int limit = 25,
+    String? search,
+  }) {
+    return _withRetry(
+      () => listUsMarket(
+        category: category,
+        page: page,
+        limit: limit,
+        search: search,
+      ),
+      fallbackMessage: 'Não foi possível carregar o mercado.',
+    );
+  }
+
+  static const defaultCandleLimit = 756;
+  static const extendedCandleLimit = 1000;
+  static const defaultDividendLimit = 100;
+  static const extendedDividendLimit = 500;
+
+  Future<GlobalStockDetailDto> getDetail(
+    String symbol, {
+    String? exchange,
+    int candleLimit = defaultCandleLimit,
+    int dividendLimit = defaultDividendLimit,
+    int splitLimit = 50,
+  }) async {
+    Object? lastError;
+
+    Future<GlobalStockDetailDto> fetch({required bool includeExtras}) async {
+      return _mapDetail(
+        await _api.getStockDetail(
+          symbol,
+          exchange: exchange,
+          candleLimit: candleLimit,
+          dividendLimit: dividendLimit,
+          splitLimit: splitLimit,
+          includeExtras: includeExtras,
+        ),
+      );
+    }
+
+    for (final includeExtras in [false, true]) {
+      try {
+        return await fetch(includeExtras: includeExtras);
+      } catch (error) {
+        lastError = error;
+        if (isMarketstackQuotaError(error)) break;
+      }
+    }
+
+    try {
+      return await _buildLiteDetail(symbol, exchange: exchange);
+    } catch (error) {
+      lastError = error;
+    }
+
+    throw lastError!;
+  }
+
+  Future<GlobalStockDetailDto> _buildLiteDetail(String symbol, {String? exchange}) async {
+    final quote = await _api.getQuote(symbol, exchange: exchange);
+    final resolvedExchange = exchange ?? quote.exchange;
+    final candles = await _api.getCandles(
+      symbol,
+      exchange: resolvedExchange,
+      limit: 90,
+    );
+    final category = quote.category == 'reits' ? MarketCategory.reits : MarketCategory.stocks;
+
+    return GlobalStockDetailDto(
+      quote: quote.toUsAssetItem(category: category),
+      quoteMeta: quote,
+      ticker: GlobalStockTickerInfoDto(
+        symbol: quote.symbol,
+        name: quote.name,
+        exchangeMic: resolvedExchange,
+      ),
+      company: GlobalStockCompanyProfileDto(symbol: quote.symbol, name: quote.name, exchangeMic: resolvedExchange),
+      candles: candles.candles,
+      dividends: const [],
+      splits: const [],
+      dividendsSummary: const GlobalStockDividendsSummaryDto(),
+      returns: const [],
+      fundamentals: const StockFundamentalsDto(),
+      marketStats: const StockMarketStatsDto(),
+      dividendsTotal: 0,
+      splitsTotal: 0,
+      plan: 'basic',
+      dataMode: candles.dataMode,
+      historyLimited: candles.historyLimited,
+      maxHistoryDays: candles.maxHistoryDays,
+      provider: quote.provider,
+    );
+  }
+
+  Future<T> _withRetry<T>(
+    Future<T> Function() action, {
+    required String fallbackMessage,
+  }) async {
+    Object? lastError;
+    const delays = [Duration(milliseconds: 400), Duration(milliseconds: 900)];
+    for (var attempt = 0; attempt <= delays.length; attempt++) {
+      try {
+        return await action();
+      } catch (error) {
+        lastError = error;
+        if (isMarketstackQuotaError(error)) break;
+        if (attempt < delays.length) {
+          await Future<void>.delayed(delays[attempt]);
+        }
+      }
+    }
+    if (lastError is ApiException) throw lastError;
+    throw lastError ?? Exception(fallbackMessage);
+  }
+
+  GlobalStockDetailDto _mapDetail(GlobalStockDetailResponseDto response) {
+    final quote = response.quote;
+    final category = quote.category == 'reits' ? MarketCategory.reits : MarketCategory.stocks;
+
+    return GlobalStockDetailDto(
+      quote: quote.toUsAssetItem(category: category),
+      quoteMeta: quote,
+      ticker: response.ticker,
+      company: response.company,
+      candles: response.candles,
+      dividends: response.dividends,
+      splits: response.splits,
+      dividendsSummary: response.dividendsSummary,
+      returns: response.returns,
+      fundamentals: response.fundamentals,
+      marketStats: response.marketStats,
+      dividendsTotal: response.dividendsTotal,
+      splitsTotal: response.splitsTotal,
+      plan: response.plan,
+      dataMode: response.dataMode,
+      historyLimited: response.historyLimited,
+      maxHistoryDays: response.maxHistoryDays,
+      provider: response.provider,
+    );
+  }
+
+  Future<StockCompareResponseDto> compareStocks(List<String> tickers) {
+    return _api.compareStocks(tickers);
+  }
+}
+
+class GlobalStockDetailDto {
+  const GlobalStockDetailDto({
+    required this.quote,
+    required this.quoteMeta,
+    required this.ticker,
+    required this.company,
+    required this.candles,
+    required this.dividends,
+    required this.splits,
+    required this.dividendsSummary,
+    required this.returns,
+    required this.fundamentals,
+    required this.marketStats,
+    required this.dividendsTotal,
+    required this.splitsTotal,
+    required this.plan,
+    required this.dataMode,
+    required this.historyLimited,
+    required this.maxHistoryDays,
+    required this.provider,
+  });
+
+  final AssetItem quote;
+  final MarketQuoteDto quoteMeta;
+  final GlobalStockTickerInfoDto ticker;
+  final GlobalStockCompanyProfileDto company;
+  final List<GlobalStockCandleDto> candles;
+  final List<GlobalStockDividendDto> dividends;
+  final List<GlobalStockSplitDto> splits;
+  final GlobalStockDividendsSummaryDto dividendsSummary;
+  final List<GlobalStockReturnPeriodDto> returns;
+  final StockFundamentalsDto fundamentals;
+  final StockMarketStatsDto marketStats;
+  final int dividendsTotal;
+  final int splitsTotal;
+  final String plan;
+  final String dataMode;
+  final bool historyLimited;
+  final int maxHistoryDays;
+  final String provider;
+}
+
+final globalMarketRepository = GlobalMarketRepository();

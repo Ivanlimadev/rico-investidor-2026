@@ -1,34 +1,55 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
+import 'package:rico_investidor/core/search/asset_search_config.dart';
+import 'package:rico_investidor/core/search/unified_asset_search.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
 import 'package:rico_investidor/core/widgets/asset_card_header.dart';
 import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/fii/utils/fii_format.dart';
 import 'package:rico_investidor/features/fii/utils/fii_screener_presets.dart';
+import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/models/fii_models.dart';
 import 'package:rico_investidor/navigation/open_asset_detail.dart';
 
 class FiiExploreScreen extends StatefulWidget {
-  const FiiExploreScreen({super.key, required this.repository});
+  const FiiExploreScreen({
+    super.key,
+    required this.repository,
+    this.quoteRepository,
+  });
 
   final FiiRepository repository;
+  final QuoteRepository? quoteRepository;
 
   @override
   State<FiiExploreScreen> createState() => _FiiExploreScreenState();
 }
 
 class _FiiExploreScreenState extends State<FiiExploreScreen> {
+  final _searchController = TextEditingController();
+  final _unifiedSearch = UnifiedAssetSearchRunner();
+
+  UnifiedAssetSearchSnapshot _searchSnapshot = const UnifiedAssetSearchSnapshot.idle();
   String _presetId = 'dy_high';
   List<FiiScreenerItem> _items = [];
   int _total = 0;
   bool _loading = true;
   String? _error;
 
+  QuoteRepository get _quoteRepository => widget.quoteRepository ?? quoteRepository;
+
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _unifiedSearch.dispose();
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -55,6 +76,19 @@ class _FiiExploreScreenState extends State<FiiExploreScreen> {
     }
   }
 
+  void _onSearchChanged(String value) {
+    _unifiedSearch.search(value, (snapshot) {
+      if (!mounted) return;
+      setState(() => _searchSnapshot = snapshot);
+      if (!snapshot.active) _load();
+    });
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    _onSearchChanged('');
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -65,30 +99,58 @@ class _FiiExploreScreenState extends State<FiiExploreScreen> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SizedBox(
-            height: 44,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              itemCount: fiiScreenerPresets.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 8),
-              itemBuilder: (context, index) {
-                final preset = fiiScreenerPresets[index];
-                return FilterChip(
-                  label: Text(preset.label),
-                  selected: _presetId == preset.id,
-                  onSelected: (_) {
-                    setState(() => _presetId = preset.id);
-                    _load();
-                  },
-                );
-              },
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: SearchBar(
+              controller: _searchController,
+              hintText: kUnifiedAssetSearchHint,
+              leading: const Icon(Icons.search),
+              trailing: [
+                if (_searchSnapshot.query.isNotEmpty)
+                  IconButton(
+                    tooltip: 'Limpar',
+                    onPressed: _clearSearch,
+                    icon: const Icon(Icons.close),
+                  ),
+              ],
+              onChanged: _onSearchChanged,
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Text('$_total FIIs · explorar mercado', style: Theme.of(context).textTheme.bodySmall),
-          ),
+          if (!_searchSnapshot.active) ...[
+            SizedBox(
+              height: 44,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                itemCount: fiiScreenerPresets.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (context, index) {
+                  final preset = fiiScreenerPresets[index];
+                  return FilterChip(
+                    label: Text(preset.label),
+                    selected: _presetId == preset.id,
+                    onSelected: (_) {
+                      setState(() => _presetId = preset.id);
+                      _load();
+                    },
+                  );
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text('$_total FIIs · explorar mercado', style: Theme.of(context).textTheme.bodySmall),
+            ),
+          ] else
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: Text(
+                _searchSnapshot.loading
+                    ? 'Buscando em todas as classes…'
+                    : '${_searchSnapshot.results.length} resultados · busca global',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
           Expanded(child: _buildBody()),
         ],
       ),
@@ -96,6 +158,14 @@ class _FiiExploreScreenState extends State<FiiExploreScreen> {
   }
 
   Widget _buildBody() {
+    if (_searchSnapshot.active) {
+      return UnifiedAssetResultsBody(
+        snapshot: _searchSnapshot,
+        fiiRepository: widget.repository,
+        quoteRepository: _quoteRepository,
+      );
+    }
+
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_error != null) {
       return Center(child: Text(_error!, textAlign: TextAlign.center));

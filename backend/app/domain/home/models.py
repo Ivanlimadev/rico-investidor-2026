@@ -16,12 +16,18 @@ class MarketCounts(BaseModel):
     tesouro: int | None = None
     indices: int | None = None
     cripto: int | None = None
+    stocks_us: int | None = None
+    world_exchanges: int | None = None
 
 
 class HomeFeedResponse(BaseModel):
+    featured_us_stocks: MarketQuoteBatchResponse | None = None
     featured_stocks: MarketQuoteBatchResponse
     featured_fiis: FiiScreenerResponse
     market_counts: MarketCounts = Field(default_factory=MarketCounts)
     macro: BrazilMacroResponse | None = None
     provider: str = "brapi"
+    data_providers: dict[str, str] = Field(
+        default_factory=lambda: {"br": "brapi", "us": "marketstack"},
+    )
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

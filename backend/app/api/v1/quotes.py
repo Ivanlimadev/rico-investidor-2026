@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Query
 from fastapi.responses import Response
 
+from app.config import settings
 from app.core.exceptions import AppError
 from app.services.logo_service import logo_service
 from app.services.quote_service import quote_service
@@ -102,10 +103,11 @@ async def screener_quotes(
 async def get_stock_logo_png(ticker: str):
     """Logo PNG do ativo — proxy cacheado (icones-b3)."""
     data = await logo_service.get_png(ticker)
+    max_age = settings.logo_http_max_age_seconds
     return Response(
         content=data,
         media_type="image/png",
-        headers={"Cache-Control": "public, max-age=86400"},
+        headers={"Cache-Control": f"public, max-age={max_age}, immutable, stale-while-revalidate=86400"},
     )
 
 

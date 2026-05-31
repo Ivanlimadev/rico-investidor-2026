@@ -1,16 +1,21 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
+import 'package:rico_investidor/core/search/asset_search_config.dart';
+import 'package:rico_investidor/core/search/unified_asset_search.dart';
+import 'package:rico_investidor/core/widgets/asset_country_flag.dart';
 import 'package:rico_investidor/core/utils/parse_decimal.dart';
-import 'package:rico_investidor/core/widgets/asset_card_header.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/dividend_payment.dart';
 import 'package:rico_investidor/state/portfolio_state.dart';
 
 class AddAssetScreen extends StatefulWidget {
-  const AddAssetScreen({super.key, required this.portfolio});
+  const AddAssetScreen({
+    super.key,
+    required this.portfolio,
+    this.initialAsset,
+  });
 
   final PortfolioState portfolio;
+  final AssetItem? initialAsset;
 
   @override
   State<AddAssetScreen> createState() => _AddAssetScreenState();
@@ -18,19 +23,30 @@ class AddAssetScreen extends StatefulWidget {
 
 class _AddAssetScreenState extends State<AddAssetScreen> {
   final _searchController = TextEditingController();
+  final _unifiedSearch = UnifiedAssetSearchRunner();
   final _quantityController = TextEditingController(text: '1');
   final _averagePriceController = TextEditingController();
   final _dividendAmountController = TextEditingController();
   DateTime? _dividendDate;
   AssetItem? _selected;
-  List<AssetItem> _results = [];
+  UnifiedAssetSearchSnapshot _searchSnapshot = const UnifiedAssetSearchSnapshot.idle();
   bool _includeDividend = false;
-  bool _searching = false;
-  Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.initialAsset;
+    if (initial != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _selectAsset(initial);
+      });
+    }
+  }
 
   @override
   void dispose() {
-    _debounce?.cancel();
+    _unifiedSearch.dispose();
     _searchController.dispose();
     _quantityController.dispose();
     _averagePriceController.dispose();
@@ -39,32 +55,16 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
   }
 
   void _onSearchChanged(String value) {
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 350), () => _runSearch(value));
-  }
-
-  Future<void> _runSearch(String value) async {
-    if (value.trim().length < 2) {
+    _unifiedSearch.search(value, (snapshot) {
+      if (!mounted) return;
       setState(() {
-        _results = [];
-        _searching = false;
+        _searchSnapshot = snapshot;
+        if (_selected != null &&
+            !value.toUpperCase().contains(_selected!.symbol) &&
+            !value.toLowerCase().contains(_selected!.name.toLowerCase())) {
+          _selected = null;
+        }
       });
-      return;
-    }
-
-    setState(() => _searching = true);
-
-    final results = await widget.portfolio.searchService.searchAsync(value);
-
-    if (!mounted) return;
-    setState(() {
-      _results = results;
-      _searching = false;
-      if (_selected != null &&
-          !value.toUpperCase().contains(_selected!.symbol) &&
-          !value.toLowerCase().contains(_selected!.name.toLowerCase())) {
-        _selected = null;
-      }
     });
   }
 
@@ -82,7 +82,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
     setState(() {
       _selected = resolved;
       _searchController.text = '${resolved.symbol} — ${resolved.name}';
-      _results = [];
+      _searchSnapshot = const UnifiedAssetSearchSnapshot.idle();
       if (_averagePriceController.text.isEmpty && resolved.price > 0) {
         _averagePriceController.text = resolved.price.toStringAsFixed(2);
       }
@@ -167,9 +167,9 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
           TextField(
             controller: _searchController,
             decoration: InputDecoration(
-              hintText: 'Nome ou ticker (ex.: HGLG11, Petrobras)',
+              hintText: kUnifiedAssetSearchHint,
               prefixIcon: const Icon(Icons.search),
-              suffixIcon: _searching
+              suffixIcon: _searchSnapshot.loading
                   ? const Padding(
                       padding: EdgeInsets.all(12),
                       child: SizedBox(
@@ -183,25 +183,26 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
             ),
             onChanged: _onSearchChanged,
           ),
-          if (_results.isNotEmpty) ...[
+          if (_searchSnapshot.active && _searchSnapshot.results.isNotEmpty) ...[
             const SizedBox(height: 8),
             Card(
               clipBehavior: Clip.antiAlias,
               child: Column(
                 children: [
-                  for (var i = 0; i < _results.length; i++) ...[
+                  for (var i = 0; i < _searchSnapshot.results.length; i++) ...[
                     if (i > 0) const Divider(height: 1),
                     ListTile(
-                      leading: AssetListLeading(symbol: _results[i].symbol, logoUrl: _results[i].logoUrl),
-                      title: Text(_results[i].symbol),
-                      subtitle: Text(_results[i].name),
-                      trailing: _results[i].price > 0
-                          ? Text(
-                              'R\$ ${_results[i].price.toStringAsFixed(2)}',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            )
-                          : const Text('FII'),
-                      onTap: () => _selectAsset(_results[i]),
+                      leading: AssetSearchLeading(asset: _searchSnapshot.results[i]),
+                      title: Text(_searchSnapshot.results[i].symbol),
+                      subtitle: Text(_searchSnapshot.results[i].name),
+                      trailing: Chip(
+                        label: Text(
+                          _searchSnapshot.results[i].category.title,
+                          style: Theme.of(context).textTheme.labelSmall,
+                        ),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      onTap: () => _selectAsset(_searchSnapshot.results[i]),
                     ),
                   ],
                 ],

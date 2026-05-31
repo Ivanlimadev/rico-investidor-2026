@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/app/main_shell_screen.dart';
-import 'package:rico_investidor/core/widgets/asset_card_header.dart';
+import 'package:rico_investidor/core/search/asset_search_config.dart';
+import 'package:rico_investidor/core/search/unified_asset_search.dart';
 import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/fii/screens/fii_compare_screen.dart';
 import 'package:rico_investidor/features/fii/screens/fii_explore_screen.dart';
 import 'package:rico_investidor/features/fii/screens/fii_list_screen.dart';
-import 'package:rico_investidor/features/fii/utils/fii_ticker.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/quotes/screens/stock_compare_screen.dart';
 import 'package:rico_investidor/features/quotes/screens/stock_explore_screen.dart';
@@ -21,11 +21,15 @@ class SearchTabScreen extends StatefulWidget {
     required this.portfolio,
     required this.fiiRepository,
     required this.quoteRepository,
+    this.initialQuery,
+    this.onInitialQueryApplied,
   });
 
   final PortfolioState portfolio;
   final FiiRepository fiiRepository;
   final QuoteRepository quoteRepository;
+  final String? initialQuery;
+  final VoidCallback? onInitialQueryApplied;
 
   @override
   State<SearchTabScreen> createState() => _SearchTabScreenState();
@@ -33,36 +37,48 @@ class SearchTabScreen extends StatefulWidget {
 
 class _SearchTabScreenState extends State<SearchTabScreen> {
   final _controller = TextEditingController();
-  List<AssetItem> _results = const [];
-  bool _loading = false;
-  String _query = '';
-  int _searchGeneration = 0;
+  final _unifiedSearch = UnifiedAssetSearchRunner();
+  UnifiedAssetSearchSnapshot _snapshot = const UnifiedAssetSearchSnapshot.idle();
+
+  @override
+  void initState() {
+    super.initState();
+    final query = widget.initialQuery?.trim();
+    if (query != null && query.isNotEmpty) {
+      _controller.text = query;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _search(query);
+        widget.onInitialQueryApplied?.call();
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant SearchTabScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final query = widget.initialQuery?.trim();
+    if (query != null &&
+        query.isNotEmpty &&
+        query != oldWidget.initialQuery &&
+        query != _controller.text.trim()) {
+      _controller.text = query;
+      _search(query);
+      widget.onInitialQueryApplied?.call();
+    }
+  }
 
   @override
   void dispose() {
+    _unifiedSearch.dispose();
     _controller.dispose();
     super.dispose();
   }
 
-  Future<void> _search(String query) async {
-    final q = query.trim();
-    final generation = ++_searchGeneration;
-    setState(() {
-      _query = q;
-      _loading = q.length >= 2;
-      if (q.length < 2) _results = const [];
-    });
-
-    if (q.length < 2) return;
-
-    await Future<void>.delayed(const Duration(milliseconds: 350));
-    if (!mounted || generation != _searchGeneration) return;
-
-    final results = await widget.portfolio.searchService.searchAsync(q);
-    if (!mounted || generation != _searchGeneration) return;
-    setState(() {
-      _results = results;
-      _loading = false;
+  void _search(String query) {
+    _unifiedSearch.search(query, (snapshot) {
+      if (!mounted) return;
+      setState(() => _snapshot = snapshot);
     });
   }
 
@@ -87,11 +103,11 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
         children: [
           SearchBar(
             controller: _controller,
-            hintText: 'Ticker ou nome do ativo',
+            hintText: kUnifiedAssetSearchHint,
             leading: const Icon(Icons.search),
             onChanged: _search,
             onSubmitted: _search,
-            trailing: _query.isNotEmpty
+            trailing: _snapshot.query.isNotEmpty
                 ? [
                     IconButton(
                       icon: const Icon(Icons.clear),
@@ -171,40 +187,32 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
             ],
           ),
           const SizedBox(height: 20),
-          if (_loading)
+          if (_snapshot.loading)
             const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator()))
-          else if (_query.length >= 2 && _results.isEmpty)
+          else if (_snapshot.active && _snapshot.results.isEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 24),
               child: Text(
-                'Nenhum resultado para "$_query".',
+                'Nenhum resultado para "${_snapshot.query}".',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
             )
-          else if (_query.length < 2)
+          else if (!_snapshot.active)
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text(
-                'Digite pelo menos 2 caracteres para buscar ações, FIIs e outros ativos.',
+                'Digite pelo menos 2 caracteres para buscar ações, FIIs, cripto, EUA e outros ativos.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             )
           else ...[
             Text('Resultados', style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 8),
-            for (final asset in _results)
-              Card(
-                margin: const EdgeInsets.only(bottom: 8),
-                child: ListTile(
-                  leading: AssetListLeading(symbol: asset.symbol, logoUrl: asset.logoUrl),
-                  title: Text(asset.symbol),
-                  subtitle: Text(asset.name),
-                  trailing: isFiiTicker(asset.symbol)
-                      ? const Chip(label: Text('FII'), visualDensity: VisualDensity.compact)
-                      : null,
-                  onTap: () => _openAsset(asset),
-                ),
+            for (final asset in _snapshot.results)
+              UnifiedAssetResultTile(
+                asset: asset,
+                onTap: () => _openAsset(asset),
               ),
           ],
         ],

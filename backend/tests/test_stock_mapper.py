@@ -62,7 +62,7 @@ def test_map_screener_item():
     assert item.symbol == "PETR4"
     assert item.sector == "Energy Minerals"
     assert item.market_cap == 592871138983
-    assert item.logo_url.endswith("PETR4.svg")
+    assert item.logo_url.endswith("PETR4.png")
 
 
 def test_map_stock_compare_item():

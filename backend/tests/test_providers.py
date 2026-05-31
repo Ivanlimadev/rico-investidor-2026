@@ -12,3 +12,4 @@ def test_stock_provider_is_brapi():
     assert provider_for(AssetClass.ETF_BR) == DataProvider.BRAPI
     assert provider_for(AssetClass.BDR) == DataProvider.BRAPI
     assert provider_for(AssetClass.FII) == DataProvider.BRAPI
+    assert provider_for(AssetClass.STOCK_US) == DataProvider.MARKETSTACK

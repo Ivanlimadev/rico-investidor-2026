@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/features/crypto/screens/crypto_detail_screen.dart';
 import 'package:rico_investidor/features/crypto/models/crypto_models.dart';
+import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
+import 'package:rico_investidor/features/global_markets/screens/global_stock_detail_screen.dart';
 import 'package:rico_investidor/features/currency/screens/currency_detail_screen.dart';
 import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/fii/screens/fii_detail_screen.dart';
@@ -36,6 +38,7 @@ void openAssetDetail(
     fiiRepo: fiiRepository,
     quoteRepo: quoteRepository,
     category: asset.category,
+    exchangeMic: asset.exchangeMic,
   );
 }
 
@@ -46,8 +49,10 @@ void openTickerDetail(
   FiiRepository? fiiRepo,
   QuoteRepository? quoteRepo,
   MarketCategory? category,
+  String? exchangeMic,
 }) {
   final trimmed = ticker.trim();
+  final normalized = trimmed.toUpperCase();
   final resolvedFiiRepo = fiiRepo ?? fiiRepository;
   final resolvedQuoteRepo = quoteRepo ?? quoteRepository;
 
@@ -60,7 +65,7 @@ void openTickerDetail(
     return;
   }
 
-  if (category == MarketCategory.indices || _looksLikeIndex(trimmed)) {
+  if (category == MarketCategory.indices || (category == null && _looksLikeIndex(trimmed))) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => IndexDetailScreen(symbol: normalizeIndexSymbol(trimmed)),
@@ -69,7 +74,20 @@ void openTickerDetail(
     return;
   }
 
-  if (category == MarketCategory.cripto || _looksLikeCrypto(trimmed)) {
+  if (category == MarketCategory.stocks || category == MarketCategory.reits) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => GlobalStockDetailScreen(
+          symbol: normalized,
+          repository: globalMarketRepository,
+          exchange: exchangeMic,
+        ),
+      ),
+    );
+    return;
+  }
+
+  if (category == MarketCategory.cripto || (category == null && _looksLikeCrypto(trimmed))) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => CryptoDetailScreen(symbol: normalizeCryptoSymbol(trimmed)),
@@ -77,8 +95,6 @@ void openTickerDetail(
     );
     return;
   }
-
-  final normalized = trimmed.toUpperCase();
 
   if (category == MarketCategory.moeda || normalized.contains('-BRL')) {
     Navigator.of(context).push(

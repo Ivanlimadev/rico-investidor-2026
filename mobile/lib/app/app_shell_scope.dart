@@ -1,16 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/main_shell_screen.dart';
+import 'package:rico_investidor/state/portfolio_state.dart';
 
 class AppShellScope extends InheritedWidget {
   const AppShellScope({
     super.key,
     required this.currentTab,
     required this.goToHome,
+    required this.goToSearch,
+    required this.portfolio,
+    required this.onPortfolioChanged,
     required super.child,
   });
 
   final AppTab currentTab;
   final VoidCallback goToHome;
+  final void Function({String? query}) goToSearch;
+  final PortfolioState portfolio;
+  final VoidCallback onPortfolioChanged;
 
   static AppShellScope of(BuildContext context) {
     final scope = context.dependOnInheritedWidgetOfExactType<AppShellScope>();
@@ -24,7 +31,8 @@ class AppShellScope extends InheritedWidget {
 
   @override
   bool updateShouldNotify(AppShellScope oldWidget) {
-    return currentTab != oldWidget.currentTab;
+    return currentTab != oldWidget.currentTab ||
+        portfolio != oldWidget.portfolio;
   }
 }
 

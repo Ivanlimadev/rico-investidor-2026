@@ -112,6 +112,7 @@ class AssetLogo extends StatelessWidget {
 
     if (looksLikeCryptoSymbol(symbol) &&
         resolvedUrl != null &&
+        !isApiLogoUrl(resolvedUrl) &&
         isRasterLogoUrl(resolvedUrl)) {
       return SizedBox(
         width: size,
@@ -305,7 +306,21 @@ class _RemoteAssetLogoState extends State<_RemoteAssetLogo> {
       return;
     }
 
-    final bytes = await loadAssetLogoRaster(widget.url);
+    final candidates = <String>[];
+    if (widget.url.isNotEmpty) {
+      candidates.add(widget.url);
+    }
+    final b3Url = b3IconPngUrlFor(widget.symbol);
+    if (b3Url != null && !candidates.contains(b3Url)) {
+      candidates.add(b3Url);
+    }
+
+    Uint8List? bytes;
+    for (final url in candidates) {
+      bytes = await loadAssetLogoRaster(url);
+      if (bytes != null) break;
+    }
+
     if (!mounted) return;
     setState(() {
       _bytes = bytes;

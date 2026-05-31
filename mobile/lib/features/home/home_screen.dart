@@ -1,23 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/main_shell_screen.dart';
-import 'package:rico_investidor/data/mock_market_data.dart';
 import 'package:rico_investidor/features/dividends/dividends_screen.dart';
 import 'package:rico_investidor/features/fii/data/fii_repository.dart';
-import 'package:rico_investidor/features/fii/widgets/featured_fiis_row.dart';
+import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
 import 'package:rico_investidor/features/home/data/home_repository.dart';
-import 'package:rico_investidor/features/home/models/home_feed.dart';
-import 'package:rico_investidor/features/home/widgets/market_category_card.dart';
+import 'package:rico_investidor/features/home/screens/world_exchanges_hub_screen.dart';
 import 'package:rico_investidor/features/home/widgets/portfolio_allocation_card.dart';
 import 'package:rico_investidor/features/home/widgets/portfolio_summary_row.dart';
-import 'package:rico_investidor/features/market/market_list_screen.dart';
+import 'package:rico_investidor/features/home/widgets/preferred_market_section.dart';
+import 'package:rico_investidor/features/home/widgets/world_exchanges_hub_card.dart';
 import 'package:rico_investidor/features/portfolio/portfolio_screen.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
-import 'package:rico_investidor/features/quotes/widgets/featured_stocks_row.dart';
 import 'package:rico_investidor/features/settings/settings_screen.dart';
-import 'package:rico_investidor/models/market_category.dart';
-import 'package:rico_investidor/models/market_category_availability.dart';
 import 'package:rico_investidor/models/subscription_plan.dart';
 import 'package:rico_investidor/models/user_profile.dart';
+import 'package:rico_investidor/services/market_preference_storage.dart';
 import 'package:rico_investidor/state/portfolio_state.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -32,6 +29,9 @@ class HomeScreen extends StatefulWidget {
     required this.quoteRepository,
     required this.isDarkMode,
     required this.onToggleTheme,
+    required this.preferredMarket,
+    required this.onChangePreferredMarket,
+    this.globalMarketRepository,
   });
 
   final UserProfile profile;
@@ -41,59 +41,30 @@ class HomeScreen extends StatefulWidget {
   final HomeRepository homeRepository;
   final FiiRepository fiiRepository;
   final QuoteRepository quoteRepository;
+  final GlobalMarketRepository? globalMarketRepository;
   final bool isDarkMode;
   final VoidCallback onToggleTheme;
+  final MarketPreference preferredMarket;
+  final VoidCallback onChangePreferredMarket;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  late Future<HomeFeed> _feedFuture;
+  GlobalMarketRepository get _globalMarketRepository =>
+      widget.globalMarketRepository ?? globalMarketRepository;
 
-  @override
-  void initState() {
-    super.initState();
-    _feedFuture = widget.homeRepository.loadFeed();
-  }
-
-  void _retryFeed() {
-    widget.homeRepository.invalidateFeed();
-    setState(() {
-      _feedFuture = widget.homeRepository.loadFeed();
-    });
-  }
-
-  void _openCategory(BuildContext context, MarketCategory category) {
+  void _openWorldExchanges(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => MarketListScreen(
-          category: category,
+        builder: (_) => WorldExchangesHubScreen(
+          repository: _globalMarketRepository,
           fiiRepository: widget.fiiRepository,
           quoteRepository: widget.quoteRepository,
         ),
       ),
     );
-  }
-
-  int? _marketCount(HomeFeed? feed, MarketCategory category) {
-    if (category.isDemo) return null;
-
-    final fallback = MockMarketData.byCategory(category).length;
-    if (feed == null) return fallback;
-
-    return switch (category) {
-      MarketCategory.fiis => feed.marketCounts.fiis ?? fallback,
-      MarketCategory.acoesBr => feed.marketCounts.acoesBr ?? fallback,
-      MarketCategory.bdr => feed.marketCounts.bdr ?? fallback,
-      MarketCategory.etf => feed.marketCounts.etf ?? fallback,
-      MarketCategory.etfInternacional => feed.marketCounts.etfIntl ?? fallback,
-      MarketCategory.moeda => feed.marketCounts.moeda ?? fallback,
-      MarketCategory.tesouroDireto => feed.marketCounts.tesouro ?? fallback,
-      MarketCategory.indices => feed.marketCounts.indices ?? fallback,
-      MarketCategory.cripto => feed.marketCounts.cripto ?? fallback,
-      _ => fallback,
-    };
   }
 
   @override
@@ -141,113 +112,64 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
-      body: FutureBuilder<HomeFeed>(
-        future: _feedFuture,
-        builder: (context, snapshot) {
-          final feed = snapshot.data;
-
-          return CustomScrollView(
-            slivers: [
-              SliverToBoxAdapter(
-                child: PortfolioSummaryRow(
-                  summary: widget.portfolio.buildSummary(),
-                  onPortfolioTap: () => openPortfolioScreen(
-                    context,
-                    portfolio: widget.portfolio,
-                    onPortfolioChanged: widget.onPortfolioChanged,
-                    fiiRepository: widget.fiiRepository,
-                    quoteRepository: widget.quoteRepository,
-                  ),
-                  onDividendsTap: () => openDividendsScreen(
-                    context,
-                    portfolio: widget.portfolio,
-                  ),
-                ),
+      body: CustomScrollView(
+        slivers: [
+          SliverToBoxAdapter(
+            child: PortfolioSummaryRow(
+              summary: widget.portfolio.buildSummary(),
+              onPortfolioTap: () => openPortfolioScreen(
+                context,
+                portfolio: widget.portfolio,
+                onPortfolioChanged: widget.onPortfolioChanged,
+                fiiRepository: widget.fiiRepository,
+                quoteRepository: widget.quoteRepository,
               ),
-              SliverToBoxAdapter(
-                child: PortfolioAllocationCard(
-                  portfolio: widget.portfolio,
-                  onTap: () => openPortfolioScreen(
-                    context,
-                    portfolio: widget.portfolio,
-                    onPortfolioChanged: widget.onPortfolioChanged,
-                    fiiRepository: widget.fiiRepository,
-                    quoteRepository: widget.quoteRepository,
-                  ),
-                ),
+              onDividendsTap: () => openDividendsScreen(
+                context,
+                portfolio: widget.portfolio,
               ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                  child: Text(
-                    'FIIs em destaque',
-                    style: Theme.of(context).textTheme.headlineMedium,
-                  ),
-                ),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: PortfolioAllocationCard(
+              portfolio: widget.portfolio,
+              onTap: () => openPortfolioScreen(
+                context,
+                portfolio: widget.portfolio,
+                onPortfolioChanged: widget.onPortfolioChanged,
+                fiiRepository: widget.fiiRepository,
+                quoteRepository: widget.quoteRepository,
               ),
-              SliverToBoxAdapter(
-                child: FeaturedFiisRow(
-                  repository: widget.fiiRepository,
-                  initialItems: feed?.featuredFiis,
-                  loading: snapshot.connectionState == ConnectionState.waiting,
-                  error: snapshot.hasError ? snapshot.error : null,
-                  onRetry: _retryFeed,
-                ),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: PreferredMarketSection(
+              preference: widget.preferredMarket,
+              globalMarketRepository: _globalMarketRepository,
+              fiiRepository: widget.fiiRepository,
+              quoteRepository: widget.quoteRepository,
+              onChangePreferred: widget.onChangePreferredMarket,
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
+              child: Text(
+                'Explore outros mercados',
+                style: Theme.of(context).textTheme.titleMedium,
               ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                  child: Text(
-                    'Principais ações',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: FeaturedStocksRow(
-                  repository: widget.quoteRepository,
-                  fiiRepository: widget.fiiRepository,
-                  initialItems: feed?.featuredStocks,
-                  loading: snapshot.connectionState == ConnectionState.waiting,
-                  error: snapshot.hasError ? snapshot.error : null,
-                  onRetry: _retryFeed,
-                ),
-              ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 12),
-                  child: Text(
-                    'Mercados',
-                    style: Theme.of(context).textTheme.headlineMedium,
-                  ),
-                ),
-              ),
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, kBottomNavContentPadding),
-                sliver: SliverGrid(
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
-                    childAspectRatio: 0.82,
-                  ),
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final category = MarketCategory.values[index];
-                      return MarketCategoryCard(
-                        category: category,
-                        assetCount: _marketCount(feed, category),
-                        isDemo: category.isDemo,
-                        onTap: () => _openCategory(context, category),
-                      );
-                    },
-                    childCount: MarketCategory.values.length,
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: WorldExchangesHubCard(
+              totalExchanges: null,
+              onTap: () => _openWorldExchanges(context),
+            ),
+          ),
+          const SliverToBoxAdapter(
+            child: SizedBox(height: kBottomNavContentPadding),
+          ),
+        ],
       ),
     );
   }

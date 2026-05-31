@@ -9,6 +9,7 @@ import 'package:rico_investidor/features/open_finance/widgets/connect_investment
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/fii/utils/fii_ticker.dart';
 import 'package:rico_investidor/features/portfolio/add_asset_screen.dart';
+import 'package:rico_investidor/features/portfolio/widgets/portfolio_favorites_gadget.dart';
 import 'package:rico_investidor/features/portfolio/widgets/portfolio_holding_card.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/market_category.dart';
@@ -37,6 +38,7 @@ class PortfolioTabScreen extends StatefulWidget {
 
 class _PortfolioTabScreenState extends State<PortfolioTabScreen> {
   bool _refreshing = false;
+  final _favoritesKey = GlobalKey<PortfolioFavoritesGadgetState>();
 
   late final PortfolioPriceService _priceService = PortfolioPriceService(
     quoteRepository: widget.quoteRepository,
@@ -44,7 +46,10 @@ class _PortfolioTabScreenState extends State<PortfolioTabScreen> {
 
   Future<void> _refreshPrices() async {
     setState(() => _refreshing = true);
-    await _priceService.refreshAll(widget.portfolio);
+    if (widget.portfolio.holdings.isNotEmpty) {
+      await _priceService.refreshAll(widget.portfolio);
+    }
+    await _favoritesKey.currentState?.reload();
     if (!mounted) return;
     setState(() => _refreshing = false);
     widget.onPortfolioChanged();
@@ -91,7 +96,7 @@ class _PortfolioTabScreenState extends State<PortfolioTabScreen> {
         ),
       ),
       body: RefreshIndicator(
-        onRefresh: holdings.isEmpty ? () async {} : _refreshPrices,
+        onRefresh: _refreshPrices,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.only(bottom: kBottomNavContentPadding),
@@ -99,6 +104,12 @@ class _PortfolioTabScreenState extends State<PortfolioTabScreen> {
             const Padding(
               padding: EdgeInsets.fromLTRB(20, 12, 20, 0),
               child: ConnectInvestmentsCard(),
+            ),
+            PortfolioFavoritesGadget(
+              key: _favoritesKey,
+              searchService: widget.portfolio.searchService,
+              fiiRepository: widget.fiiRepository,
+              quoteRepository: widget.quoteRepository,
             ),
             const SizedBox(height: 12),
             if (holdings.isEmpty)

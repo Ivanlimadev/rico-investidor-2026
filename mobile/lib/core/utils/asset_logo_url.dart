@@ -23,6 +23,11 @@ const bundledLogoSymbols = {
   'VALE3',
   'ITUB4',
   'MGLU3',
+  'BBDC4',
+  'ABEV3',
+  'WEGE3',
+  'BBAS3',
+  'RENT3',
   'HGLG11',
 };
 
@@ -68,10 +73,38 @@ bool looksLikeCryptoSymbol(String symbol) {
   return RegExp(r'^[A-Z0-9]+$').hasMatch(normalized);
 }
 
-/// Sempre usa a API local para B3/FII; cripto usa CDN de ícones (SVG).
+/// Logo via API local — ações americanas (Marketstack).
+String? globalMarketLogoApiUrl(String symbol) {
+  final normalized = symbol.trim().toUpperCase();
+  if (normalized.isEmpty) return null;
+  return '${ApiConfig.baseUrl}/v1/global-markets/${Uri.encodeComponent(normalized)}/logo.png';
+}
+
+bool isUsExternalLogoUrl(String? url) {
+  if (url == null || url.isEmpty) return false;
+  return url.contains('financialmodelingprep.com') || url.contains('parqet.com');
+}
+
+bool looksLikeB3Ticker(String symbol) {
+  final normalized = symbol.trim().toUpperCase();
+  return RegExp(r'^[A-Z]{4}\d{1,2}$').hasMatch(normalized);
+}
+
+/// Sempre usa a API local para FII; B3 usa PNG direto (icones-b3); cripto usa CDN.
 String? resolveAssetLogoUrl(String symbol, String? logoUrl, {required bool isFii}) {
   if (isFii) {
     return assetLogoApiUrl(symbol, isFii: true);
+  }
+
+  // URL já resolvida para o proxy local (ex.: /v1/global-markets/NVDA/logo.png).
+  // Sem este short-circuit, tickers como NVDA/AAPL/TM caem no ramo de cripto
+  // (heurística looksLikeCryptoSymbol) e a logo correta é descartada.
+  if (isApiLogoUrl(logoUrl)) {
+    return logoUrl;
+  }
+
+  if (isUsExternalLogoUrl(logoUrl)) {
+    return globalMarketLogoApiUrl(symbol);
   }
 
   if (logoUrl != null && logoUrl.isNotEmpty && isCryptoIconUrl(logoUrl)) {
@@ -80,6 +113,13 @@ String? resolveAssetLogoUrl(String symbol, String? logoUrl, {required bool isFii
 
   if (looksLikeCryptoSymbol(symbol)) {
     return cryptoIconPngUrlFor(symbol);
+  }
+
+  if (looksLikeB3Ticker(symbol)) {
+    if (logoUrl != null && logoUrl.isNotEmpty && isRasterLogoUrl(logoUrl)) {
+      return logoUrl;
+    }
+    return b3IconPngUrlFor(symbol);
   }
 
   return assetLogoApiUrl(symbol, isFii: false);

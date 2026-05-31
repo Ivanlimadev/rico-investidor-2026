@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
@@ -35,42 +37,51 @@ class AuthSession {
 
     final deviceId = await _getOrCreateDeviceId();
     final uri = Uri.parse('${ApiConfig.baseUrl}/v1/auth/anonymous');
-    final response = await _client
-        .post(
-          uri,
-          headers: const {'Content-Type': 'application/json'},
-          body: jsonEncode({'device_id': deviceId}),
-        )
-        .timeout(const Duration(seconds: 30));
+    try {
+      final response = await _client
+          .post(
+            uri,
+            headers: const {'Content-Type': 'application/json'},
+            body: jsonEncode({'device_id': deviceId}),
+          )
+          .timeout(const Duration(seconds: 30));
 
-    if (response.statusCode == 503) {
-      // Backend sem AUTH_SECRET — API pública.
+      if (response.statusCode == 503) {
+        // Backend sem AUTH_SECRET — API pública.
+        return;
+      }
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        var message = 'Falha ao autenticar (${response.statusCode})';
+        try {
+          final body = jsonDecode(response.body);
+          if (body is Map && body['detail'] != null) {
+            message = body['detail'].toString();
+          }
+        } catch (_) {}
+        throw ApiException(message, statusCode: response.statusCode);
+      }
+
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map<String, dynamic>) {
+        throw ApiException('Resposta de autenticação inválida');
+      }
+
+      final token = decoded['access_token']?.toString();
+      if (token == null || token.isEmpty) {
+        throw ApiException('Token de autenticação ausente');
+      }
+
+      _accessToken = token;
+      await _storage.write(key: _tokenKey, value: token);
+    } on SocketException {
+      // Backend offline — segue sem token (API pública em dev).
+      return;
+    } on http.ClientException {
+      return;
+    } on TimeoutException {
       return;
     }
-
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      var message = 'Falha ao autenticar (${response.statusCode})';
-      try {
-        final body = jsonDecode(response.body);
-        if (body is Map && body['detail'] != null) {
-          message = body['detail'].toString();
-        }
-      } catch (_) {}
-      throw ApiException(message, statusCode: response.statusCode);
-    }
-
-    final decoded = jsonDecode(response.body);
-    if (decoded is! Map<String, dynamic>) {
-      throw ApiException('Resposta de autenticação inválida');
-    }
-
-    final token = decoded['access_token']?.toString();
-    if (token == null || token.isEmpty) {
-      throw ApiException('Token de autenticação ausente');
-    }
-
-    _accessToken = token;
-    await _storage.write(key: _tokenKey, value: token);
   }
 
   Future<void> clear() async {

@@ -10,9 +10,20 @@ class MarketQuote(BaseModel):
     change_percent: float
     category: str
     provider: str = "brapi"
+    exchange: str | None = None
     logo_url: str | None = None
     dividend_yield_12m: float | None = None
     price_to_book: float | None = None
+    # Campos EOD — preenchidos apenas pela Marketstack (ativos globais).
+    open: float | None = None
+    high: float | None = None
+    low: float | None = None
+    volume: float | None = None
+    previous_close: float | None = None
+    session_date: str | None = None
+    split_factor: float | None = None
+    dividend_amount: float | None = None
+    adj_close: float | None = None
 
 
 class MarketQuoteListResponse(BaseModel):

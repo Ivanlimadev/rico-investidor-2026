@@ -14,6 +14,8 @@ class HomeMarketCounts {
     this.tesouro,
     this.indices,
     this.cripto,
+    this.stocksUs,
+    this.worldExchanges,
   });
 
   final int? fiis;
@@ -25,6 +27,8 @@ class HomeMarketCounts {
   final int? tesouro;
   final int? indices;
   final int? cripto;
+  final int? stocksUs;
+  final int? worldExchanges;
 
   factory HomeMarketCounts.fromJson(Map<String, dynamic> json) {
     int? intVal(String key) {
@@ -43,6 +47,8 @@ class HomeMarketCounts {
       tesouro: intVal('tesouro'),
       indices: intVal('indices'),
       cripto: intVal('cripto'),
+      stocksUs: intVal('stocks_us'),
+      worldExchanges: intVal('world_exchanges'),
     );
   }
 
@@ -57,6 +63,8 @@ class HomeMarketCounts {
       'tesouro' => tesouro,
       'indices' => indices,
       'cripto' => cripto,
+      'stocks' => stocksUs,
+      'reits' => stocksUs,
       _ => null,
     };
   }
@@ -64,6 +72,7 @@ class HomeMarketCounts {
 
 class HomeFeed {
   const HomeFeed({
+    required this.featuredUsStocks,
     required this.featuredStocks,
     required this.featuredFiis,
     required this.marketCounts,
@@ -71,6 +80,7 @@ class HomeFeed {
     this.provider = 'brapi',
   });
 
+  final List<AssetItem> featuredUsStocks;
   final List<AssetItem> featuredStocks;
   final List<FiiScreenerItem> featuredFiis;
   final HomeMarketCounts marketCounts;
@@ -78,15 +88,20 @@ class HomeFeed {
   final String provider;
 
   factory HomeFeed.fromJson(Map<String, dynamic> json) {
+    final usStocksRaw = json['featured_us_stocks'] as Map<String, dynamic>?;
     final stocksRaw = json['featured_stocks'] as Map<String, dynamic>? ?? const {};
     final fiisRaw = json['featured_fiis'] as Map<String, dynamic>? ?? const {};
     final countsRaw = json['market_counts'] as Map<String, dynamic>? ?? const {};
     final macroRaw = json['macro'];
 
+    final usStocks = usStocksRaw == null
+        ? const <AssetItem>[]
+        : QuoteListResponse.fromJson(usStocksRaw).items.map((e) => e.toAssetItem()).toList();
     final stocks = QuoteListResponse.fromJson(stocksRaw).items.map((e) => e.toAssetItem()).toList();
     final fiis = FiiScreenerResponse.fromJson(fiisRaw).data;
 
     return HomeFeed(
+      featuredUsStocks: usStocks,
       featuredStocks: stocks,
       featuredFiis: fiis,
       marketCounts: HomeMarketCounts.fromJson(countsRaw),

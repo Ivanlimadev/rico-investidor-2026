@@ -9,11 +9,18 @@ Future<void> main() async {
   try {
     // Valida URL cedo (release exige HTTPS via dart-define).
     ApiConfig.baseUrl;
-    await authSession.ensureAuthenticated();
-    runApp(const RicoInvestidorApp());
   } on ApiConfigError catch (error) {
     runApp(_ConfigErrorApp(message: error.message));
+    return;
   }
+
+  try {
+    await authSession.ensureAuthenticated();
+  } catch (_) {
+    // Auth falhou — app ainda abre; telas mostram erro de rede.
+  }
+
+  runApp(const RicoInvestidorApp());
 }
 
 class _ConfigErrorApp extends StatelessWidget {

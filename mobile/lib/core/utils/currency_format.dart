@@ -48,3 +48,20 @@ String formatCompactBrl(double value) {
   if (abs >= 1e6) return '${prefix}R\$ ${(abs / 1e6).toStringAsFixed(1)} mi';
   return formatBrl(value);
 }
+
+String formatUsd(double value) {
+  final negative = value < 0;
+  final abs = value.abs();
+  final fixed = abs >= 1000 ? abs.toStringAsFixed(2) : abs.toStringAsFixed(2);
+  final formatted = '\$$fixed';
+  return negative ? '-$formatted' : formatted;
+}
+
+String formatCompactUsd(double value) {
+  final abs = value.abs();
+  final prefix = value < 0 ? '- ' : '';
+  if (abs >= 1e12) return '${prefix}\$${(abs / 1e12).toStringAsFixed(1)}T';
+  if (abs >= 1e9) return '${prefix}\$${(abs / 1e9).toStringAsFixed(1)}B';
+  if (abs >= 1e6) return '${prefix}\$${(abs / 1e6).toStringAsFixed(1)}M';
+  return formatUsd(value);
+}

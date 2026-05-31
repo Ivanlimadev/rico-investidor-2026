@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
 import 'package:rico_investidor/core/widgets/asset_card_header.dart';
+import 'package:rico_investidor/core/widgets/asset_quick_actions.dart';
 import 'package:rico_investidor/features/treasury/data/treasury_repository.dart';
 import 'package:rico_investidor/features/treasury/models/treasury_models.dart';
 import 'package:rico_investidor/features/treasury/widgets/treasury_history_chart.dart';
+import 'package:rico_investidor/models/asset_item.dart';
 
 class TreasuryDetailScreen extends StatefulWidget {
   const TreasuryDetailScreen({
@@ -23,6 +25,7 @@ class TreasuryDetailScreen extends StatefulWidget {
 class _TreasuryDetailScreenState extends State<TreasuryDetailScreen> {
   late Future<TreasuryDetailDto> _loadFuture;
   TreasuryDetailDto? _extendedDetail;
+  AssetItem? _actionAsset;
 
   TreasuryRepository get _repository => widget.repository ?? treasuryRepository;
 
@@ -30,6 +33,7 @@ class _TreasuryDetailScreenState extends State<TreasuryDetailScreen> {
   void initState() {
     super.initState();
     _loadFuture = _repository.getDetail(widget.symbol).then((detail) {
+      if (mounted) setState(() => _actionAsset = detail.bond.toAssetItem());
       _loadExtendedHistory();
       return detail;
     });
@@ -50,7 +54,10 @@ class _TreasuryDetailScreenState extends State<TreasuryDetailScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Tesouro Direto'),
-        actions: const [ShellHomeButton()],
+        actions: [
+          const ShellHomeButton(),
+          if (_actionAsset != null) ...AssetQuickActions.appBarActions(context, _actionAsset!),
+        ],
       ),
       body: FutureBuilder<TreasuryDetailDto>(
         future: _loadFuture,

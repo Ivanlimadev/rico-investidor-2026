@@ -19,10 +19,11 @@ void main() {
     expect(url, contains('/eth.png'));
   });
 
-  test('resolveAssetLogoUrl keeps api logo for b3 stocks', () {
+  test('resolveAssetLogoUrl uses b3 png for b3 stocks', () {
     final url = resolveAssetLogoUrl('PETR4', null, isFii: false);
 
-    expect(url, contains('/v1/quotes/PETR4/logo.png'));
+    expect(url, contains('icones-b3'));
+    expect(url, endsWith('/PETR4.png'));
   });
 
   test('looksLikeCryptoSymbol rejects fiis and b3 tickers', () {

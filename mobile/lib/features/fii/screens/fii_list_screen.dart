@@ -1,17 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/core/config/api_config.dart';
+import 'package:rico_investidor/core/search/asset_search_config.dart';
+import 'package:rico_investidor/core/search/unified_asset_search.dart';
 import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/fii/screens/fii_compare_screen.dart';
 import 'package:rico_investidor/features/fii/screens/fii_explore_screen.dart' show FiiExploreScreen, FiiScreenerTile;
 import 'package:rico_investidor/features/fii/utils/fii_screener_presets.dart';
+import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/models/fii_models.dart';
 import 'package:rico_investidor/navigation/open_asset_detail.dart';
 
 class FiiListScreen extends StatefulWidget {
-  const FiiListScreen({super.key, required this.repository});
+  const FiiListScreen({
+    super.key,
+    required this.repository,
+    this.quoteRepository,
+  });
 
   final FiiRepository repository;
+  final QuoteRepository? quoteRepository;
 
   @override
   State<FiiListScreen> createState() => _FiiListScreenState();
@@ -19,11 +27,15 @@ class FiiListScreen extends StatefulWidget {
 
 class _FiiListScreenState extends State<FiiListScreen> {
   final _searchController = TextEditingController();
+  final _unifiedSearch = UnifiedAssetSearchRunner();
+
+  UnifiedAssetSearchSnapshot _searchSnapshot = const UnifiedAssetSearchSnapshot.idle();
   List<FiiScreenerItem> _items = [];
   int _total = 0;
   bool _loading = true;
   String? _error;
-  String _query = '';
+
+  QuoteRepository get _quoteRepository => widget.quoteRepository ?? quoteRepository;
 
   @override
   void initState() {
@@ -33,6 +45,7 @@ class _FiiListScreenState extends State<FiiListScreen> {
 
   @override
   void dispose() {
+    _unifiedSearch.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -52,7 +65,6 @@ class _FiiListScreenState extends State<FiiListScreen> {
         _total = response.total;
         _loading = false;
       });
-      _applySearch(_query);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -62,55 +74,23 @@ class _FiiListScreenState extends State<FiiListScreen> {
     }
   }
 
-  void _applySearch(String query) {
-    _query = query.trim();
-    if (_query.isEmpty) return;
-    final q = _query.toLowerCase();
-    setState(() {
-      _items = _items
-          .where(
-            (f) => f.ticker.toLowerCase().contains(q) || f.name.toLowerCase().contains(q),
-          )
-          .toList();
+  void _onSearchChanged(String value) {
+    _unifiedSearch.search(value, (snapshot) {
+      if (!mounted) return;
+      setState(() => _searchSnapshot = snapshot);
+      if (!snapshot.active) _load();
     });
   }
 
-  void _onSearchChanged(String value) async {
-    if (value.trim().isEmpty) {
-      _load();
-      return;
-    }
-    setState(() => _loading = true);
-    try {
-      final preset = fiiScreenerPresets.firstWhere((p) => p.id == 'all');
-      final response = await widget.repository.screener(preset.params);
-      final q = value.trim().toLowerCase();
-      final filtered = response.data
-          .where(
-            (f) => f.ticker.toLowerCase().contains(q) || f.name.toLowerCase().contains(q),
-          )
-          .toList();
-      if (!mounted) return;
-      setState(() {
-        _items = filtered;
-        _total = response.total;
-        _query = value.trim();
-        _loading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _error = e.toString();
-        _loading = false;
-      });
-    }
+  void _clearSearch() {
+    _searchController.clear();
+    _onSearchChanged('');
   }
 
   void _reload() {
     widget.repository.invalidate();
     _searchController.clear();
-    _query = '';
-    _load();
+    _onSearchChanged('');
   }
 
   @override
@@ -124,7 +104,10 @@ class _FiiListScreenState extends State<FiiListScreen> {
             tooltip: 'Explorar',
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
-                builder: (_) => FiiExploreScreen(repository: widget.repository),
+                builder: (_) => FiiExploreScreen(
+                  repository: widget.repository,
+                  quoteRepository: _quoteRepository,
+                ),
               ),
             ),
             icon: const Icon(Icons.tune),
@@ -150,23 +133,29 @@ class _FiiListScreenState extends State<FiiListScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: TextField(
+            child: SearchBar(
               controller: _searchController,
-              decoration: const InputDecoration(
-                hintText: 'Buscar por ticker ou nome',
-                prefixIcon: Icon(Icons.search),
-                border: OutlineInputBorder(),
-                isDense: true,
-              ),
+              hintText: kUnifiedAssetSearchHint,
+              leading: const Icon(Icons.search),
+              trailing: [
+                if (_searchSnapshot.query.isNotEmpty)
+                  IconButton(
+                    tooltip: 'Limpar',
+                    onPressed: _clearSearch,
+                    icon: const Icon(Icons.close),
+                  ),
+              ],
               onChanged: _onSearchChanged,
             ),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
             child: Text(
-              _query.isEmpty
-                  ? '$_total FIIs · cotações ao vivo'
-                  : '${_items.length} encontrados · "$_query"',
+              _searchSnapshot.active
+                  ? (_searchSnapshot.loading
+                      ? 'Buscando em todas as classes…'
+                      : '${_searchSnapshot.results.length} resultados · busca global')
+                  : '$_total FIIs · cotações ao vivo',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
@@ -177,12 +166,34 @@ class _FiiListScreenState extends State<FiiListScreen> {
   }
 
   Widget _buildBody() {
+    if (_searchSnapshot.active) {
+      return UnifiedAssetResultsBody(
+        snapshot: _searchSnapshot,
+        fiiRepository: widget.repository,
+        quoteRepository: _quoteRepository,
+      );
+    }
+
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
 
     if (_error != null) {
-      return _FiiListError(error: _error!, onRetry: _reload);
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(_error!, textAlign: TextAlign.center),
+              const SizedBox(height: 8),
+              Text('API: ${ApiConfig.baseUrl}', style: Theme.of(context).textTheme.labelSmall),
+              const SizedBox(height: 12),
+              FilledButton(onPressed: _load, child: const Text('Tentar novamente')),
+            ],
+          ),
+        ),
+      );
     }
 
     if (_items.isEmpty) {
@@ -190,9 +201,9 @@ class _FiiListScreenState extends State<FiiListScreen> {
     }
 
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
       itemCount: _items.length,
-      separatorBuilder: (context, index) => const SizedBox(height: 8),
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
         final item = _items[index];
         return FiiScreenerTile(
@@ -200,38 +211,6 @@ class _FiiListScreenState extends State<FiiListScreen> {
           onTap: () => openTickerDetailQuick(context, item.ticker),
         );
       },
-    );
-  }
-}
-
-class _FiiListError extends StatelessWidget {
-  const _FiiListError({required this.error, required this.onRetry});
-
-  final String error;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.wifi_off, size: 48, color: Theme.of(context).colorScheme.error),
-          const SizedBox(height: 12),
-          Text('Erro ao carregar FIIs', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          Text(error, textAlign: TextAlign.center),
-          const SizedBox(height: 8),
-          Text(
-            'Confira se a API está rodando em ${ApiConfig.baseUrl}',
-            style: Theme.of(context).textTheme.bodySmall,
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 16),
-          FilledButton(onPressed: onRetry, child: const Text('Tentar novamente')),
-        ],
-      ),
     );
   }
 }

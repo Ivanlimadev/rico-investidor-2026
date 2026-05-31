@@ -3,6 +3,8 @@ import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
 import 'package:rico_investidor/core/widgets/asset_card_header.dart';
+import 'package:rico_investidor/core/search/asset_search_config.dart';
+import 'package:rico_investidor/core/search/unified_asset_search.dart';
 import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/quotes/models/stock_screener.dart';
@@ -29,6 +31,10 @@ class StockExploreScreen extends StatefulWidget {
 class _StockExploreScreenState extends State<StockExploreScreen> {
   static const _pageSize = 30;
 
+  final _searchController = TextEditingController();
+  final _unifiedSearch = UnifiedAssetSearchRunner();
+  UnifiedAssetSearchSnapshot _searchSnapshot = const UnifiedAssetSearchSnapshot.idle();
+
   late String _presetId;
   late List<StockScreenerPreset> _presets;
   List<StockScreenerItemDto> _items = [];
@@ -47,6 +53,26 @@ class _StockExploreScreenState extends State<StockExploreScreen> {
     _presets = presetsForCategory(_categorySlug);
     _presetId = _presets.first.id;
     _load(reset: true);
+  }
+
+  @override
+  void dispose() {
+    _unifiedSearch.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String value) {
+    _unifiedSearch.search(value, (snapshot) {
+      if (!mounted) return;
+      setState(() => _searchSnapshot = snapshot);
+      if (!snapshot.active) _load(reset: true);
+    });
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    _onSearchChanged('');
   }
 
   String get _categorySlug {
@@ -112,13 +138,13 @@ class _StockExploreScreenState extends State<StockExploreScreen> {
   }
 
   void _selectPreset(String presetId) {
-    if (_presetId == presetId) return;
+    if (_presetId == presetId || _searchSnapshot.active) return;
     setState(() => _presetId = presetId);
     _load(reset: true);
   }
 
   void _selectSector(String? sector) {
-    if (_selectedSector == sector) return;
+    if (_selectedSector == sector || _searchSnapshot.active) return;
     setState(() => _selectedSector = sector);
     _load(reset: true);
   }
@@ -133,6 +159,24 @@ class _StockExploreScreenState extends State<StockExploreScreen> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: SearchBar(
+              controller: _searchController,
+              hintText: kUnifiedAssetSearchHint,
+              leading: const Icon(Icons.search),
+              trailing: [
+                if (_searchSnapshot.query.isNotEmpty)
+                  IconButton(
+                    tooltip: 'Limpar',
+                    onPressed: _clearSearch,
+                    icon: const Icon(Icons.close),
+                  ),
+              ],
+              onChanged: _onSearchChanged,
+            ),
+          ),
+          if (!_searchSnapshot.active) ...[
           SizedBox(
             height: 44,
             child: ListView.separated(
@@ -182,6 +226,16 @@ class _StockExploreScreenState extends State<StockExploreScreen> {
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
+          ] else
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: Text(
+                _searchSnapshot.loading
+                    ? 'Buscando em todas as classes…'
+                    : '${_searchSnapshot.results.length} resultados · busca global',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
           Expanded(child: _buildBody()),
         ],
       ),
@@ -189,6 +243,14 @@ class _StockExploreScreenState extends State<StockExploreScreen> {
   }
 
   Widget _buildBody() {
+    if (_searchSnapshot.active) {
+      return UnifiedAssetResultsBody(
+        snapshot: _searchSnapshot,
+        fiiRepository: widget.fiiRepository,
+        quoteRepository: widget.repository,
+      );
+    }
+
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_error != null) {
       return Center(

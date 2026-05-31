@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/widgets/asset_card_header.dart';
+import 'package:rico_investidor/core/widgets/asset_quick_actions.dart';
 import 'package:rico_investidor/features/crypto/data/crypto_price_stream.dart';
 import 'package:rico_investidor/features/crypto/data/crypto_repository.dart';
 import 'package:rico_investidor/features/crypto/models/crypto_models.dart';
 import 'package:rico_investidor/features/crypto/widgets/crypto_chart_card.dart';
 import 'package:rico_investidor/features/crypto/widgets/crypto_live_order_book_card.dart';
 import 'package:rico_investidor/features/crypto/widgets/crypto_trades_card.dart';
+import 'package:rico_investidor/models/asset_item.dart';
 
 class CryptoDetailScreen extends StatefulWidget {
   const CryptoDetailScreen({
@@ -28,6 +30,7 @@ class _CryptoDetailScreenState extends State<CryptoDetailScreen> {
   CryptoPriceStream? _priceStream;
   double? _livePrice;
   bool _streamLive = false;
+  AssetItem? _actionAsset;
 
   CryptoRepository get _repository => widget.repository ?? cryptoRepository;
 
@@ -35,6 +38,9 @@ class _CryptoDetailScreenState extends State<CryptoDetailScreen> {
   void initState() {
     super.initState();
     _loadFuture = _repository.getDetail(widget.symbol).then((detail) {
+      if (mounted) {
+        setState(() => _actionAsset = detail.quote.toAssetItem());
+      }
       _startLivePrice(detail.quote.symbol);
       return detail;
     });
@@ -67,7 +73,10 @@ class _CryptoDetailScreenState extends State<CryptoDetailScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(normalized),
-        actions: const [ShellHomeButton()],
+        actions: [
+          const ShellHomeButton(),
+          if (_actionAsset != null) ...AssetQuickActions.appBarActions(context, _actionAsset!),
+        ],
       ),
       body: FutureBuilder<CryptoDetailDto>(
         future: _loadFuture,

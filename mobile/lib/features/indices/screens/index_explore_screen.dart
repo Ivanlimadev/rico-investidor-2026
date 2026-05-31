@@ -1,7 +1,7 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
+import 'package:rico_investidor/core/search/asset_search_config.dart';
+import 'package:rico_investidor/core/search/unified_asset_search.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/widgets/asset_card_header.dart';
 import 'package:rico_investidor/features/fii/data/fii_repository.dart';
@@ -31,12 +31,12 @@ class _IndexExploreScreenState extends State<IndexExploreScreen> {
   static const _pageSize = 30;
 
   final _searchController = TextEditingController();
-  Timer? _debounce;
+  final _unifiedSearch = UnifiedAssetSearchRunner();
 
   IndicesRepository get _repository => widget.repository ?? indicesRepository;
 
+  UnifiedAssetSearchSnapshot _searchSnapshot = const UnifiedAssetSearchSnapshot.idle();
   String _groupId = indexExploreGroups.first.id;
-  String _search = '';
   List<IndexQuoteDto> _items = [];
   int _page = 1;
   int _total = 0;
@@ -55,7 +55,7 @@ class _IndexExploreScreenState extends State<IndexExploreScreen> {
 
   @override
   void dispose() {
-    _debounce?.cancel();
+    _unifiedSearch.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -76,7 +76,6 @@ class _IndexExploreScreenState extends State<IndexExploreScreen> {
 
     try {
       final response = await _repository.explore(
-        search: _search.isEmpty ? null : _search,
         group: _groupId,
         page: page,
         limit: _pageSize,
@@ -106,26 +105,22 @@ class _IndexExploreScreenState extends State<IndexExploreScreen> {
   }
 
   void _selectGroup(String groupId) {
-    if (_groupId == groupId) return;
+    if (_groupId == groupId || _searchSnapshot.active) return;
     setState(() => _groupId = groupId);
     _load(reset: true);
   }
 
   void _onSearchChanged(String value) {
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 350), () {
-      final trimmed = value.trim();
-      if (trimmed == _search) return;
-      setState(() => _search = trimmed);
-      _load(reset: true);
+    _unifiedSearch.search(value, (snapshot) {
+      if (!mounted) return;
+      setState(() => _searchSnapshot = snapshot);
+      if (!snapshot.active) _load(reset: true);
     });
   }
 
   void _clearSearch() {
     _searchController.clear();
-    if (_search.isEmpty) return;
-    setState(() => _search = '');
-    _load(reset: true);
+    _onSearchChanged('');
   }
 
   @override
@@ -142,10 +137,10 @@ class _IndexExploreScreenState extends State<IndexExploreScreen> {
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: SearchBar(
               controller: _searchController,
-              hintText: 'Buscar índice (IBOV, IFIX, S&P…)',
+              hintText: kUnifiedAssetSearchHint,
               leading: const Icon(Icons.search),
               trailing: [
-                if (_search.isNotEmpty)
+                if (_searchSnapshot.query.isNotEmpty)
                   IconButton(
                     tooltip: 'Limpar',
                     onPressed: _clearSearch,
@@ -155,6 +150,7 @@ class _IndexExploreScreenState extends State<IndexExploreScreen> {
               onChanged: _onSearchChanged,
             ),
           ),
+          if (!_searchSnapshot.active) ...[
           SizedBox(
             height: 44,
             child: ListView.separated(
@@ -179,6 +175,16 @@ class _IndexExploreScreenState extends State<IndexExploreScreen> {
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
+          ] else
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: Text(
+                _searchSnapshot.loading
+                    ? 'Buscando em todas as classes…'
+                    : '${_searchSnapshot.results.length} resultados · busca global',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
           Expanded(child: _buildBody()),
         ],
       ),
@@ -186,6 +192,14 @@ class _IndexExploreScreenState extends State<IndexExploreScreen> {
   }
 
   Widget _buildBody() {
+    if (_searchSnapshot.active) {
+      return UnifiedAssetResultsBody(
+        snapshot: _searchSnapshot,
+        fiiRepository: widget.fiiRepository ?? fiiRepository,
+        quoteRepository: widget.quoteRepository ?? quoteRepository,
+      );
+    }
+
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_error != null) {
       return Center(
