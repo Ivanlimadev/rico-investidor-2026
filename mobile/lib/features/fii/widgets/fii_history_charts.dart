@@ -5,9 +5,18 @@ import 'package:rico_investidor/core/utils/currency_format.dart';
 import 'package:rico_investidor/models/fii_models.dart';
 
 class FiiDistributionsChart extends StatefulWidget {
-  const FiiDistributionsChart({super.key, required this.annualSummary});
+  const FiiDistributionsChart({
+    super.key,
+    required this.annualSummary,
+    this.title = 'Proventos por cota (anual)',
+    this.valueFormatter = formatBrl,
+    this.maxYears = 10,
+  });
 
   final List<FiiDistributionYear> annualSummary;
+  final String title;
+  final String Function(double value) valueFormatter;
+  final int maxYears;
 
   @override
   State<FiiDistributionsChart> createState() => _FiiDistributionsChartState();
@@ -23,17 +32,28 @@ class _FiiDistributionsChartState extends State<FiiDistributionsChart> {
     final sorted = List<FiiDistributionYear>.from(widget.annualSummary)
       ..sort((a, b) => a.year.compareTo(b.year));
 
+    final maxYears = widget.maxYears.clamp(4, 20);
+    final truncated = sorted.length > maxYears;
+    final visible = truncated ? sorted.sublist(sorted.length - maxYears) : sorted;
+
+    final maxValue = visible
+        .map((row) => row.totalPerShare ?? 0)
+        .fold(0.0, (current, value) => value > current ? value : current);
+    final chartMax = maxValue <= 0 ? 1.0 : maxValue * 1.18;
+    final barWidth = visible.length > 10 ? 10.0 : visible.length > 7 ? 14.0 : 18.0;
+    final groupsSpace = visible.length > 8 ? 8.0 : 14.0;
+
     final bars = <BarChartGroupData>[];
-    for (var i = 0; i < sorted.length; i++) {
+    for (var i = 0; i < visible.length; i++) {
       final isSelected = _selectedIndex == i;
       bars.add(
         BarChartGroupData(
           x: i,
           barRods: [
             BarChartRodData(
-              toY: sorted[i].totalPerShare ?? 0,
-              color: isSelected ? AppColors.positive : AppColors.positive.withValues(alpha: 0.75),
-              width: isSelected ? 20 : 16,
+              toY: visible[i].totalPerShare ?? 0,
+              color: isSelected ? AppColors.positive : AppColors.positive.withValues(alpha: 0.78),
+              width: isSelected ? barWidth + 2 : barWidth,
               borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
             ),
           ],
@@ -41,8 +61,8 @@ class _FiiDistributionsChartState extends State<FiiDistributionsChart> {
       );
     }
 
-    final selected = _selectedIndex != null && _selectedIndex! < sorted.length
-        ? sorted[_selectedIndex!]
+    final selected = _selectedIndex != null && _selectedIndex! < visible.length
+        ? visible[_selectedIndex!]
         : null;
 
     return Card(
@@ -51,7 +71,21 @@ class _FiiDistributionsChartState extends State<FiiDistributionsChart> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Proventos por cota (anual)', style: Theme.of(context).textTheme.titleSmall),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(widget.title, style: Theme.of(context).textTheme.titleSmall),
+                ),
+                if (truncated)
+                  Text(
+                    'Últimos $maxYears anos',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55),
+                        ),
+                  ),
+              ],
+            ),
             if (selected != null) ...[
               const SizedBox(height: 8),
               Container(
@@ -66,7 +100,7 @@ class _FiiDistributionsChartState extends State<FiiDistributionsChart> {
                     const Spacer(),
                     Text(
                       selected.totalPerShare != null
-                          ? formatBrl(selected.totalPerShare!)
+                          ? widget.valueFormatter(selected.totalPerShare!)
                           : '—',
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.w700,
@@ -85,9 +119,12 @@ class _FiiDistributionsChartState extends State<FiiDistributionsChart> {
             ],
             const SizedBox(height: 8),
             SizedBox(
-              height: 160,
+              height: 176,
               child: BarChart(
                 BarChartData(
+                  alignment: BarChartAlignment.spaceAround,
+                  maxY: chartMax,
+                  groupsSpace: groupsSpace,
                   gridData: const FlGridData(show: false),
                   borderData: FlBorderData(show: false),
                   barTouchData: BarTouchData(
@@ -101,12 +138,13 @@ class _FiiDistributionsChartState extends State<FiiDistributionsChart> {
                     touchTooltipData: BarTouchTooltipData(
                       getTooltipColor: (_) => Theme.of(context).colorScheme.inverseSurface,
                       getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                        final value = sorted[groupIndex].totalPerShare;
+                        final value = visible[groupIndex].totalPerShare;
                         return BarTooltipItem(
-                          value != null ? formatBrl(value) : '—',
+                          '${visible[groupIndex].year}\n${value != null ? widget.valueFormatter(value) : '—'}',
                           TextStyle(
                             color: Theme.of(context).colorScheme.onInverseSurface,
                             fontWeight: FontWeight.w600,
+                            fontSize: 12,
                           ),
                         );
                       },
@@ -119,14 +157,28 @@ class _FiiDistributionsChartState extends State<FiiDistributionsChart> {
                     bottomTitles: AxisTitles(
                       sideTitles: SideTitles(
                         showTitles: true,
+                        reservedSize: 28,
+                        interval: 1,
                         getTitlesWidget: (value, meta) {
-                          final i = value.toInt();
-                          if (i < 0 || i >= sorted.length) return const SizedBox.shrink();
+                          final index = value.round();
+                          if ((value - index).abs() > 0.001) {
+                            return const SizedBox.shrink();
+                          }
+                          if (index < 0 || index >= visible.length) {
+                            return const SizedBox.shrink();
+                          }
                           return Padding(
                             padding: const EdgeInsets.only(top: 6),
-                            child: Text(
-                              '${sorted[i].year}',
-                              style: Theme.of(context).textTheme.labelSmall,
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                '${visible[index].year}',
+                                textAlign: TextAlign.center,
+                                maxLines: 1,
+                                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                      fontSize: visible.length > 8 ? 9 : 11,
+                                    ),
+                              ),
                             ),
                           );
                         },

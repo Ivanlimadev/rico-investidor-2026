@@ -1,4 +1,5 @@
 from app.clients.binance.client import BinanceClient
+from app.clients.coingecko.client import CoinGeckoClient, fetch_fear_greed
 import asyncio
 
 from app.clients.binance.crypto_mapper import merge_book_into_quote, normalize_crypto_symbol
@@ -7,20 +8,28 @@ from app.core.cache import TtlCache
 from app.core.exceptions import UpstreamError
 from app.domain.crypto.models import (
     CryptoAvailableResponse,
+    CryptoBrlSnapshot,
     CryptoCandlesResponse,
     CryptoExploreResponse,
+    CryptoFundamentals,
     CryptoHistoryPoint,
     CryptoHistoryResponse,
+    CryptoInvestorProfile,
     CryptoListResponse,
+    CryptoMacroSnapshot,
     CryptoMarketSnapshot,
     CryptoMoversResponse,
     CryptoOrderBook,
+    CryptoPerformanceStats,
     CryptoRecentTradesResponse,
     CryptoQuote,
 )
+from app.domain.crypto.performance import calc_performance_stats
 from app.domain.crypto.presets import (
     CRYPTO_EXPLORE_GROUPS,
+    DEFAULT_HEATMAP_LIMIT,
     FEATURED_CRYPTO_SYMBOLS,
+    MAX_HEATMAP_LIMIT,
     MAX_MOVER_LIMIT,
     MIN_MOVER_QUOTE_VOLUME_USDT,
     MOVER_STABLECOINS,
@@ -28,13 +37,21 @@ from app.domain.crypto.presets import (
 
 
 class CryptoService:
-    def __init__(self, client: BinanceClient | None = None) -> None:
+    def __init__(
+        self,
+        client: BinanceClient | None = None,
+        coingecko: CoinGeckoClient | None = None,
+    ) -> None:
         self._client = client or BinanceClient()
+        self._coingecko = coingecko or CoinGeckoClient()
         ttl = settings.quote_cache_ttl_seconds
         self._rates_cache: TtlCache[CryptoListResponse] = TtlCache(ttl)
         self._available_cache: TtlCache[CryptoAvailableResponse] = TtlCache(ttl * 4)
         self._history_cache: TtlCache[CryptoHistoryResponse] = TtlCache(ttl * 2)
         self._movers_cache: TtlCache[CryptoMoversResponse] = TtlCache(ttl)
+        self._heatmap_cache: TtlCache[CryptoListResponse] = TtlCache(ttl)
+        self._profile_cache: TtlCache[CryptoInvestorProfile] = TtlCache(ttl * 2)
+        self._macro_cache: TtlCache[CryptoMacroSnapshot] = TtlCache(settings.crypto_macro_cache_ttl_seconds)
 
     def _order_quotes(self, symbols: list[str], quotes: CryptoListResponse) -> list[CryptoQuote]:
         by_symbol = {item.symbol: item for item in quotes.items}
@@ -98,6 +115,26 @@ class CryptoService:
             provider="binance",
         )
         self._movers_cache.set(cache_key, result)
+        return result
+
+    async def get_heatmap(self, *, limit: int = DEFAULT_HEATMAP_LIMIT) -> CryptoListResponse:
+        """Top pares USDT por volume 24h — base do mapa de calor."""
+        safe_limit = max(1, min(limit, MAX_HEATMAP_LIMIT))
+        cache_key = f"heatmap:{safe_limit}"
+        cached = self._heatmap_cache.get(cache_key)
+        if cached:
+            return cached
+
+        all_rates = await self._client.get_all_usdt_tickers()
+        eligible = [
+            quote
+            for quote in all_rates.items
+            if quote.symbol not in MOVER_STABLECOINS
+            and (quote.volume or 0) >= MIN_MOVER_QUOTE_VOLUME_USDT
+        ]
+        ranked = sorted(eligible, key=lambda quote: quote.volume or 0.0, reverse=True)[:safe_limit]
+        result = CryptoListResponse(items=ranked, count=len(ranked), provider="binance")
+        self._heatmap_cache.set(cache_key, result)
         return result
 
     async def explore(
@@ -234,6 +271,67 @@ class CryptoService:
         book_quote = book.items[0] if book.items else None
         enriched = merge_book_into_quote(quote, book_quote) if book_quote else quote
         return CryptoMarketSnapshot(quote=enriched, order_book=order_book, trades=trades)
+
+    async def get_investor_profile(self, symbol: str) -> CryptoInvestorProfile:
+        normalized = normalize_crypto_symbol(symbol)
+        cache_key = f"profile:{normalized}"
+        cached = self._profile_cache.get(cache_key)
+        if cached:
+            return cached
+
+        quote, candles, fundamentals, usdt_brl = await asyncio.gather(
+            self.get_quote(normalized),
+            self.get_candles(normalized, interval="1d", limit=366),
+            self._safe_fundamentals(normalized),
+            self._client.get_usdt_brl_rate(),
+        )
+
+        performance = calc_performance_stats(
+            candles.candles,
+            current_price=quote.price,
+            change_24h=quote.change_percent,
+        )
+
+        if fundamentals.market_cap is not None:
+            quote = quote.model_copy(update={"market_cap": fundamentals.market_cap})
+
+        brl_price = quote.price * usdt_brl if usdt_brl is not None else None
+        profile = CryptoInvestorProfile(
+            symbol=normalized,
+            quote=quote,
+            performance=performance,
+            fundamentals=fundamentals,
+            brl=CryptoBrlSnapshot(price=brl_price, usdt_brl_rate=usdt_brl),
+        )
+        self._profile_cache.set(cache_key, profile)
+        return profile
+
+    async def get_macro(self) -> CryptoMacroSnapshot:
+        cached = self._macro_cache.get("macro")
+        if cached:
+            return cached
+
+        global_macro, fear_greed, usdt_brl = await asyncio.gather(
+            self._coingecko.get_global_macro(),
+            fetch_fear_greed(),
+            self._client.get_usdt_brl_rate(),
+        )
+        fear_index, fear_label = fear_greed
+        result = global_macro.model_copy(
+            update={
+                "fear_greed_index": fear_index,
+                "fear_greed_label": fear_label,
+                "usdt_brl_rate": usdt_brl,
+            }
+        )
+        self._macro_cache.set("macro", result)
+        return result
+
+    async def _safe_fundamentals(self, symbol: str) -> CryptoFundamentals:
+        try:
+            return await self._coingecko.get_fundamentals(symbol)
+        except UpstreamError:
+            return CryptoFundamentals()
 
 
 crypto_service = CryptoService()

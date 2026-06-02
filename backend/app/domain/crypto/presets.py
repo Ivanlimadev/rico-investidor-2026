@@ -91,7 +91,6 @@ CRYPTO_EXPLORE_GROUPS: dict[str, tuple[str, ...] | None] = {
         "BCH",
     ),
     "defi": ("UNI", "AAVE", "LINK", "MKR", "CRV", "LDO", "SNX", "COMP", "SUSHI"),
-    "layer1": ("SOL", "AVAX", "NEAR", "APT", "SUI", "ATOM", "DOT", "ADA", "ETH", "BTC"),
     "meme": ("DOGE", "SHIB", "PEPE", "FLOKI", "WIF", "BONK"),
 }
 
@@ -104,6 +103,8 @@ MOVER_STABLECOINS: frozenset[str] = frozenset(
 MIN_MOVER_QUOTE_VOLUME_USDT = 500_000
 DEFAULT_MOVER_LIMIT = 5
 MAX_MOVER_LIMIT = 10
+DEFAULT_HEATMAP_LIMIT = 18
+MAX_HEATMAP_LIMIT = 24
 
 VALID_KLINE_INTERVALS: frozenset[str] = frozenset({"1m", "5m", "15m", "1h", "4h", "1d", "1w"})
 

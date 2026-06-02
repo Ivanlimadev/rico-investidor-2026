@@ -18,6 +18,7 @@ class ApiClient {
         _onUnauthorized = onUnauthorized ?? authSession.refreshAfterUnauthorized;
 
   static const _timeout = Duration(seconds: 45);
+  static const _rateLimitRetryDelay = Duration(milliseconds: 900);
 
   static const _noAuthRetryPaths = {
     '/v1/auth/login',
@@ -81,13 +82,31 @@ class ApiClient {
     required String path,
     required T Function(Map<String, dynamic>) fromJson,
     required Future<http.Response> Function() send,
-    bool retried = false,
+    bool unauthorizedRetried = false,
+    bool rateLimitRetried = false,
   }) async {
     final response = await send().timeout(_timeout);
 
-    if (response.statusCode == 401 && !retried && _shouldRetryUnauthorized(path)) {
+    if (response.statusCode == 401 && !unauthorizedRetried && _shouldRetryUnauthorized(path)) {
       await _onUnauthorized();
-      return _execute(path: path, fromJson: fromJson, send: send, retried: true);
+      return _execute(
+        path: path,
+        fromJson: fromJson,
+        send: send,
+        unauthorizedRetried: true,
+        rateLimitRetried: rateLimitRetried,
+      );
+    }
+
+    if (response.statusCode == 429 && !rateLimitRetried) {
+      await Future<void>.delayed(_rateLimitRetryDelay);
+      return _execute(
+        path: path,
+        fromJson: fromJson,
+        send: send,
+        unauthorizedRetried: unauthorizedRetried,
+        rateLimitRetried: true,
+      );
     }
 
     return _parse(response, fromJson);

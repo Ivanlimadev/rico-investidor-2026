@@ -352,6 +352,9 @@ class GlobalStockDividendsSummaryDto {
     this.payments12m = 0,
     this.annualTotals = const [],
     this.upcoming = const [],
+    this.nextDividend,
+    this.frequencyLabel,
+    this.avgAmount12m,
     this.totalPayments = 0,
   });
 
@@ -360,11 +363,15 @@ class GlobalStockDividendsSummaryDto {
   final int payments12m;
   final List<GlobalStockAnnualDividendDto> annualTotals;
   final List<GlobalStockDividendDto> upcoming;
+  final GlobalStockDividendDto? nextDividend;
+  final String? frequencyLabel;
+  final double? avgAmount12m;
   final int totalPayments;
 
   factory GlobalStockDividendsSummaryDto.fromJson(Map<String, dynamic> json) {
     final annualRaw = json['annual_totals'] as List<dynamic>? ?? const [];
     final upcomingRaw = json['upcoming'] as List<dynamic>? ?? const [];
+    final nextRaw = json['next_dividend'] as Map<String, dynamic>?;
     return GlobalStockDividendsSummaryDto(
       ttmPerShare: (json['ttm_per_share'] as num?)?.toDouble(),
       dividendYieldTtm: (json['dividend_yield_ttm'] as num?)?.toDouble(),
@@ -375,6 +382,9 @@ class GlobalStockDividendsSummaryDto {
       upcoming: upcomingRaw
           .map((e) => GlobalStockDividendDto.fromJson(e as Map<String, dynamic>))
           .toList(),
+      nextDividend: nextRaw == null ? null : GlobalStockDividendDto.fromJson(nextRaw),
+      frequencyLabel: json['frequency_label'] as String?,
+      avgAmount12m: (json['avg_amount_12m'] as num?)?.toDouble(),
       totalPayments: (json['total_payments'] as num?)?.toInt() ?? 0,
     );
   }
@@ -415,15 +425,47 @@ class GlobalStockReturnPeriodDto {
 }
 
 class GlobalStockDividendDto {
-  const GlobalStockDividendDto({required this.date, required this.amount});
+  const GlobalStockDividendDto({
+    required this.date,
+    required this.amount,
+    this.exDate,
+    this.comDate,
+    this.recordDate,
+    this.paymentDate,
+    this.declarationDate,
+    this.frequency,
+    this.dividendType = 'Dividendo',
+    this.isProjected = false,
+  });
 
   final String date;
   final double amount;
+  final String? exDate;
+  final String? comDate;
+  final String? recordDate;
+  final String? paymentDate;
+  final String? declarationDate;
+  final String? frequency;
+  final String dividendType;
+  final bool isProjected;
+
+  String get effectiveExDate => exDate ?? date;
+  String? get effectiveComDate => comDate ?? effectiveRecordDate ?? effectiveExDate;
+  String? get effectiveRecordDate => recordDate ?? exDate ?? date;
+  String? get effectivePaymentDate => paymentDate;
 
   factory GlobalStockDividendDto.fromJson(Map<String, dynamic> json) {
     return GlobalStockDividendDto(
       date: json['date'] as String,
       amount: (json['amount'] as num).toDouble(),
+      exDate: json['ex_date'] as String?,
+      comDate: json['com_date'] as String?,
+      recordDate: json['record_date'] as String?,
+      paymentDate: json['payment_date'] as String?,
+      declarationDate: json['declaration_date'] as String?,
+      frequency: json['frequency'] as String?,
+      dividendType: json['dividend_type'] as String? ?? 'Dividendo',
+      isProjected: json['is_projected'] as bool? ?? false,
     );
   }
 }

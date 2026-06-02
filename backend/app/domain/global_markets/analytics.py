@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 
+from app.domain.global_markets.dividend_analytics import pick_next_dividend, resolve_frequency_label
 from app.domain.global_markets.models import (
     GlobalStockCandle,
     GlobalStockCompanyProfile,
@@ -65,8 +66,10 @@ def summarize_dividends(
         if day is not None:
             parsed.append((day, item))
 
-    ttm_total = sum(item.amount for day, item in parsed if day >= cutoff_12m)
-    payments_12m = sum(1 for day, _ in parsed if day >= cutoff_12m)
+    recent_12m = [(day, item) for day, item in parsed if day >= cutoff_12m]
+    ttm_total = sum(item.amount for _, item in recent_12m)
+    payments_12m = len(recent_12m)
+    avg_amount_12m = round(ttm_total / payments_12m, 4) if payments_12m > 0 else None
 
     annual: dict[int, float] = defaultdict(float)
     for day, item in parsed:
@@ -84,12 +87,18 @@ def summarize_dividends(
         if day.date() >= now.date():
             upcoming.append(item)
 
+    ordered = [item for _, item in sorted(parsed, key=lambda row: row[0], reverse=True)]
+    next_dividend = pick_next_dividend(ordered, as_of=now)
+
     return GlobalStockDividendsSummary(
         ttm_per_share=round(ttm_total, 4) if ttm_total > 0 else None,
         dividend_yield_ttm=dividend_yield_ttm,
         payments_12m=payments_12m,
         annual_totals=annual_rows,
         upcoming=upcoming[:6],
+        next_dividend=next_dividend,
+        frequency_label=resolve_frequency_label(ordered[:12]),
+        avg_amount_12m=avg_amount_12m,
         total_payments=len(parsed),
     )
 

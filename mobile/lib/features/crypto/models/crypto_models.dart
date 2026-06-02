@@ -252,12 +252,166 @@ class CryptoDetailDto {
     this.candles = const [],
     this.history = const [],
     this.market,
+    this.profile,
   });
 
   final CryptoQuoteDto quote;
   final List<CryptoCandleDto> candles;
   final List<CryptoHistoryPointDto> history;
   final CryptoMarketSnapshotDto? market;
+  final CryptoInvestorProfileDto? profile;
+}
+
+class CryptoPerformanceStatsDto {
+  const CryptoPerformanceStatsDto({
+    this.change24h,
+    this.change7d,
+    this.change30d,
+    this.change1y,
+  });
+
+  final double? change24h;
+  final double? change7d;
+  final double? change30d;
+  final double? change1y;
+
+  factory CryptoPerformanceStatsDto.fromJson(Map<String, dynamic> json) {
+    double? numVal(String key) {
+      final value = json[key];
+      if (value == null) return null;
+      return (value as num).toDouble();
+    }
+
+    return CryptoPerformanceStatsDto(
+      change24h: numVal('change_24h'),
+      change7d: numVal('change_7d'),
+      change30d: numVal('change_30d'),
+      change1y: numVal('change_1y'),
+    );
+  }
+}
+
+class CryptoFundamentalsDto {
+  const CryptoFundamentalsDto({
+    this.marketCap,
+    this.marketCapRank,
+    this.circulatingSupply,
+    this.totalSupply,
+    this.ath,
+    this.athChangePercent,
+    this.atl,
+    this.categories = const [],
+  });
+
+  final double? marketCap;
+  final int? marketCapRank;
+  final double? circulatingSupply;
+  final double? totalSupply;
+  final double? ath;
+  final double? athChangePercent;
+  final double? atl;
+  final List<String> categories;
+
+  factory CryptoFundamentalsDto.fromJson(Map<String, dynamic> json) {
+    double? numVal(String key) {
+      final value = json[key];
+      if (value == null) return null;
+      return (value as num).toDouble();
+    }
+
+    final rawCategories = json['categories'] as List<dynamic>? ?? const [];
+    return CryptoFundamentalsDto(
+      marketCap: numVal('market_cap'),
+      marketCapRank: json['market_cap_rank'] as int?,
+      circulatingSupply: numVal('circulating_supply'),
+      totalSupply: numVal('total_supply'),
+      ath: numVal('ath'),
+      athChangePercent: numVal('ath_change_percent'),
+      atl: numVal('atl'),
+      categories: rawCategories.map((item) => item.toString()).toList(),
+    );
+  }
+}
+
+class CryptoBrlSnapshotDto {
+  const CryptoBrlSnapshotDto({this.price, this.usdtBrlRate});
+
+  final double? price;
+  final double? usdtBrlRate;
+
+  factory CryptoBrlSnapshotDto.fromJson(Map<String, dynamic> json) {
+    double? numVal(String key) {
+      final value = json[key];
+      if (value == null) return null;
+      return (value as num).toDouble();
+    }
+
+    return CryptoBrlSnapshotDto(
+      price: numVal('price'),
+      usdtBrlRate: numVal('usdt_brl_rate'),
+    );
+  }
+}
+
+class CryptoInvestorProfileDto {
+  const CryptoInvestorProfileDto({
+    required this.symbol,
+    required this.quote,
+    required this.performance,
+    required this.fundamentals,
+    required this.brl,
+  });
+
+  final String symbol;
+  final CryptoQuoteDto quote;
+  final CryptoPerformanceStatsDto performance;
+  final CryptoFundamentalsDto fundamentals;
+  final CryptoBrlSnapshotDto brl;
+
+  factory CryptoInvestorProfileDto.fromJson(Map<String, dynamic> json) {
+    return CryptoInvestorProfileDto(
+      symbol: json['symbol'] as String,
+      quote: CryptoQuoteDto.fromJson(json['quote'] as Map<String, dynamic>),
+      performance: CryptoPerformanceStatsDto.fromJson(json['performance'] as Map<String, dynamic>),
+      fundamentals: CryptoFundamentalsDto.fromJson(json['fundamentals'] as Map<String, dynamic>),
+      brl: CryptoBrlSnapshotDto.fromJson(json['brl'] as Map<String, dynamic>),
+    );
+  }
+}
+
+class CryptoMacroSnapshotDto {
+  const CryptoMacroSnapshotDto({
+    this.btcDominance,
+    this.totalMarketCapUsd,
+    this.totalVolume24hUsd,
+    this.fearGreedIndex,
+    this.fearGreedLabel,
+    this.usdtBrlRate,
+  });
+
+  final double? btcDominance;
+  final double? totalMarketCapUsd;
+  final double? totalVolume24hUsd;
+  final int? fearGreedIndex;
+  final String? fearGreedLabel;
+  final double? usdtBrlRate;
+
+  factory CryptoMacroSnapshotDto.fromJson(Map<String, dynamic> json) {
+    double? numVal(String key) {
+      final value = json[key];
+      if (value == null) return null;
+      return (value as num).toDouble();
+    }
+
+    return CryptoMacroSnapshotDto(
+      btcDominance: numVal('btc_dominance'),
+      totalMarketCapUsd: numVal('total_market_cap_usd'),
+      totalVolume24hUsd: numVal('total_volume_24h_usd'),
+      fearGreedIndex: json['fear_greed_index'] as int?,
+      fearGreedLabel: json['fear_greed_label'] as String?,
+      usdtBrlRate: numVal('usdt_brl_rate'),
+    );
+  }
 }
 
 class CryptoListResponseDto {
@@ -377,7 +531,11 @@ String formatCryptoPrice(double value, {String currency = 'USD'}) {
   }
 
   final amount = fraction.isEmpty ? buffer.toString() : '$buffer.$fraction';
-  final prefix = currency == 'USD' ? '\$' : currency;
+  final prefix = currency == 'USD'
+      ? '\$'
+      : currency == 'BRL'
+          ? 'R\$'
+          : currency;
   final formatted = '$prefix$amount';
   return negative ? '-$formatted' : formatted;
 }

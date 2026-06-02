@@ -149,6 +149,14 @@ class GlobalStockCompanyProfile(BaseModel):
 class GlobalStockDividend(BaseModel):
     date: str
     amount: float
+    ex_date: str | None = None
+    com_date: str | None = None
+    record_date: str | None = None
+    payment_date: str | None = None
+    declaration_date: str | None = None
+    frequency: str | None = None
+    dividend_type: str = "Dividendo"
+    is_projected: bool = False
 
 
 class GlobalStockDividendsSummary(BaseModel):
@@ -157,6 +165,9 @@ class GlobalStockDividendsSummary(BaseModel):
     payments_12m: int = 0
     annual_totals: list[dict[str, float | int]] = Field(default_factory=list)
     upcoming: list[GlobalStockDividend] = Field(default_factory=list)
+    next_dividend: GlobalStockDividend | None = None
+    frequency_label: str | None = None
+    avg_amount_12m: float | None = None
     total_payments: int = 0
 
 

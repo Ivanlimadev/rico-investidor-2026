@@ -174,7 +174,9 @@ class _GlobalStockDetailScreenState extends State<GlobalStockDetailScreen> {
               ],
               const SizedBox(height: 16),
               GlobalStockQuoteChart(candles: display.candles),
-              if (display.dividends.isNotEmpty || display.dividendsSummary.ttmPerShare != null) ...[
+              if (display.dividends.isNotEmpty ||
+                  display.dividendsSummary.ttmPerShare != null ||
+                  display.dividendsSummary.nextDividend != null) ...[
                 const SizedBox(height: 16),
                 GlobalStockDividendsSection(
                   summary: display.dividendsSummary,

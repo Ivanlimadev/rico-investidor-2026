@@ -5,6 +5,8 @@ import 'package:rico_investidor/core/widgets/asset_logo.dart';
 import 'package:rico_investidor/features/crypto/data/crypto_mini_ticker_stream.dart';
 import 'package:rico_investidor/features/crypto/data/crypto_repository.dart';
 import 'package:rico_investidor/features/crypto/models/crypto_models.dart';
+import 'package:rico_investidor/features/crypto/widgets/crypto_heatmap_block.dart';
+import 'package:rico_investidor/features/crypto/widgets/crypto_panorama_block.dart';
 import 'package:rico_investidor/features/crypto/widgets/crypto_movers_cards.dart';
 import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
@@ -51,6 +53,11 @@ class _CryptoLiveMarketListState extends State<CryptoLiveMarketList> {
     super.dispose();
   }
 
+  Map<String, double> get _liveChanges => {
+        for (final entry in _livePrices.entries)
+          if (entry.value.changePercent != null) entry.key: entry.value.changePercent!,
+      };
+
   void _openAsset(AssetItem asset) {
     openAssetDetail(
       context,
@@ -77,21 +84,25 @@ class _CryptoLiveMarketListState extends State<CryptoLiveMarketList> {
   Widget build(BuildContext context) {
     return CustomScrollView(
       slivers: [
+        const SliverToBoxAdapter(child: CryptoPanoramaBlock()),
+        SliverToBoxAdapter(
+          child: CryptoHeatmapBlock(
+            liveChanges: _liveChanges,
+            onTap: _openAsset,
+            onSymbolsLoaded: (symbols) {
+              _stream?.connect({
+                ...widget.assets.map((asset) => asset.symbol),
+                ...symbols,
+              });
+            },
+          ),
+        ),
         SliverToBoxAdapter(
           child: FutureBuilder<CryptoMoversResponseDto?>(
             future: _moversFuture,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 16, 16, 0),
-                  child: Center(
-                    child: SizedBox(
-                      height: 28,
-                      width: 28,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  ),
-                );
+                return const SizedBox.shrink();
               }
 
               final movers = snapshot.data;

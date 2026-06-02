@@ -9,6 +9,9 @@ import 'package:rico_investidor/features/crypto/data/crypto_mini_ticker_stream.d
 import 'package:rico_investidor/features/crypto/data/crypto_repository.dart';
 import 'package:rico_investidor/features/crypto/models/crypto_models.dart';
 import 'package:rico_investidor/features/crypto/utils/crypto_explore_presets.dart';
+import 'package:rico_investidor/features/crypto/widgets/crypto_heatmap_block.dart';
+import 'package:rico_investidor/features/crypto/widgets/crypto_movers_block.dart';
+import 'package:rico_investidor/features/crypto/widgets/crypto_panorama_block.dart';
 import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/navigation/open_asset_detail.dart';
@@ -41,7 +44,6 @@ class _CryptoExploreScreenState extends State<CryptoExploreScreen> {
   String _groupId = cryptoExploreGroups.first.id;
   List<CryptoQuoteDto> _items = [];
   int _page = 1;
-  int _total = 0;
   int _totalPages = 1;
   bool _loading = true;
   bool _loadingMore = false;
@@ -105,7 +107,6 @@ class _CryptoExploreScreenState extends State<CryptoExploreScreen> {
           _items = [..._items, ...response.items];
         }
         _page = response.page;
-        _total = response.total;
         _totalPages = response.totalPages;
         _loading = false;
         _loadingMore = false;
@@ -141,6 +142,19 @@ class _CryptoExploreScreenState extends State<CryptoExploreScreen> {
   void _clearSearch() {
     _searchController.clear();
     _onSearchChanged('');
+  }
+
+  Map<String, double> get _liveChanges => {
+        for (final entry in _liveQuotes.entries)
+          if (entry.value.changePercent != null) entry.key: entry.value.changePercent!,
+      };
+
+  void _extendTicker(Set<String> symbols) {
+    if (symbols.isEmpty) return;
+    _tickerStream?.connect({
+      ..._items.map((item) => item.symbol),
+      ...symbols,
+    });
   }
 
   @override
@@ -190,9 +204,14 @@ class _CryptoExploreScreenState extends State<CryptoExploreScreen> {
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Text(
-                '$_total moedas · página $_page/$_totalPages · USD · Binance',
-                style: Theme.of(context).textTheme.bodySmall,
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  'Binance',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
+                      ),
+                ),
               ),
             ),
           ] else
@@ -244,48 +263,104 @@ class _CryptoExploreScreenState extends State<CryptoExploreScreen> {
       return const Center(child: Text('Nenhuma criptomoeda encontrada neste filtro.'));
     }
 
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-      itemCount: _items.length + (_canLoadMore || _loadingMore ? 1 : 0),
-      separatorBuilder: (context, index) => const SizedBox(height: 8),
-      itemBuilder: (context, index) {
-        if (index >= _items.length) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: OutlinedButton.icon(
-              onPressed: _loadingMore ? null : () => _load(reset: false),
-              icon: _loadingMore
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.expand_more),
-              label: Text(_loadingMore ? 'Carregando…' : 'Carregar mais'),
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(
+          child: CryptoPanoramaBlock(repository: _repository),
+        ),
+        SliverToBoxAdapter(
+          child: CryptoHeatmapBlock(
+            repository: _repository,
+            liveChanges: _liveChanges,
+            onSymbolsLoaded: _extendTicker,
+            onTap: (asset) => openAssetDetail(
+              context,
+              asset: asset,
+              fiiRepository: widget.fiiRepository ?? fiiRepository,
+              quoteRepository: widget.quoteRepository ?? quoteRepository,
             ),
-          );
-        }
-
-        final quote = _items[index];
-        final live = _liveQuotes[quote.symbol];
-        return CryptoExploreTile(
-          quote: quote,
-          livePrice: live?.price,
-          liveChangePercent: live?.changePercent,
-          onTap: () => openAssetDetail(
-            context,
-            asset: quote.toAssetItem(),
-            fiiRepository: widget.fiiRepository ?? fiiRepository,
-            quoteRepository: widget.quoteRepository ?? quoteRepository,
           ),
-        );
-      },
+        ),
+        SliverToBoxAdapter(
+          child: CryptoMoversBlock(
+            repository: _repository,
+            onTap: (asset) => openAssetDetail(
+              context,
+              asset: asset,
+              fiiRepository: widget.fiiRepository ?? fiiRepository,
+              quoteRepository: widget.quoteRepository ?? quoteRepository,
+            ),
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Text(
+              _groupTitle,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+            ),
+          ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          sliver: SliverGrid.builder(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+              childAspectRatio: 0.82,
+            ),
+            itemCount: _items.length,
+            itemBuilder: (context, index) {
+              final quote = _items[index];
+              final live = _liveQuotes[quote.symbol];
+              return CryptoExploreGridTile(
+                quote: quote,
+                livePrice: live?.price,
+                liveChangePercent: live?.changePercent,
+                onTap: () => openAssetDetail(
+                  context,
+                  asset: quote.toAssetItem(),
+                  fiiRepository: widget.fiiRepository ?? fiiRepository,
+                  quoteRepository: widget.quoteRepository ?? quoteRepository,
+                ),
+              );
+            },
+          ),
+        ),
+        if (_canLoadMore || _loadingMore)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+              child: OutlinedButton.icon(
+                onPressed: _loadingMore ? null : () => _load(reset: false),
+                icon: _loadingMore
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.expand_more),
+                label: Text(_loadingMore ? 'Carregando…' : 'Carregar mais'),
+              ),
+            ),
+          )
+        else
+          const SliverToBoxAdapter(child: SizedBox(height: 24)),
+      ],
     );
+  }
+
+  String get _groupTitle {
+    for (final group in cryptoExploreGroups) {
+      if (group.id == _groupId) return group.label;
+    }
+    return 'Criptomoedas';
   }
 }
 
-class CryptoExploreTile extends StatelessWidget {
-  const CryptoExploreTile({
+class CryptoExploreGridTile extends StatelessWidget {
+  const CryptoExploreGridTile({
     super.key,
     required this.quote,
     required this.onTap,
@@ -303,31 +378,39 @@ class CryptoExploreTile extends StatelessWidget {
     final price = livePrice ?? quote.price;
     final change = liveChangePercent ?? quote.changePercent;
     final changeColor = change >= 0 ? AppColors.positive : AppColors.negative;
+    final changeText = '${change >= 0 ? '+' : ''}${change.toStringAsFixed(2)}%';
 
     return Card(
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              AssetCardHeader(
-                symbol: quote.symbol,
-                name: quote.name,
-                logoUrl: quote.imageUrl,
-                logoSize: kAssetLogoSizeCompact,
-                trailing: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(formatCryptoPrice(price), style: Theme.of(context).textTheme.titleSmall),
-                    Text(
-                      '${change >= 0 ? '+' : ''}${change.toStringAsFixed(2)}%',
-                      style: TextStyle(color: changeColor, fontWeight: FontWeight.w700, fontSize: 13),
-                    ),
-                  ],
-                ),
+              AssetListLeading(symbol: quote.symbol, logoUrl: quote.imageUrl, size: 32),
+              const SizedBox(height: 6),
+              Text(
+                quote.symbol,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                formatCryptoPrice(price),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                changeText,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: changeColor, fontWeight: FontWeight.w700, fontSize: 12),
               ),
             ],
           ),

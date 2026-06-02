@@ -43,6 +43,8 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
   final GlobalMarketRepository _globalMarketRepository = globalMarketRepository;
   final PortfolioStorage _portfolioStorage = PortfolioStorage();
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+  final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey =
+      GlobalKey<ScaffoldMessengerState>();
   MarketPreference? _preferredMarket;
   bool _preferenceLoaded = false;
   bool _accountLoaded = false;
@@ -266,7 +268,7 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
     ).refreshAll(_portfolio);
     if (!mounted) return;
     if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      _scaffoldMessengerKey.currentState?.showSnackBar(
         const SnackBar(content: Text('Não foi possível atualizar os preços da carteira.')),
       );
     }
@@ -281,6 +283,7 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
       title: 'Rico Investidor',
       debugShowCheckedModeBanner: false,
       navigatorKey: _navigatorKey,
+      scaffoldMessengerKey: _scaffoldMessengerKey,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
       themeMode: _themeMode,

@@ -6,9 +6,10 @@ import 'package:rico_investidor/core/widgets/asset_quick_actions.dart';
 import 'package:rico_investidor/features/crypto/data/crypto_price_stream.dart';
 import 'package:rico_investidor/features/crypto/data/crypto_repository.dart';
 import 'package:rico_investidor/features/crypto/models/crypto_models.dart';
+import 'package:rico_investidor/features/crypto/utils/crypto_display_locale.dart';
 import 'package:rico_investidor/features/crypto/widgets/crypto_chart_card.dart';
-import 'package:rico_investidor/features/crypto/widgets/crypto_live_order_book_card.dart';
-import 'package:rico_investidor/features/crypto/widgets/crypto_trades_card.dart';
+import 'package:rico_investidor/features/crypto/widgets/crypto_fundamentals_card.dart';
+import 'package:rico_investidor/features/crypto/widgets/crypto_performance_row.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 
 class CryptoDetailScreen extends StatefulWidget {
@@ -100,11 +101,12 @@ class _CryptoDetailScreenState extends State<CryptoDetailScreen> {
 
           final detail = snapshot.data!;
           final quote = detail.quote;
-          final market = detail.market;
+          final profile = detail.profile;
           final displayPrice = _livePrice ?? quote.price;
           final change = quote.changePercent;
           final isPositive = change >= 0;
           final changeColor = isPositive ? AppColors.positive : AppColors.negative;
+          final showBrazilianQuotes = cryptoShowsBrazilianQuotes(context);
 
           return ListView(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
@@ -113,9 +115,23 @@ class _CryptoDetailScreenState extends State<CryptoDetailScreen> {
                 symbol: quote.symbol,
                 name: quote.name,
                 logoUrl: quote.imageUrl,
-                trailing: Text(
-                  formatCryptoPrice(displayPrice, currency: quote.currency),
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+                trailing: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      formatCryptoPrice(displayPrice, currency: quote.currency),
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    if (showBrazilianQuotes && profile?.brl.price != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        formatCryptoPrice(profile!.brl.price!, currency: 'BRL'),
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
+                            ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
               const SizedBox(height: 8),
@@ -143,9 +159,15 @@ class _CryptoDetailScreenState extends State<CryptoDetailScreen> {
                   ],
                 ],
               ),
-              if (quote.bidPrice != null && quote.askPrice != null) ...[
-                const SizedBox(height: 12),
-                _BidAskRow(quote: quote),
+              if (profile != null) ...[
+                const SizedBox(height: 14),
+                CryptoPerformanceRow(performance: profile.performance),
+                const SizedBox(height: 16),
+                CryptoFundamentalsCard(
+                  fundamentals: profile.fundamentals,
+                  brl: profile.brl,
+                  showBrazilianQuotes: showBrazilianQuotes,
+                ),
               ],
               const SizedBox(height: 16),
               CryptoChartCard(
@@ -153,98 +175,16 @@ class _CryptoDetailScreenState extends State<CryptoDetailScreen> {
                 repository: _repository,
                 initialCandles: detail.candles,
               ),
-              if (market != null) ...[
-                const SizedBox(height: 16),
-                CryptoLiveOrderBookCard(
-                  symbol: quote.symbol,
-                  initialBook: market.orderBook,
-                ),
-                const SizedBox(height: 16),
-                CryptoRecentTradesCard(trades: market.trades),
-              ],
               const SizedBox(height: 12),
               Text(
-                'Par ${quote.symbol}/USDT · USD · Binance REST + WebSocket público.',
+                'Binance · CoinGecko',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
                     ),
               ),
             ],
           );
         },
-      ),
-    );
-  }
-}
-
-class _BidAskRow extends StatelessWidget {
-  const _BidAskRow({required this.quote});
-
-  final CryptoQuoteDto quote;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('Book ticker', style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _StatTile(
-                    label: 'Bid',
-                    value: formatCryptoPrice(quote.bidPrice!, currency: quote.currency),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _StatTile(
-                    label: 'Ask',
-                    value: formatCryptoPrice(quote.askPrice!, currency: quote.currency),
-                  ),
-                ),
-              ],
-            ),
-            if (quote.spread != null) ...[
-              const SizedBox(height: 12),
-              _StatTile(
-                label: 'Spread',
-                value: '${formatCryptoPrice(quote.spread!, currency: quote.currency)}'
-                    '${quote.spreadPercent != null ? ' (${quote.spreadPercent!.toStringAsFixed(3)}%)' : ''}',
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StatTile extends StatelessWidget {
-  const _StatTile({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: 4),
-          Text(value, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
-        ],
       ),
     );
   }

@@ -7,9 +7,8 @@ import 'package:rico_investidor/core/network/api_client.dart';
 import 'package:rico_investidor/core/network/api_exception.dart';
 
 void main() {
-  group('ApiClient unauthorized retry', () {
+  group('ApiClient retry', () {
     test('retries once after 401 and refreshes session', () async {
-      var authCalls = 0;
       var metaCalls = 0;
       var token = 'expired-token';
 
@@ -22,22 +21,10 @@ void main() {
             }
             return http.Response('{"rules":{}}', 200);
           }
-
-          if (request.url.path == '/v1/auth/anonymous') {
-            authCalls += 1;
-            token = 'fresh-token';
-            return http.Response(
-              jsonEncode({'access_token': token, 'expires_in': 3600}),
-              200,
-              headers: {'content-type': 'application/json'},
-            );
-          }
-
           return http.Response('not found', 404);
         }),
         authHeaderProvider: () => token,
         onUnauthorized: () async {
-          token = '';
           token = 'fresh-token';
         },
       );
@@ -46,7 +33,28 @@ void main() {
 
       expect(result, {'rules': {}});
       expect(metaCalls, 2);
-      expect(authCalls, 0);
+    });
+
+    test('retries once after 429 rate limit', () async {
+      var calls = 0;
+
+      final client = ApiClient(
+        client: MockClient((request) async {
+          calls += 1;
+          if (calls == 1) {
+            return http.Response(
+              '{"detail":"Muitas requisicoes - tente novamente em instantes."}',
+              429,
+            );
+          }
+          return http.Response('{"status":"ok"}', 200);
+        }),
+      );
+
+      final result = await client.getJson('/v1/meta/providers', fromJson: (json) => json);
+
+      expect(result, {'status': 'ok'});
+      expect(calls, 2);
     });
 
     test('does not retry login failures', () async {

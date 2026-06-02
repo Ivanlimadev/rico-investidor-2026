@@ -113,3 +113,45 @@ class CryptoMoversResponse(BaseModel):
     losers: list[CryptoQuote]
     limit: int
     provider: str = "binance"
+
+
+class CryptoPerformanceStats(BaseModel):
+    change_24h: float | None = None
+    change_7d: float | None = None
+    change_30d: float | None = None
+    change_1y: float | None = None
+
+
+class CryptoFundamentals(BaseModel):
+    market_cap: float | None = None
+    market_cap_rank: int | None = None
+    circulating_supply: float | None = None
+    total_supply: float | None = None
+    ath: float | None = None
+    ath_change_percent: float | None = None
+    atl: float | None = None
+    categories: list[str] = []
+
+
+class CryptoBrlSnapshot(BaseModel):
+    price: float | None = None
+    usdt_brl_rate: float | None = None
+
+
+class CryptoInvestorProfile(BaseModel):
+    symbol: str
+    quote: CryptoQuote
+    performance: CryptoPerformanceStats
+    fundamentals: CryptoFundamentals
+    brl: CryptoBrlSnapshot
+    provider: str = "binance+coingecko"
+
+
+class CryptoMacroSnapshot(BaseModel):
+    btc_dominance: float | None = None
+    total_market_cap_usd: float | None = None
+    total_volume_24h_usd: float | None = None
+    fear_greed_index: int | None = None
+    fear_greed_label: str | None = None
+    usdt_brl_rate: float | None = None
+    provider: str = "coingecko+alternative.me+binance"

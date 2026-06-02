@@ -65,6 +65,24 @@ async def crypto_daily_movers(limit: int = Query(default=5, ge=1, le=10)):
     return await crypto_service.get_daily_movers(limit=limit)
 
 
+@router.get("/macro")
+async def crypto_macro():
+    """Macro cripto: dominância BTC, cap total, fear & greed, USDT/BRL."""
+    return await crypto_service.get_macro()
+
+
+@router.get("/heatmap")
+async def crypto_heatmap(limit: int = Query(default=18, ge=1, le=24)):
+    """Mapa de calor — top pares USDT por volume com variação 24h."""
+    return await crypto_service.get_heatmap(limit=limit)
+
+
+@router.get("/{symbol}/profile")
+async def get_crypto_profile(symbol: str):
+    """Perfil investidor: cotação, variações 7d/30d/1a, fundamentos e BRL."""
+    return await crypto_service.get_investor_profile(symbol)
+
+
 @router.get("/{symbol}")
 async def get_crypto_quote(symbol: str):
     """Cotação 24h de uma criptomoeda."""

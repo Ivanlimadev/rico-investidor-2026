@@ -44,16 +44,24 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     def _is_limited(self, bucket: deque[float], limit: int) -> bool:
         return len(bucket) >= limit
 
+    @staticmethod
+    def _should_skip_rate_limit(path: str) -> bool:
+        if path in {"/health"}:
+            return True
+        if settings.docs_enabled and path in {"/docs", "/openapi.json", "/redoc"}:
+            return True
+        # Logos são cacheáveis e o app pré-carrega dezenas em paralelo na abertura.
+        if path.endswith("/logo.png"):
+            return True
+        return False
+
     async def dispatch(self, request: Request, call_next):
-        skip_paths = {"/health"}
-        if settings.docs_enabled:
-            skip_paths.update({"/docs", "/openapi.json", "/redoc"})
-        if request.url.path in skip_paths:
+        path = request.url.path
+        if self._should_skip_rate_limit(path):
             return await call_next(request)
 
         ip = self._client_ip(request)
         now = time.monotonic()
-        path = request.url.path
 
         if path.startswith(_AUTH_PATH_PREFIX):
             auth_bucket = self._auth_hits[ip]

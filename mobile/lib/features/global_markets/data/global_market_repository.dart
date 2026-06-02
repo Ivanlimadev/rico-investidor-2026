@@ -192,7 +192,9 @@ class GlobalMarketRepository {
       );
     }
 
-    for (final includeExtras in [false, true]) {
+    // Dividendos, splits e fundamentos só vêm com include_extras=true.
+    // Tentar true primeiro; false só como fallback leve se a cota estourar.
+    for (final includeExtras in [true, false]) {
       try {
         return await fetch(includeExtras: includeExtras);
       } catch (error) {

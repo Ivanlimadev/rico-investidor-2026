@@ -234,3 +234,13 @@ class BinanceClient:
         normalized_preset = preset.strip().lower()
         interval, limit = CRYPTO_CHART_PRESETS.get(normalized_preset, ("1d", 30))
         return await self.get_crypto_candles(coin, interval=interval, limit=limit)
+
+    async def get_usdt_brl_rate(self) -> float | None:
+        """Cotação USDT/BRL na Binance (par USDTBRL)."""
+        try:
+            data = await self._get("/api/v3/ticker/price", params={"symbol": "USDTBRL"})
+            if isinstance(data, dict) and data.get("price") is not None:
+                return float(data["price"])
+        except UpstreamError:
+            return None
+        return None

@@ -6,9 +6,8 @@ class CryptoExploreGroup {
 }
 
 const cryptoExploreGroups = [
-  CryptoExploreGroup(id: 'all', label: 'Todos'),
   CryptoExploreGroup(id: 'major', label: 'Principais'),
-  CryptoExploreGroup(id: 'layer1', label: 'Layer 1'),
   CryptoExploreGroup(id: 'defi', label: 'DeFi'),
   CryptoExploreGroup(id: 'meme', label: 'Meme'),
+  CryptoExploreGroup(id: 'all', label: 'Todos'),
 ];

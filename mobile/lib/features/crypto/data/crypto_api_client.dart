@@ -82,4 +82,27 @@ class CryptoApiClient {
       fromJson: CryptoMoversResponseDto.fromJson,
     );
   }
+
+  Future<CryptoListResponseDto> getHeatmap({int limit = 18}) {
+    return _client.getJson(
+      '/v1/crypto/heatmap',
+      query: {'limit': '$limit'},
+      fromJson: CryptoListResponseDto.fromJson,
+    );
+  }
+
+  Future<CryptoInvestorProfileDto> getProfile(String symbol) {
+    final normalized = normalizeCryptoSymbol(symbol);
+    return _client.getJson(
+      '/v1/crypto/$normalized/profile',
+      fromJson: CryptoInvestorProfileDto.fromJson,
+    );
+  }
+
+  Future<CryptoMacroSnapshotDto> getMacro() {
+    return _client.getJson(
+      '/v1/crypto/macro',
+      fromJson: CryptoMacroSnapshotDto.fromJson,
+    );
+  }
 }

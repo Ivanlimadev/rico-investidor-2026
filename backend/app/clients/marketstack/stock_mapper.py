@@ -11,6 +11,7 @@ from app.domain.global_markets.models import (
     GlobalStockSplit,
     GlobalStockTickerInfo,
 )
+from app.domain.global_markets.us_dividend_dates import investidor10_com_date, normalize_us_market_day
 from app.domain.global_markets.presets import US_TICKER_NAMES
 
 
@@ -163,14 +164,32 @@ def map_ticker_info(item: dict) -> GlobalStockTickerInfo | None:
     )
 
 
+def _normalize_day(value: object) -> str | None:
+    return normalize_us_market_day(value)
+
+
 def map_dividends(items: Iterable[dict]) -> list[GlobalStockDividend]:
     rows: list[GlobalStockDividend] = []
     for item in items:
         amount = _safe_float(item.get("dividend") or item.get("amount"))
-        date = str(item.get("date") or "").strip()
-        if amount is None or not date:
+        ex_date = normalize_us_market_day(item.get("date"))
+        if amount is None or not ex_date:
             continue
-        rows.append(GlobalStockDividend(date=date, amount=amount))
+        frequency = str(item.get("distr_freq") or item.get("frequency") or "").strip().lower() or None
+        rows.append(
+            GlobalStockDividend(
+                date=ex_date,
+                amount=amount,
+                ex_date=ex_date,
+                com_date=investidor10_com_date(ex_date),
+                record_date=normalize_us_market_day(item.get("record_date") or item.get("recordDate")),
+                payment_date=normalize_us_market_day(item.get("payment_date") or item.get("paymentDate")),
+                declaration_date=normalize_us_market_day(
+                    item.get("declaration_date") or item.get("declarationDate")
+                ),
+                frequency=frequency,
+            )
+        )
     return rows
 
 

@@ -67,6 +67,27 @@ def test_explore_filters_major_group():
     assert {item.symbol for item in result.items} == {"BTC", "ETH"}
 
 
+def test_get_heatmap_ranks_by_volume_and_skips_stablecoins():
+    client = AsyncMock()
+    client.get_all_usdt_tickers = AsyncMock(
+        return_value=CryptoListResponse(
+            items=[
+                CryptoQuote(symbol="BTC", name="Bitcoin", price=100.0, change_percent=1.0, volume=3_000_000, provider="binance"),
+                CryptoQuote(symbol="ETH", name="Ethereum", price=50.0, change_percent=-2.0, volume=2_000_000, provider="binance"),
+                CryptoQuote(symbol="USDC", name="USD Coin", price=1.0, change_percent=0.0, volume=9_000_000, provider="binance"),
+                CryptoQuote(symbol="DOGE", name="Dogecoin", price=1.0, change_percent=4.0, volume=800_000, provider="binance"),
+            ],
+            count=4,
+            provider="binance",
+        )
+    )
+
+    service = CryptoService(client=client)
+    result = asyncio.run(service.get_heatmap(limit=2))
+
+    assert [item.symbol for item in result.items] == ["BTC", "ETH"]
+
+
 def test_get_daily_movers_returns_gainers_and_losers():
     client = AsyncMock()
     client.get_all_usdt_tickers = AsyncMock(

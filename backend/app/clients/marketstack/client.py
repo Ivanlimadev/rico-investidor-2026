@@ -40,10 +40,30 @@ class MarketstackClient:
             )
         return self._api_key
 
-    async def _get(self, path: str, *, params: dict | None = None, retries: int = 2) -> dict:
+    @staticmethod
+    def resolve_v2_base_url(base_url: str) -> str:
+        normalized = base_url.rstrip("/")
+        if normalized.endswith("/v2"):
+            return normalized
+        if normalized.endswith("/v1"):
+            return f"{normalized[:-2]}v2"
+        return "https://api.marketstack.com/v2"
+
+    def _dividends_base_url(self) -> str:
+        """Dividendos exigem API v2 (datas de pagamento/registro)."""
+        return self.resolve_v2_base_url(self._base_url)
+
+    async def _get(
+        self,
+        path: str,
+        *,
+        params: dict | None = None,
+        retries: int = 2,
+        base_url: str | None = None,
+    ) -> dict:
         key = self._require_key()
         query = {"access_key": key, **(params or {})}
-        url = f"{self._base_url}/{path.lstrip('/')}"
+        url = f"{(base_url or self._base_url).rstrip('/')}/{path.lstrip('/')}"
 
         last_error: UpstreamError | None = None
         for attempt in range(retries + 1):
@@ -238,6 +258,7 @@ class MarketstackClient:
         payload = await self._get(
             f"tickers/{api_symbol}/dividends",
             params={"limit": max(1, min(limit, 100)), "offset": max(0, offset), "sort": "DESC"},
+            base_url=self._dividends_base_url(),
         )
         pagination = payload.get("pagination")
         return self._data(payload), pagination if isinstance(pagination, dict) else {}

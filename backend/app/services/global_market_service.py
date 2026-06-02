@@ -18,6 +18,7 @@ from app.domain.global_markets.fundamentals import (
     to_stock_profile,
     unwrap_tickerinfo_payload,
 )
+from app.domain.global_markets.dividend_analytics import enrich_dividend_dates
 from app.domain.global_markets.analytics import (
     build_company_profile,
     compute_returns,
@@ -505,7 +506,7 @@ class GlobalMarketService:
         safe_candles = max(30, min(candle_limit, 1000))
         safe_dividends = max(1, min(dividend_limit, 500))
         cache_key = (
-            f"detail:{normalized}:{exchange}:{safe_candles}:"
+            f"detail:v3:{normalized}:{exchange}:{safe_candles}:"
             f"{safe_dividends}:{split_limit}:{include_extras}"
         )
         cached = self._detail_cache.get(cache_key)
@@ -640,7 +641,7 @@ class GlobalMarketService:
             if quote is None:
                 raise UpstreamError(f"Cotação não encontrada: {normalized}", status_code=404)
 
-            mapped_dividends = map_dividends(dividend_items)
+            mapped_dividends = enrich_dividend_dates(map_dividends(dividend_items))
             company = enrich_company_profile(build_company_profile(ticker_info), tickerinfo=tickerinfo)
             company = fmp_company_updates(company, fmp_profile)
             dividends_summary = summarize_dividends(mapped_dividends, price=quote.price)
