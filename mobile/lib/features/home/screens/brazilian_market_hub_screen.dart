@@ -11,7 +11,6 @@ import 'package:rico_investidor/features/home/data/brazilian_hub_sections.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/brazilian_market_hub.dart';
 import 'package:rico_investidor/models/market_category.dart';
-import 'package:rico_investidor/models/market_category_availability.dart';
 import 'package:rico_investidor/navigation/open_asset_detail.dart';
 
 class BrazilianMarketHubScreen extends StatefulWidget {
@@ -215,7 +214,6 @@ class _BrazilianMarketHubScreenState extends State<BrazilianMarketHubScreen> {
                     return MarketCategoryCard(
                       category: category,
                       assetCount: widget.marketCount?.call(category),
-                      isDemo: category.isDemo,
                       onTap: () => Navigator.of(context).push(
                         MaterialPageRoute<void>(
                           builder: (_) => MarketListScreen(

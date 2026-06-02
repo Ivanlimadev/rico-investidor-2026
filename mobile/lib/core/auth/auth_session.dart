@@ -10,6 +10,8 @@ import 'package:rico_investidor/core/network/api_exception.dart';
 const _tokenKey = 'auth_access_token';
 const _deviceIdKey = 'auth_device_id';
 
+typedef SessionRefreshListener = void Function();
+
 class AuthSession {
   AuthSession({
     FlutterSecureStorage? storage,
@@ -21,6 +23,8 @@ class AuthSession {
   final http.Client _client;
 
   String? _accessToken;
+
+  SessionRefreshListener? onSessionRefreshed;
 
   String? get accessToken => _accessToken;
 
@@ -87,6 +91,13 @@ class AuthSession {
   Future<void> clear() async {
     _accessToken = null;
     await _storage.delete(key: _tokenKey);
+  }
+
+  /// Limpa token expirado/inválido e obtém sessão anônima novamente.
+  Future<void> refreshAfterUnauthorized() async {
+    await clear();
+    await ensureAuthenticated();
+    onSessionRefreshed?.call();
   }
 
   Future<void> setAccessToken(String token) async {

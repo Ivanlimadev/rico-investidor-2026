@@ -15,7 +15,6 @@ import 'package:rico_investidor/features/treasury/models/treasury_models.dart';
 import 'package:rico_investidor/features/treasury/screens/treasury_detail_screen.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/market_category.dart';
-import 'package:rico_investidor/models/market_category_availability.dart';
 
 void openAssetDetail(
   BuildContext context, {
@@ -23,15 +22,6 @@ void openAssetDetail(
   required FiiRepository fiiRepository,
   required QuoteRepository quoteRepository,
 }) {
-  if (asset.category.isDemo) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Ativo de demonstração — detalhe ao vivo indisponível.'),
-      ),
-    );
-    return;
-  }
-
   openTickerDetail(
     context,
     ticker: asset.symbol,

@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
-import 'package:rico_investidor/data/mock_market_data.dart';
-import 'package:rico_investidor/features/home/widgets/demo_data_banner.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/features/crypto/models/crypto_models.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
@@ -26,7 +24,6 @@ import 'package:rico_investidor/features/quotes/screens/stock_explore_screen.dar
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/navigation/open_asset_detail.dart';
 import 'package:rico_investidor/models/market_category.dart';
-import 'package:rico_investidor/models/market_category_availability.dart';
 
 class MarketListScreen extends StatefulWidget {
   const MarketListScreen({
@@ -99,10 +96,6 @@ class _MarketListScreenState extends State<MarketListScreen> {
         throw StateError('Lista vazia');
       }
       return items;
-    }
-
-    if (widget.category.isDemo) {
-      return MockMarketData.byCategory(widget.category);
     }
 
     if (widget.quoteRepository.supportsCategory(widget.category)) {
@@ -264,7 +257,6 @@ class _MarketListScreenState extends State<MarketListScreen> {
 
           return Column(
             children: [
-              if (widget.category.isDemo) const DemoDataBanner(),
               Expanded(
                 child: widget.category == MarketCategory.cripto
                     ? CryptoLiveMarketList(
@@ -279,7 +271,6 @@ class _MarketListScreenState extends State<MarketListScreen> {
                         itemBuilder: (context, index) => _AssetListTile(
                           asset: assets[index],
                           category: widget.category,
-                          isDemo: widget.category.isDemo,
                           onTap: () => openAssetDetail(
                             context,
                             asset: assets[index],
@@ -302,13 +293,11 @@ class _AssetListTile extends StatelessWidget {
     required this.asset,
     required this.onTap,
     required this.category,
-    this.isDemo = false,
   });
 
   final AssetItem asset;
   final VoidCallback onTap;
   final MarketCategory category;
-  final bool isDemo;
 
   @override
   Widget build(BuildContext context) {

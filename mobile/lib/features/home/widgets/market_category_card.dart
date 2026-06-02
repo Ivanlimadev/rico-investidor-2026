@@ -10,12 +10,10 @@ class MarketCategoryCard extends StatelessWidget {
     required this.category,
     required this.onTap,
     this.assetCount,
-    this.isDemo = false,
   });
 
   final MarketCategory category;
   final int? assetCount;
-  final bool isDemo;
   final VoidCallback onTap;
 
   @override
@@ -73,17 +71,6 @@ class MarketCategoryCard extends StatelessWidget {
                     color: const Color(0xFFFFF5EE),
                   ),
                 ),
-                if (isDemo) ...[
-                  const SizedBox(height: 3),
-                  Text(
-                    'Demo',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFFFFE0CC).withValues(alpha: 0.75),
-                    ),
-                  ),
-                ],
               ],
             ),
           ),

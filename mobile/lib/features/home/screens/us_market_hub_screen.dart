@@ -56,7 +56,6 @@ class UsMarketHubScreen extends StatelessWidget {
                   return MarketCategoryCard(
                     category: category,
                     assetCount: marketCount?.call(category),
-                    isDemo: false,
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
                         builder: (_) => MarketListScreen(

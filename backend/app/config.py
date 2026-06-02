@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     open_finance_store_path: Path = _BACKEND_ROOT / "data" / "open_finance_links.json"
     cors_origins: str = "http://127.0.0.1:*,http://localhost:*"
     rate_limit_per_minute: int = 180
+    auth_rate_limit_per_minute: int = 10
     cache_max_entries: int = 512
     fii_fund_catalog_ttl_seconds: int = 3600
     fii_cache_ttl_seconds: int = 900
@@ -72,6 +73,8 @@ class Settings(BaseSettings):
     auth_secret: str = ""
     auth_token_ttl_seconds: int = 60 * 60 * 24 * 30
     auth_users_path: Path = _BACKEND_ROOT / "data" / "users.json"
+    # Swagger/ReDoc/OpenAPI. Em produção use DOCS_ENABLED=false.
+    docs_enabled: bool = True
 
 
 settings = Settings()

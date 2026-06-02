@@ -104,6 +104,7 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
   @override
   void initState() {
     super.initState();
+    authSession.onSessionRefreshed = _onAuthSessionRefreshed;
     _loadPortfolio();
     _loadAccountState();
     _loadPreference();
@@ -113,6 +114,19 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
       unawaited(_syncPortfolioDividends());
       Future<void>.delayed(const Duration(seconds: 2), _refreshPortfolioPrices);
     });
+  }
+
+  @override
+  void dispose() {
+    if (authSession.onSessionRefreshed == _onAuthSessionRefreshed) {
+      authSession.onSessionRefreshed = null;
+    }
+    super.dispose();
+  }
+
+  void _onAuthSessionRefreshed() {
+    if (!mounted) return;
+    unawaited(_loadAccountState());
   }
 
   Future<void> _warmIntroData() async {

@@ -15,11 +15,6 @@ const liveMarketCategories = {
   MarketCategory.reits,
 };
 
-/// Categorias apenas ilustrativas até integração futura.
-const demoMarketCategories = <MarketCategory>{};
-
 extension MarketCategoryAvailability on MarketCategory {
   bool get hasLiveData => liveMarketCategories.contains(this);
-
-  bool get isDemo => demoMarketCategories.contains(this);
 }
