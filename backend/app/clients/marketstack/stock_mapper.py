@@ -24,6 +24,27 @@ def _safe_float(value: object) -> float | None:
         return None
 
 
+def _eod_session_close(item: dict) -> float | None:
+    """Fechamento nominal do pregão (não usa adj_close como preço)."""
+    return _safe_float(item.get("close") or item.get("last"))
+
+
+def _eod_session_open(item: dict) -> float | None:
+    return _safe_float(item.get("open"))
+
+
+def _eod_session_high(item: dict) -> float | None:
+    return _safe_float(item.get("high"))
+
+
+def _eod_session_low(item: dict) -> float | None:
+    return _safe_float(item.get("low"))
+
+
+def _eod_session_volume(item: dict) -> float | None:
+    return _safe_float(item.get("volume"))
+
+
 def _parse_date(value: object) -> datetime | None:
     if not value:
         return None
@@ -118,7 +139,9 @@ def map_eod_quote(
     name: str | None = None,
 ) -> MarketQuote | None:
     symbol = str(item.get("symbol") or "").upper().strip()
-    close = _safe_float(item.get("close") or item.get("adj_close") or item.get("last"))
+    close = _eod_session_close(item)
+    if close is None:
+        close = _safe_float(item.get("adj_close"))
     if not symbol or close is None:
         return None
 
@@ -130,10 +153,10 @@ def map_eod_quote(
         category=category,
         provider="marketstack",
         exchange=str(item.get("exchange") or "").upper().strip() or None,
-        open=_safe_float(item.get("open") or item.get("adj_open")),
-        high=_safe_float(item.get("high") or item.get("adj_high")),
-        low=_safe_float(item.get("low") or item.get("adj_low")),
-        volume=_safe_float(item.get("volume") or item.get("adj_volume")),
+        open=_eod_session_open(item),
+        high=_eod_session_high(item),
+        low=_eod_session_low(item),
+        volume=_eod_session_volume(item),
         previous_close=previous_close,
         session_date=_session_date(item),
         split_factor=_safe_float(item.get("split_factor")),
@@ -222,31 +245,59 @@ def map_eod_quotes_with_change(
         latest = rows[0][1]
         previous_close = None
         if len(rows) > 1:
-            previous_close = _safe_float(
-                rows[1][1].get("close") or rows[1][1].get("adj_close") or rows[1][1].get("last")
-            )
+            previous_close = _eod_session_close(rows[1][1]) or _safe_float(rows[1][1].get("adj_close"))
         quote = map_eod_quote(latest, category=category, previous_close=previous_close)
         if quote:
             quotes.append(quote)
     return quotes
 
 
+def sparklines_from_eod_items(
+    items: Iterable[dict],
+    *,
+    max_points: int = 24,
+) -> dict[str, list[float]]:
+    """Agrupa fechamentos EOD por símbolo (ordem cronológica) para mini-gráficos."""
+    grouped: dict[str, list[tuple[datetime | None, float]]] = {}
+    for item in items:
+        symbol = str(item.get("symbol") or "").upper().strip()
+        if not symbol:
+            continue
+        close = _eod_session_close(item) or _safe_float(item.get("adj_close"))
+        if close is None:
+            continue
+        grouped.setdefault(symbol, []).append((_parse_date(item.get("date")), close))
+
+    result: dict[str, list[float]] = {}
+    cap = max(2, min(max_points, 60))
+    for symbol, rows in grouped.items():
+        rows.sort(key=lambda row: row[0] or datetime.min.replace(tzinfo=UTC))
+        closes = [price for _, price in rows]
+        if len(closes) > cap:
+            closes = closes[-cap:]
+        if len(closes) >= 2:
+            result[symbol] = closes
+    return result
+
+
 def map_eod_candles(items: Iterable[dict]) -> list[GlobalStockCandle]:
     candles: list[GlobalStockCandle] = []
     for item in items:
-        close = _safe_float(item.get("close") or item.get("adj_close"))
+        close = _eod_session_close(item)
+        if close is None:
+            close = _safe_float(item.get("adj_close"))
         if close is None:
             continue
         parsed = _parse_date(item.get("date"))
         candles.append(
             GlobalStockCandle(
                 date=(parsed.date().isoformat() if parsed else str(item.get("date") or "")),
-                open=_safe_float(item.get("open") or item.get("adj_open")),
-                high=_safe_float(item.get("high") or item.get("adj_high")),
-                low=_safe_float(item.get("low") or item.get("adj_low")),
+                open=_eod_session_open(item),
+                high=_eod_session_high(item),
+                low=_eod_session_low(item),
                 close=close,
                 adj_close=_safe_float(item.get("adj_close")),
-                volume=_safe_float(item.get("volume")),
+                volume=_eod_session_volume(item),
             )
         )
     candles.sort(key=lambda candle: candle.date)

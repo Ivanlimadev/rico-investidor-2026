@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import 'package:rico_investidor/core/auth/auth_session.dart';
+import 'package:rico_investidor/core/auth/session_expired_exception.dart';
 import 'package:rico_investidor/core/config/api_config.dart';
 import 'package:rico_investidor/core/network/api_exception.dart';
 
@@ -88,7 +89,11 @@ class ApiClient {
     final response = await send().timeout(_timeout);
 
     if (response.statusCode == 401 && !unauthorizedRetried && _shouldRetryUnauthorized(path)) {
-      await _onUnauthorized();
+      try {
+        await _onUnauthorized();
+      } on SessionExpiredException {
+        rethrow;
+      }
       return _execute(
         path: path,
         fromJson: fromJson,

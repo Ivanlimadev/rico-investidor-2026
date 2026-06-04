@@ -42,7 +42,7 @@ class _WorldExchangesHubScreenState extends State<WorldExchangesHubScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Mercados por país'),
+        title: const Text('Mercados'),
       ),
       body: FutureBuilder<WorldExchangesResponseDto>(
         future: _future,
@@ -77,7 +77,7 @@ class _WorldExchangesHubScreenState extends State<WorldExchangesHubScreen> {
             itemBuilder: (context, index) {
               if (index == 0) {
                 return Text(
-                  '${data.totalCountries > 0 ? data.totalCountries : groups.length} países · toque para explorar o mercado',
+                  '${data.totalCountries > 0 ? data.totalCountries : groups.length} mercados · Brasil e Estados Unidos',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
                       ),

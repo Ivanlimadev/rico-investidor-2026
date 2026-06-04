@@ -1,17 +1,17 @@
-import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
+import 'package:rico_investidor/core/widgets/simple_quote_line_chart.dart';
 import 'package:rico_investidor/features/fii/utils/fii_quote_chart.dart';
 import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
 import 'package:rico_investidor/models/fii_models.dart';
 
-enum GlobalStockChartPeriod { months3, months6, year1, all }
+enum GlobalStockChartPeriod { months3, months6, year1 }
 
 class GlobalStockQuoteChart extends StatefulWidget {
   const GlobalStockQuoteChart({
     super.key,
     required this.candles,
-    this.chartHeight = 240,
+    this.chartHeight = 220,
   });
 
   final List<GlobalStockCandleDto> candles;
@@ -22,20 +22,40 @@ class GlobalStockQuoteChart extends StatefulWidget {
 }
 
 class _GlobalStockQuoteChartState extends State<GlobalStockQuoteChart> {
+  static const _lineBlue = Color(0xFF3B82F6);
+
   GlobalStockChartPeriod _period = GlobalStockChartPeriod.year1;
   int? _selectedIndex;
   bool _useAdjusted = false;
 
+  bool get _hasAdjustedData => widget.candles.any(
+        (c) => c.adjClose != null && (c.adjClose! - c.close).abs() > 0.0001,
+      );
+
+  @override
+  void didUpdateWidget(covariant GlobalStockQuoteChart oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.candles.length != widget.candles.length) {
+      _selectedIndex = null;
+    }
+    if (_useAdjusted && !_hasAdjustedData) {
+      _useAdjusted = false;
+    }
+  }
+
+  List<FiiCandleBar> get _allBars => dedupeQuoteBarsByDate(_toBars(widget.candles));
+
   List<FiiCandleBar> get _bars {
-    final all = sortedQuoteBars(_toBars(widget.candles));
-    final limit = switch (_period) {
+    final all = _allBars;
+    return barsForTrailingTradingDays(all, maxBars: _tradingDaysFor(_period));
+  }
+
+  static int _tradingDaysFor(GlobalStockChartPeriod period) {
+    return switch (period) {
       GlobalStockChartPeriod.months3 => 66,
       GlobalStockChartPeriod.months6 => 132,
       GlobalStockChartPeriod.year1 => 252,
-      GlobalStockChartPeriod.all => all.length,
     };
-    if (all.length <= limit) return all;
-    return all.sublist(all.length - limit);
   }
 
   @override
@@ -47,55 +67,23 @@ class _GlobalStockQuoteChartState extends State<GlobalStockQuoteChart> {
     final changePct = periodChangePct(bars);
 
     return Card(
+      elevation: 0,
       clipBehavior: Clip.none,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+        ),
+      ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Histórico de cotação', style: Theme.of(context).textTheme.titleSmall),
-            Text(
-              _useAdjusted ? 'Fechamento ajustado (splits/dividendos) · USD' : 'Fechamento diário (EOD) · USD',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                FilterChip(
-                  label: const Text('Ajustado'),
-                  selected: _useAdjusted,
-                  onSelected: (selected) => setState(() {
-                    _useAdjusted = selected;
-                    _selectedIndex = null;
-                  }),
-                  visualDensity: VisualDensity.compact,
-                  showCheckmark: false,
-                ),
-                ...GlobalStockChartPeriod.values.map((period) {
-                return FilterChip(
-                  label: Text(_periodLabel(period)),
-                  selected: _period == period,
-                  onSelected: (_) => setState(() {
-                    _period = period;
-                    _selectedIndex = null;
-                  }),
-                  visualDensity: VisualDensity.compact,
-                  showCheckmark: false,
-                );
-                }).toList(),
-              ],
-            ),
-            const SizedBox(height: 8),
             Row(
               children: [
-                Expanded(
-                  child: Text(
-                    _periodHint(_period),
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ),
+                Text('Histórico', style: Theme.of(context).textTheme.titleSmall),
+                const Spacer(),
                 if (changePct != null)
                   Text(
                     '${changePct >= 0 ? '+' : ''}${changePct.toStringAsFixed(2)}%',
@@ -106,14 +94,48 @@ class _GlobalStockQuoteChartState extends State<GlobalStockQuoteChart> {
                   ),
               ],
             ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                if (_hasAdjustedData)
+                  FilterChip(
+                    label: const Text('Ajustado'),
+                    selected: _useAdjusted,
+                    onSelected: (selected) => setState(() {
+                      _useAdjusted = selected;
+                      _selectedIndex = null;
+                    }),
+                    visualDensity: VisualDensity.compact,
+                    showCheckmark: false,
+                  ),
+                ...GlobalStockChartPeriod.values.map((period) {
+                  return FilterChip(
+                    label: Text(_periodLabel(period)),
+                    selected: _period == period,
+                    onSelected: (_) => setState(() {
+                      _period = period;
+                      _selectedIndex = null;
+                    }),
+                    visualDensity: VisualDensity.compact,
+                    showCheckmark: false,
+                  );
+                }),
+              ],
+            ),
             if (selected != null) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
               _SelectedBar(bar: selected),
             ],
             const SizedBox(height: 8),
-            SizedBox(
+            SimpleQuoteLineChart(
+              bars: bars,
               height: widget.chartHeight,
-              child: _buildChart(context, bars),
+              lineColor: _lineBlue,
+              formatPrice: _formatUsd,
+              formatDateLabel: _formatDateLabel,
+              onSelectedIndex: (index) => setState(() => _selectedIndex = index),
             ),
           ],
         ),
@@ -121,137 +143,13 @@ class _GlobalStockQuoteChartState extends State<GlobalStockQuoteChart> {
     );
   }
 
-  Widget _buildChart(BuildContext context, List<FiiCandleBar> bars) {
-    if (bars.length < 2) {
-      return Center(
-        child: Text(
-          'Histórico insuficiente para o gráfico.',
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-      );
-    }
-
-    final spots = [for (var i = 0; i < bars.length; i++) FlSpot(i.toDouble(), bars[i].close)];
-    final minY = spots.map((s) => s.y).reduce((a, b) => a < b ? a : b);
-    final maxY = spots.map((s) => s.y).reduce((a, b) => a > b ? a : b);
-    final padding = ((maxY - minY).abs() * 0.08).clamp(0.2, double.infinity);
-    final yMin = minY - padding;
-    final yMax = maxY + padding;
-    final yInterval = niceYInterval(yMin, yMax);
-    final lineColor = Theme.of(context).colorScheme.primary;
-    final scrollWidth = quoteChartScrollWidth(bars.length);
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.35)),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: SizedBox(
-            width: scrollWidth,
-            height: widget.chartHeight,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(4, 8, 12, 4),
-              child: LineChart(
-                LineChartData(
-                  minY: yMin,
-                  maxY: yMax,
-                  minX: 0,
-                  maxX: (bars.length - 1).toDouble(),
-                  clipData: const FlClipData.all(),
-                  gridData: FlGridData(
-                    show: true,
-                    drawVerticalLine: false,
-                    horizontalInterval: yInterval,
-                    getDrawingHorizontalLine: (value) => FlLine(
-                      color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
-                      strokeWidth: 1,
-                    ),
-                  ),
-                  borderData: FlBorderData(show: false),
-                  titlesData: FlTitlesData(
-                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    leftTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 52,
-                        interval: yInterval,
-                        getTitlesWidget: (value, meta) {
-                          if ((value - meta.min).abs() < 0.001 || (value - meta.max).abs() < 0.001) {
-                            return const SizedBox.shrink();
-                          }
-                          return Padding(
-                            padding: const EdgeInsets.only(right: 4),
-                            child: Text(
-                              _formatUsd(value),
-                              style: Theme.of(context).textTheme.labelSmall,
-                              textAlign: TextAlign.end,
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 26,
-                        interval: (bars.length / 4).clamp(1, 999).toDouble(),
-                        getTitlesWidget: (value, meta) {
-                          final i = value.toInt();
-                          if (i < 0 || i >= bars.length) return const SizedBox.shrink();
-                          if (i != 0 && i != bars.length - 1 && i % ((bars.length / 4).ceil()) != 0) {
-                            return const SizedBox.shrink();
-                          }
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 6),
-                            child: Text(
-                              _formatDateLabel(bars[i].tradeDate),
-                              style: Theme.of(context).textTheme.labelSmall,
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                  lineTouchData: LineTouchData(
-                    touchCallback: (event, response) {
-                      if (!event.isInterestedForInteractions || response?.lineBarSpots == null) return;
-                      final spot = response!.lineBarSpots!.first;
-                      setState(() => _selectedIndex = spot.x.toInt());
-                    },
-                    handleBuiltInTouches: true,
-                  ),
-                  lineBarsData: [
-                    LineChartBarData(
-                      spots: spots,
-                      isCurved: true,
-                      color: lineColor,
-                      barWidth: 2.5,
-                      dotData: const FlDotData(show: false),
-                      belowBarData: BarAreaData(
-                        show: true,
-                        color: lineColor.withValues(alpha: 0.12),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   List<FiiCandleBar> _toBars(List<GlobalStockCandleDto> candles) {
+    final useAdjusted = _useAdjusted && _hasAdjustedData;
     return candles
         .map(
           (c) {
-            final price = _useAdjusted ? c.chartClose : c.close;
+            final price = useAdjusted ? (c.adjClose ?? c.close) : c.close;
+            if (price <= 0) return null;
             return FiiCandleBar(
               tradeDate: c.date,
               open: c.open ?? price,
@@ -262,6 +160,7 @@ class _GlobalStockQuoteChartState extends State<GlobalStockQuoteChart> {
             );
           },
         )
+        .whereType<FiiCandleBar>()
         .toList();
   }
 
@@ -270,21 +169,21 @@ class _GlobalStockQuoteChartState extends State<GlobalStockQuoteChart> {
       GlobalStockChartPeriod.months3 => '3M',
       GlobalStockChartPeriod.months6 => '6M',
       GlobalStockChartPeriod.year1 => '1A',
-      GlobalStockChartPeriod.all => 'Máx',
-    };
-  }
-
-  static String _periodHint(GlobalStockChartPeriod period) {
-    return switch (period) {
-      GlobalStockChartPeriod.months3 => 'Últimos ~3 meses',
-      GlobalStockChartPeriod.months6 => 'Últimos ~6 meses',
-      GlobalStockChartPeriod.year1 => 'Último ano',
-      GlobalStockChartPeriod.all => 'Todo o histórico carregado',
     };
   }
 
   static String _formatDateLabel(String raw) {
-    if (raw.length >= 10) return raw.substring(5, 10).replaceAll('-', '/');
+    if (raw.length >= 10) {
+      final parts = raw.substring(0, 10).split('-');
+      if (parts.length == 3) {
+        const weekdays = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+        final date = DateTime.tryParse(raw.substring(0, 10));
+        if (date != null) {
+          return '${weekdays[date.weekday - 1]} ${parts[2]}';
+        }
+      }
+      return raw.substring(5, 10).replaceAll('-', '/');
+    }
     return raw;
   }
 }
@@ -300,12 +199,17 @@ class _SelectedBar extends StatelessWidget {
       children: [
         Text(
           bar.tradeDate.length >= 10 ? bar.tradeDate.substring(0, 10) : bar.tradeDate,
-          style: Theme.of(context).textTheme.labelMedium,
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
+              ),
         ),
         const SizedBox(width: 12),
         Text(
           _formatUsd(bar.close),
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF3B82F6),
+              ),
         ),
         if (bar.volume != null) ...[
           const Spacer(),

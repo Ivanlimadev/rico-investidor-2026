@@ -2,6 +2,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
+import 'package:rico_investidor/core/widgets/simple_quote_line_chart.dart';
 import 'package:rico_investidor/features/fii/utils/fii_quote_chart.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/quotes/widgets/stock_candlestick_chart.dart';
@@ -190,7 +191,7 @@ class _StockQuoteLineChartState extends State<StockQuoteLineChart> {
           spacing: 6,
           runSpacing: 6,
           children: [
-            ...FiiQuotePeriod.values.map((period) {
+            ...stockQuotePeriodChoices.map((period) {
               return FilterChip(
                 label: Text(quotePeriodLabel(period)),
                 selected: _period == period,
@@ -297,140 +298,26 @@ class _StockQuoteLineChartState extends State<StockQuoteLineChart> {
       );
     }
 
-    return _frame(context, child: _buildLineChart(context, sorted));
+    return _frame(
+      context,
+      child: SimpleQuoteLineChart(
+        bars: sorted,
+        height: widget.chartHeight,
+        lineColor: SimpleQuoteLineChart.defaultLineColor,
+        formatPrice: formatBrl,
+        formatDateLabel: _formatChartDateLabel,
+        onSelectedIndex: (index) => setState(() => _selectedIndex = index),
+      ),
+    );
   }
 
-  Widget _buildLineChart(BuildContext context, List<FiiCandleBar> sorted) {
-    final spots = [
-      for (var i = 0; i < sorted.length; i++) FlSpot(i.toDouble(), sorted[i].close),
-    ];
-
-    final minY = spots.map((s) => s.y).reduce((a, b) => a < b ? a : b);
-    final maxY = spots.map((s) => s.y).reduce((a, b) => a > b ? a : b);
-    final padding = ((maxY - minY).abs() * 0.08).clamp(0.2, double.infinity);
-    final yMin = minY - padding;
-    final yMax = maxY + padding;
-    final yInterval = niceYInterval(yMin, yMax);
-    final lineColor = Theme.of(context).colorScheme.primary;
-    final scrollWidth = quoteChartScrollWidth(sorted.length);
-
-    final chart = LineChart(
-      LineChartData(
-        minY: yMin,
-        maxY: yMax,
-        minX: 0,
-        maxX: (sorted.length - 1).toDouble(),
-        clipData: const FlClipData.all(),
-        gridData: FlGridData(
-          show: true,
-          drawVerticalLine: false,
-          horizontalInterval: yInterval,
-          getDrawingHorizontalLine: (value) => FlLine(
-            color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
-            strokeWidth: 1,
-          ),
-        ),
-        borderData: FlBorderData(
-          show: true,
-          border: Border(
-            bottom: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.5)),
-            left: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.5)),
-          ),
-        ),
-        titlesData: FlTitlesData(
-          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          leftTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 48,
-              interval: yInterval,
-              getTitlesWidget: (value, meta) {
-                if ((value - meta.min).abs() < 0.001 || (value - meta.max).abs() < 0.001) {
-                  return const SizedBox.shrink();
-                }
-                return Padding(
-                  padding: const EdgeInsets.only(right: 4),
-                  child: Text(
-                    _formatAxisPrice(value),
-                    style: Theme.of(context).textTheme.labelSmall,
-                    textAlign: TextAlign.end,
-                  ),
-                );
-              },
-            ),
-          ),
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              reservedSize: 26,
-              interval: 1,
-              getTitlesWidget: (value, meta) {
-                final i = value.toInt();
-                final label = axisLabelForIndex(sorted, i, _period);
-                if (label.isEmpty) return const SizedBox.shrink();
-                return Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Text(label, style: Theme.of(context).textTheme.labelSmall),
-                );
-              },
-            ),
-          ),
-        ),
-        lineTouchData: LineTouchData(
-          handleBuiltInTouches: true,
-          touchCallback: (event, response) {
-            if (!event.isInterestedForInteractions ||
-                response?.lineBarSpots == null ||
-                response!.lineBarSpots!.isEmpty) {
-              return;
-            }
-            final index = response.lineBarSpots!.first.x.toInt();
-            if (_selectedIndex != index) {
-              setState(() => _selectedIndex = index);
-            }
-          },
-          getTouchedSpotIndicator: (barData, spotIndexes) {
-            return spotIndexes.map((index) {
-              return TouchedSpotIndicatorData(
-                FlLine(color: lineColor.withValues(alpha: 0.35), strokeWidth: 1),
-                FlDotData(
-                  show: true,
-                  getDotPainter: (spot, percent, barData, dotIndex) => FlDotCirclePainter(
-                    radius: 3,
-                    color: lineColor,
-                    strokeWidth: 1,
-                    strokeColor: Theme.of(context).colorScheme.surface,
-                  ),
-                ),
-              );
-            }).toList();
-          },
-        ),
-        lineBarsData: [
-          LineChartBarData(
-            spots: spots,
-            isCurved: false,
-            barWidth: 2,
-            color: lineColor,
-            dotData: const FlDotData(show: false),
-            belowBarData: BarAreaData(
-              show: true,
-              color: lineColor.withValues(alpha: 0.08),
-            ),
-          ),
-        ],
-      ),
-      duration: Duration.zero,
-    );
-
-    if (scrollWidth > 0) {
-      return SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: SizedBox(width: scrollWidth, height: double.infinity, child: chart),
-      );
+  String _formatChartDateLabel(String tradeDate) {
+    final index = _bars.indexWhere((bar) => bar.tradeDate == tradeDate);
+    if (index >= 0) {
+      final label = axisLabelForIndex(sortedQuoteBars(_bars), index, _period);
+      if (label.isNotEmpty) return label;
     }
-    return chart;
+    return formatQuoteDate(tradeDate);
   }
 
   Widget _buildCompareChart(BuildContext context, List<PerformancePointDto> points) {
@@ -610,11 +497,6 @@ class _StockQuoteLineChartState extends State<StockQuoteLineChart> {
     );
   }
 
-  String _formatAxisPrice(double value) {
-    if (value >= 1000) return value.toStringAsFixed(0);
-    if (value >= 100) return value.toStringAsFixed(1);
-    return value.toStringAsFixed(2);
-  }
 }
 
 class _SelectedQuoteBar extends StatelessWidget {
@@ -626,9 +508,20 @@ class _SelectedQuoteBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Text(formatQuoteDate(bar.tradeDate), style: Theme.of(context).textTheme.labelLarge),
-        const Spacer(),
-        Text(formatBrl(bar.close), style: Theme.of(context).textTheme.titleSmall),
+        Text(
+          formatQuoteDate(bar.tradeDate),
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
+              ),
+        ),
+        const SizedBox(width: 12),
+        Text(
+          formatBrl(bar.close),
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+                color: SimpleQuoteLineChart.defaultLineColor,
+              ),
+        ),
       ],
     );
   }

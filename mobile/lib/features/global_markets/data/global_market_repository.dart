@@ -2,6 +2,7 @@ import 'package:rico_investidor/core/cache/session_cache.dart';
 import 'package:rico_investidor/core/network/api_exception.dart';
 import 'package:rico_investidor/features/global_markets/data/global_market_api_client.dart';
 import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
+import 'package:rico_investidor/features/global_markets/utils/us_quote_enrichment.dart';
 import 'package:rico_investidor/features/global_markets/utils/marketstack_errors.dart';
 import 'package:rico_investidor/features/quotes/data/quote_api_client.dart';
 import 'package:rico_investidor/features/quotes/models/stock_compare.dart';
@@ -47,6 +48,13 @@ class GlobalMarketRepository {
     final response = await listUsMarketWithRetry(category: slug, page: 1, limit: 30);
     final mappedCategory = category == MarketCategory.reits ? MarketCategory.reits : MarketCategory.stocks;
     return response.items.map((e) => e.toUsAssetItem(category: mappedCategory)).toList();
+  }
+
+  Future<QuoteListResponse> getUsHeatmap({int limit = 18, String exchange = 'XNAS'}) {
+    return _withRetry(
+      () => _api.getUsHeatmap(limit: limit, exchange: exchange),
+      fallbackMessage: 'Não foi possível carregar o mapa de calor EUA.',
+    );
   }
 
   Future<WorldExchangesResponseDto> listWorldExchanges() async {
@@ -165,10 +173,11 @@ class GlobalMarketRepository {
     );
   }
 
-  static const defaultCandleLimit = 756;
+  /// ~252 pregões no 1A; extended pede teto da API para planos com mais histórico.
+  static const defaultCandleLimit = 280;
   static const extendedCandleLimit = 1000;
-  static const defaultDividendLimit = 100;
-  static const extendedDividendLimit = 500;
+  static const defaultDividendLimit = 24;
+  static const extendedDividendLimit = 100;
 
   Future<GlobalStockDetailDto> getDetail(
     String symbol, {
@@ -222,9 +231,16 @@ class GlobalMarketRepository {
     );
     final category = quote.category == 'reits' ? MarketCategory.reits : MarketCategory.stocks;
 
+    final reconciled = UsQuoteEnrichment.reconcileQuote(quote, candles.candles);
+    final marketStats = UsQuoteEnrichment.marketStatsFrom(reconciled, candles.candles);
+    final returns = UsQuoteEnrichment.returnsFrom(
+      candles.candles,
+      currentPrice: reconciled.price,
+    );
+
     return GlobalStockDetailDto(
-      quote: quote.toUsAssetItem(category: category),
-      quoteMeta: quote,
+      quote: reconciled.toUsAssetItem(category: category),
+      quoteMeta: reconciled,
       ticker: GlobalStockTickerInfoDto(
         symbol: quote.symbol,
         name: quote.name,
@@ -235,9 +251,9 @@ class GlobalMarketRepository {
       dividends: const [],
       splits: const [],
       dividendsSummary: const GlobalStockDividendsSummaryDto(),
-      returns: const [],
+      returns: returns,
       fundamentals: const StockFundamentalsDto(),
-      marketStats: const StockMarketStatsDto(),
+      marketStats: marketStats,
       dividendsTotal: 0,
       splitsTotal: 0,
       plan: 'basic',
@@ -253,7 +269,7 @@ class GlobalMarketRepository {
     required String fallbackMessage,
   }) async {
     Object? lastError;
-    const delays = [Duration(milliseconds: 400), Duration(milliseconds: 900)];
+    const delays = [Duration(milliseconds: 250), Duration(milliseconds: 600)];
     for (var attempt = 0; attempt <= delays.length; attempt++) {
       try {
         return await action();

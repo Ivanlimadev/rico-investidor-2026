@@ -115,5 +115,7 @@ CRYPTO_CHART_PRESETS: dict[str, tuple[str, int]] = {
     "1m": ("1d", 30),
     "3m": ("1d", 90),
     "1y": ("1d", 365),
-    "max": ("1d", 1000),
+    # Semanal: até ~19 anos em 1 request (limite Binance 1000 klines). Diário em 1000
+    # dias distorce o "MAX" vs gráficos de corretora.
+    "max": ("1w", 1000),
 }

@@ -20,15 +20,18 @@ def test_auth_routes_have_stricter_rate_limit(tmp_path, monkeypatch):
         assert "autenticação" in blocked.json()["detail"].lower()
 
 
-def test_logo_paths_skip_rate_limit(monkeypatch):
-    monkeypatch.setattr(settings, "rate_limit_per_minute", 2)
-    monkeypatch.setattr(settings, "auth_rate_limit_per_minute", 2)
+def test_logo_paths_have_dedicated_rate_limit(monkeypatch):
+    monkeypatch.setattr(settings, "logo_rate_limit_per_minute", 2)
     monkeypatch.setattr(settings, "auth_secret", "")
 
     with TestClient(create_app()) as client:
-        for _ in range(5):
+        for _ in range(2):
             response = client.get("/v1/crypto/BTC/logo.png")
             assert response.status_code != 429
+
+        blocked = client.get("/v1/crypto/BTC/logo.png")
+        assert blocked.status_code == 429
+        assert "logo" in blocked.json()["detail"].lower()
 
 
 def test_non_auth_routes_use_global_rate_limit(monkeypatch):

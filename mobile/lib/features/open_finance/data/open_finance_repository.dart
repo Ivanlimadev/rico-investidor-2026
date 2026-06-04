@@ -6,10 +6,10 @@ class OpenFinanceRepository {
 
   final ApiClient _client;
 
-  Future<String> createConnectToken(String clientUserId) async {
+  Future<String> createConnectToken() async {
     final response = await _client.postJson(
       '/v1/open-finance/connect-token',
-      body: {'client_user_id': clientUserId},
+      body: const {},
       fromJson: (json) => json,
     );
     final token = response['connect_token'] as String?;
@@ -19,32 +19,25 @@ class OpenFinanceRepository {
     return token;
   }
 
-  Future<void> registerItem({
-    required String clientUserId,
-    required String itemId,
-  }) async {
+  Future<void> registerItem({required String itemId}) async {
     await _client.postJson(
       '/v1/open-finance/items',
-      body: {
-        'client_user_id': clientUserId,
-        'item_id': itemId,
-      },
+      body: {'item_id': itemId},
       fromJson: (json) => json,
     );
   }
 
-  Future<OpenFinanceStatus> fetchStatus(String clientUserId) async {
+  Future<OpenFinanceStatus> fetchStatus() async {
     return _client.getJson(
       '/v1/open-finance/status',
-      query: {'client_user_id': clientUserId},
       fromJson: OpenFinanceStatus.fromJson,
     );
   }
 
-  Future<OpenFinanceSyncResponse> syncPortfolio(String clientUserId) async {
+  Future<OpenFinanceSyncResponse> syncPortfolio() async {
     return _client.postJson(
       '/v1/open-finance/sync',
-      body: {'client_user_id': clientUserId},
+      body: const {},
       fromJson: OpenFinanceSyncResponse.fromJson,
     );
   }

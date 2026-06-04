@@ -14,13 +14,14 @@ class CryptoChartPreset {
   final String label;
 }
 
+/// Presets do gráfico cripto (Binance). Sem MAX — histórico longo em 1d/1000
+/// não batia com gráficos reais; 1A cobre o uso típico.
 const cryptoChartPresets = [
   CryptoChartPreset(id: '1d', label: '1D'),
   CryptoChartPreset(id: '1w', label: '1S'),
   CryptoChartPreset(id: '1m', label: '1M'),
   CryptoChartPreset(id: '3m', label: '3M'),
   CryptoChartPreset(id: '1y', label: '1A'),
-  CryptoChartPreset(id: 'max', label: 'MAX'),
 ];
 
 class CryptoChartCard extends StatefulWidget {

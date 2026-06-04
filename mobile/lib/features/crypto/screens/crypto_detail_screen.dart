@@ -7,10 +7,13 @@ import 'package:rico_investidor/features/crypto/data/crypto_price_stream.dart';
 import 'package:rico_investidor/features/crypto/data/crypto_repository.dart';
 import 'package:rico_investidor/features/crypto/models/crypto_models.dart';
 import 'package:rico_investidor/features/crypto/utils/crypto_display_locale.dart';
+import 'package:rico_investidor/features/assets/models/related_assets.dart';
+import 'package:rico_investidor/features/assets/widgets/related_assets_card.dart';
 import 'package:rico_investidor/features/crypto/widgets/crypto_chart_card.dart';
 import 'package:rico_investidor/features/crypto/widgets/crypto_fundamentals_card.dart';
 import 'package:rico_investidor/features/crypto/widgets/crypto_performance_row.dart';
 import 'package:rico_investidor/models/asset_item.dart';
+import 'package:rico_investidor/models/market_category.dart';
 
 class CryptoDetailScreen extends StatefulWidget {
   const CryptoDetailScreen({
@@ -174,6 +177,11 @@ class _CryptoDetailScreenState extends State<CryptoDetailScreen> {
                 symbol: quote.symbol,
                 repository: _repository,
                 initialCandles: detail.candles,
+              ),
+              const SizedBox(height: 12),
+              RelatedAssetsCard(
+                ticker: quote.symbol,
+                market: relatedMarketSlug(MarketCategory.cripto),
               ),
               const SizedBox(height: 12),
               Text(

@@ -10,7 +10,8 @@ class GlobalStockReturnsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (returns.isEmpty) return const SizedBox.shrink();
+    final visible = returns.where((item) => item.returnPct != null).toList();
+    if (visible.isEmpty) return const SizedBox.shrink();
 
     return Card(
       child: Padding(
@@ -20,17 +21,29 @@ class GlobalStockReturnsCard extends StatelessWidget {
           children: [
             Text('Rentabilidade', style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 12),
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 4,
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 8,
-                childAspectRatio: 1.05,
-              ),
-              itemCount: returns.length,
-              itemBuilder: (context, index) => _ReturnChip(item: returns[index]),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final maxW = constraints.maxWidth;
+                final columns = visible.length >= 4
+                    ? 4
+                    : visible.length >= 3
+                        ? 3
+                        : visible.length;
+                const gap = 8.0;
+                final chipWidth = (maxW - gap * (columns - 1)) / columns;
+
+                return Wrap(
+                  spacing: gap,
+                  runSpacing: gap,
+                  children: [
+                    for (final item in visible)
+                      SizedBox(
+                        width: chipWidth,
+                        child: _ReturnChip(item: item),
+                      ),
+                  ],
+                );
+              },
             ),
           ],
         ),
@@ -46,37 +59,38 @@ class _ReturnChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final value = item.returnPct;
-    final hasValue = value != null;
-    final positive = hasValue && value >= 0;
-    final color = !hasValue
-        ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.35)
-        : positive
-            ? AppColors.positive
-            : AppColors.negative;
+    final value = item.returnPct!;
+    final positive = value >= 0;
+    final color = positive ? AppColors.positive : AppColors.negative;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
       decoration: BoxDecoration(
-        color: hasValue ? color.withValues(alpha: 0.1) : Theme.of(context).colorScheme.surfaceContainerHighest,
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: hasValue ? color.withValues(alpha: 0.25) : Theme.of(context).dividerColor,
-        ),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(
-            assetReturnPeriodDisplayLabel(item.label),
-            style: Theme.of(context).textTheme.labelSmall,
-            textAlign: TextAlign.center,
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              assetReturnPeriodDisplayLabel(item.label),
+              style: Theme.of(context).textTheme.labelSmall,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+            ),
           ),
           const SizedBox(height: 4),
-          Text(
-            hasValue ? '${value >= 0 ? '+' : ''}${value.toStringAsFixed(1)}%' : '—',
-            style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 13),
-            textAlign: TextAlign.center,
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              '${value >= 0 ? '+' : ''}${value.toStringAsFixed(1)}%',
+              style: TextStyle(color: color, fontWeight: FontWeight.w800, fontSize: 13),
+              textAlign: TextAlign.center,
+            ),
           ),
         ],
       ),

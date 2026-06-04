@@ -4,9 +4,12 @@ import 'package:rico_investidor/features/global_markets/data/global_market_repos
 import 'package:rico_investidor/features/home/models/home_feed.dart';
 import 'package:rico_investidor/features/home/widgets/market_category_card.dart';
 import 'package:rico_investidor/features/market/market_list_screen.dart';
+import 'package:rico_investidor/core/widgets/market_heatmap/stock_heatmap_block.dart';
+import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/models/global_market_hub.dart';
 import 'package:rico_investidor/models/market_category.dart';
+import 'package:rico_investidor/navigation/open_asset_detail.dart';
 
 class UsMarketHubScreen extends StatelessWidget {
   const UsMarketHubScreen({
@@ -38,6 +41,20 @@ class UsMarketHubScreen extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
                     ),
+              ),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: StockHeatmapBlock(
+              reloadKey: 'US',
+              load: () => globalMarketRepository.getUsHeatmap(),
+              volumeLabel: 'NASDAQ · volume',
+              mapAsset: (quote) => quote.toUsAssetItem(),
+              onTap: (asset) => openAssetDetail(
+                context,
+                asset: asset,
+                fiiRepository: fiiRepository,
+                quoteRepository: quoteRepository,
               ),
             ),
           ),

@@ -6,13 +6,19 @@ import 'package:rico_investidor/core/utils/currency_format.dart';
 import 'package:rico_investidor/core/widgets/asset_card_header.dart';
 import 'package:rico_investidor/core/widgets/asset_logo.dart';
 import 'package:rico_investidor/core/widgets/asset_quick_actions.dart';
+import 'package:rico_investidor/features/fii/utils/fii_format.dart';
 import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
+import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
 import 'package:rico_investidor/features/global_markets/utils/marketstack_errors.dart';
 import 'package:rico_investidor/features/global_markets/screens/global_stock_compare_screen.dart';
+import 'package:rico_investidor/features/assets/models/related_assets.dart';
+import 'package:rico_investidor/features/assets/widgets/related_assets_card.dart';
 import 'package:rico_investidor/features/global_markets/widgets/global_stock_about_card.dart';
+import 'package:rico_investidor/models/market_category.dart';
 import 'package:rico_investidor/features/global_markets/widgets/global_stock_dividends_section.dart';
-import 'package:rico_investidor/features/global_markets/widgets/global_stock_market_stats_card.dart';
+import 'package:rico_investidor/features/global_markets/widgets/global_stock_fifty_two_week_card.dart';
 import 'package:rico_investidor/features/global_markets/widgets/global_stock_quote_chart.dart';
+import 'package:rico_investidor/features/quotes/widgets/stock_market_stats_card.dart';
 import 'package:rico_investidor/features/global_markets/widgets/global_stock_returns_card.dart';
 import 'package:rico_investidor/features/global_markets/widgets/global_stock_splits_card.dart';
 import 'package:rico_investidor/features/global_markets/widgets/global_stock_fundamentals_card.dart';
@@ -51,6 +57,8 @@ class _GlobalStockDetailScreenState extends State<GlobalStockDetailScreen> {
         .getDetail(
           widget.symbol,
           exchange: widget.exchange,
+          candleLimit: GlobalMarketRepository.defaultCandleLimit,
+          dividendLimit: GlobalMarketRepository.defaultDividendLimit,
         )
         .then((detail) {
       if (mounted) setState(() => _actionAsset = detail.quote);
@@ -151,18 +159,30 @@ class _GlobalStockDetailScreenState extends State<GlobalStockDetailScreen> {
                 dy: dy,
                 onSurface: onSurface,
               ),
-              if (detail.returns.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              StockMarketStatsCard(
+                stats: display.marketStats,
+                useUsd: true,
+                title: 'Pregão e indicadores',
+                hideValuationMetrics: true,
+                quotePrice: meta.price,
+                quoteAdjClose: meta.adjClose,
+              ),
+              if (display.marketStats.fiftyTwoWeekLow != null &&
+                  display.marketStats.fiftyTwoWeekHigh != null) ...[
+                const SizedBox(height: 12),
+                GlobalStockFiftyTwoWeekCard(
+                  stats: display.marketStats,
+                  currentPrice: quote.price,
+                  title: display.marketStats.priceRangeLabel ?? 'Faixa de preços',
+                ),
+              ],
+              if (detail.returns.any((r) => r.returnPct != null)) ...[
                 const SizedBox(height: 12),
                 GlobalStockReturnsCard(returns: detail.returns),
               ],
               const SizedBox(height: 12),
               GlobalStockFundamentalsCard(fundamentals: detail.fundamentals),
-              if (_hasSessionStats(meta)) ...[
-                const SizedBox(height: 12),
-                GlobalStockMarketStatsCard(meta: meta),
-              ],
-              const SizedBox(height: 12),
-              GlobalStockAboutCard(company: detail.company),
               if (detail.historyLimited) ...[
                 const SizedBox(height: 12),
                 Text(
@@ -189,6 +209,15 @@ class _GlobalStockDetailScreenState extends State<GlobalStockDetailScreen> {
                 GlobalStockSplitsCard(splits: display.splits, total: display.splitsTotal),
               ],
               const SizedBox(height: 12),
+              GlobalStockAboutCard(company: detail.company),
+              const SizedBox(height: 12),
+              RelatedAssetsCard(
+                ticker: widget.symbol,
+                market: relatedMarketSlug(detail.quote.category),
+                sector: detail.company.sector,
+                industry: detail.company.industry,
+              ),
+              const SizedBox(height: 12),
               Card(
                 child: ListTile(
                   leading: const Icon(Icons.cloud_outlined),
@@ -207,14 +236,15 @@ class _GlobalStockDetailScreenState extends State<GlobalStockDetailScreen> {
     );
   }
 
-  static bool _hasSessionStats(MarketQuoteDto meta) {
-    return meta.open != null ||
-        meta.high != null ||
-        meta.low != null ||
-        meta.volume != null ||
-        meta.previousClose != null ||
-        meta.adjClose != null;
+}
+
+bool _isValidRatio(double? value) => value != null && value > 0 && value <= 500;
+
+double? _returnPctForLabel(List<GlobalStockReturnPeriodDto> returns, String label) {
+  for (final item in returns) {
+    if (item.label == label && item.returnPct != null) return item.returnPct;
   }
+  return null;
 }
 
 class _HeroQuoteCard extends StatelessWidget {
@@ -238,6 +268,10 @@ class _HeroQuoteCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final return12m = _returnPctForLabel(detail.returns, '1A');
+    final pe = detail.fundamentals.priceEarnings;
+    final pb = detail.fundamentals.priceToBook;
+
     return Card(
       clipBehavior: Clip.antiAlias,
       child: Container(
@@ -340,19 +374,10 @@ class _HeroQuoteCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (dy != null)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: AppColors.positive.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: AppColors.positive.withValues(alpha: 0.25)),
-                    ),
-                    child: Text(
-                      'DY 12m ${dy!.toStringAsFixed(2)}%',
-                      style: const TextStyle(color: AppColors.positive, fontWeight: FontWeight.w700),
-                    ),
-                  ),
+                if (return12m != null) _HeroMetricChip(label: '12m', value: formatPct(return12m)),
+                if (dy != null && dy! > 0) _HeroMetricChip(label: 'DY 12m', value: formatPct(dy!)),
+                if (_isValidRatio(pe)) _HeroMetricChip(label: 'P/L', value: pe!.toStringAsFixed(2)),
+                if (_isValidRatio(pb)) _HeroMetricChip(label: 'P/VP', value: pb!.toStringAsFixed(2)),
                 if (detail.ticker.hasIntraday)
                   Chip(
                     label: Text(detail.dataMode == 'realtime' ? 'Tempo real' : 'Intraday'),
@@ -376,5 +401,30 @@ class _HeroQuoteCard extends StatelessWidget {
   static String _formatDate(String raw) {
     if (raw.length >= 10) return raw.substring(0, 10);
     return raw;
+  }
+}
+
+class _HeroMetricChip extends StatelessWidget {
+  const _HeroMetricChip({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.5),
+        ),
+      ),
+      child: Text(
+        '$label $value',
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(fontWeight: FontWeight.w700),
+      ),
+    );
   }
 }

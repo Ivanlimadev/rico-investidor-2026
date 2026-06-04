@@ -56,7 +56,10 @@ class UserStore:
     ) -> StoredUser:
         normalized = email.strip().lower()
         if self.get_by_email(normalized):
-            raise AppError("E-mail já cadastrado", status_code=409)
+            raise AppError(
+                "Não foi possível criar a conta com estes dados",
+                status_code=400,
+            )
 
         user = StoredUser(
             id=secrets.token_urlsafe(16),

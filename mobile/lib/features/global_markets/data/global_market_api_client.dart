@@ -17,6 +17,17 @@ class GlobalMarketApiClient {
     );
   }
 
+  Future<QuoteListResponse> getUsHeatmap({int limit = 18, String exchange = 'XNAS'}) {
+    return _client.getJson(
+      '/v1/global-markets/us/heatmap',
+      query: {
+        'limit': '$limit',
+        'exchange': exchange,
+      },
+      fromJson: QuoteListResponse.fromJson,
+    );
+  }
+
   Future<QuoteListResponse> explore({
     required String category,
     int page = 1,
@@ -152,7 +163,7 @@ class GlobalMarketApiClient {
   Future<GlobalStockDetailResponseDto> getStockDetail(
     String symbol, {
     String? exchange,
-    int candleLimit = 756,
+    int candleLimit = 252,
     int dividendLimit = 100,
     int splitLimit = 50,
     bool includeExtras = true,

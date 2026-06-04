@@ -17,6 +17,8 @@ class GlobalMarketCapabilitiesResponse(BaseModel):
     refresh_seconds: int | None = None
     api_configured: bool = False
     provider: str = "marketstack"
+    enabled_country_codes: list[str] = Field(default_factory=lambda: ["US", "BR"])
+    global_markets_expanded: bool = False
 
 
 class ExchangeInfo(BaseModel):

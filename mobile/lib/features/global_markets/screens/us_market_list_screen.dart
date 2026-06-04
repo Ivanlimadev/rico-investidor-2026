@@ -2,14 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/config/api_config.dart';
 import 'package:rico_investidor/core/search/asset_search_config.dart';
 import 'package:rico_investidor/core/search/unified_asset_search.dart';
-import 'package:rico_investidor/core/theme/app_colors.dart';
-import 'package:rico_investidor/core/utils/currency_format.dart';
-import 'package:rico_investidor/core/widgets/asset_card_header.dart';
+import 'package:rico_investidor/features/global_markets/widgets/us_market_quote_list_tile.dart';
 import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
 import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
 import 'package:rico_investidor/features/global_markets/screens/global_stock_detail_screen.dart';
 import 'package:rico_investidor/features/global_markets/utils/marketstack_errors.dart';
+import 'package:rico_investidor/core/widgets/market_heatmap/stock_heatmap_block.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/market_category.dart';
@@ -261,6 +260,23 @@ class _UsMarketListScreenState extends State<UsMarketListScreen> {
       return const Center(child: Text('Nenhum ativo encontrado.'));
     }
 
+    if (_categorySlug != 'stocks') {
+      return NotificationListener<ScrollNotification>(
+        onNotification: (notification) {
+          if (notification.metrics.pixels >= notification.metrics.maxScrollExtent - 120) {
+            _loadMore();
+          }
+          return false;
+        },
+        child: ListView.separated(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+          itemCount: _items.length + (_loadingMore ? 1 : 0),
+          separatorBuilder: (_, __) => const SizedBox(height: 10),
+          itemBuilder: (context, index) => _buildListTile(context, index),
+        ),
+      );
+    }
+
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
         if (notification.metrics.pixels >= notification.metrics.maxScrollExtent - 120) {
@@ -268,61 +284,42 @@ class _UsMarketListScreenState extends State<UsMarketListScreen> {
         }
         return false;
       },
-      child: ListView.separated(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-        itemCount: _items.length + (_loadingMore ? 1 : 0),
-        separatorBuilder: (_, __) => const SizedBox(height: 10),
-        itemBuilder: (context, index) {
-          if (index >= _items.length) {
-            return const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: Center(child: CircularProgressIndicator()),
-            );
-          }
-
-          final asset = _items[index];
-          final positive = asset.changePercent >= 0;
-          final changeColor = positive ? AppColors.positive : AppColors.negative;
-
-          return Card(
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () => _openDetail(asset),
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: AssetCardHeader(
-                        symbol: asset.symbol,
-                        name: asset.name,
-                        logoUrl: asset.logoUrl,
-                        logoSize: kAssetLogoSizeCompact,
-                        nameMaxLines: 1,
-                      ),
-                    ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          formatUsd(asset.price),
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
-                        ),
-                        Text(
-                          '${positive ? '+' : ''}${asset.changePercent.toStringAsFixed(2)}%',
-                          style: Theme.of(context).textTheme.labelMedium?.copyWith(color: changeColor),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
+      child: CustomScrollView(
+        slivers: [
+          SliverToBoxAdapter(
+            child: StockHeatmapBlock(
+              reloadKey: 'US-list',
+              load: () => widget.repository.getUsHeatmap(),
+              volumeLabel: 'NASDAQ · volume',
+              mapAsset: (quote) => quote.toUsAssetItem(),
+              onTap: _openDetail,
             ),
-          );
-        },
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+            sliver: SliverList.separated(
+              itemCount: _items.length + (_loadingMore ? 1 : 0),
+              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              itemBuilder: (context, index) => _buildListTile(context, index),
+            ),
+          ),
+        ],
       ),
+    );
+  }
+
+  Widget _buildListTile(BuildContext context, int index) {
+    if (index >= _items.length) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final asset = _items[index];
+    return UsMarketQuoteListTile(
+      asset: asset,
+      onTap: () => _openDetail(asset),
     );
   }
 }

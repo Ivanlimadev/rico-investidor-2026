@@ -7,9 +7,11 @@ class LoginScreen extends StatefulWidget {
   const LoginScreen({
     super.key,
     required this.onSuccess,
+    this.sessionExpired = false,
   });
 
   final VoidCallback onSuccess;
+  final bool sessionExpired;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -81,6 +83,22 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                if (widget.sessionExpired) ...[
+                  MaterialBanner(
+                    content: const Text(
+                      'Sua sessão expirou. Entre novamente para continuar com sua conta.',
+                    ),
+                    leading: Icon(
+                      Icons.info_outline,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    backgroundColor: Theme.of(context).colorScheme.primaryContainer.withValues(
+                          alpha: 0.35,
+                        ),
+                    actions: const [SizedBox.shrink()],
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 Text(
                   'Use seu e-mail e senha para acessar sua conta.',
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(

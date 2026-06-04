@@ -16,12 +16,10 @@ class PluggyConnectScreen extends StatefulWidget {
     super.key,
     required this.connectToken,
     required this.repository,
-    required this.clientUserId,
   });
 
   final String connectToken;
   final OpenFinanceRepository repository;
-  final String clientUserId;
 
   @override
   State<PluggyConnectScreen> createState() => _PluggyConnectScreenState();
@@ -46,10 +44,7 @@ class _PluggyConnectScreenState extends State<PluggyConnectScreen> {
 
     setState(() => _registering = true);
     try {
-      await widget.repository.registerItem(
-        clientUserId: widget.clientUserId,
-        itemId: itemId,
-      );
+      await widget.repository.registerItem(itemId: itemId);
       if (!mounted) return;
       _finished = true;
       Navigator.of(context).pop(PluggyConnectResult(itemId: itemId));
@@ -57,7 +52,7 @@ class _PluggyConnectScreenState extends State<PluggyConnectScreen> {
       if (!mounted) return;
       setState(() => _registering = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao salvar conexão: $error')),
+        const SnackBar(content: Text('Erro ao salvar conexão. Tente novamente.')),
       );
     }
   }
@@ -112,7 +107,11 @@ class _PluggyConnectScreenState extends State<PluggyConnectScreen> {
             onError: (error) {
               if (!mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Falha na conexão: $error')),
+                SnackBar(
+                  content: Text(
+                    kDebugMode ? 'Falha na conexão: $error' : 'Falha na conexão. Tente novamente.',
+                  ),
+                ),
               );
             },
           ),

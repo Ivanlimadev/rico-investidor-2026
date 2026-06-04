@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:rico_investidor/core/auth/secure_storage_config.dart';
 import 'package:rico_investidor/models/dividend_payment.dart';
 import 'package:rico_investidor/models/portfolio_holding.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -10,9 +11,9 @@ const _dividendsKey = 'portfolio_dividends_v1';
 
 class PortfolioStorage {
   PortfolioStorage({
-    FlutterSecureStorage? secureStorage,
+    FlutterSecureStorage? storage,
     Map<String, String>? memoryStore,
-  })  : _storage = secureStorage ?? const FlutterSecureStorage(),
+  })  : _storage = storage ?? secureStorage,
         _memoryStore = memoryStore;
 
   final FlutterSecureStorage _storage;

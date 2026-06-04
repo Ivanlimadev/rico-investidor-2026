@@ -175,6 +175,10 @@ class QuoteRepository {
     return _api.screener(query);
   }
 
+  Future<QuoteListResponse> getHeatmap({int limit = 18}) {
+    return _api.getHeatmap(limit: limit);
+  }
+
   Future<StockCompareResponseDto> compareStocks(List<String> tickers) {
     return _api.compare(tickers);
   }

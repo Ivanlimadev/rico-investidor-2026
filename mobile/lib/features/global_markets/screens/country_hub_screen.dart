@@ -6,6 +6,7 @@ import 'package:rico_investidor/features/global_markets/models/global_market_mod
 import 'package:rico_investidor/features/global_markets/screens/country_market_screen.dart';
 import 'package:rico_investidor/features/global_markets/screens/global_stock_compare_screen.dart';
 import 'package:rico_investidor/features/global_markets/widgets/market_hub_section_grid.dart';
+import 'package:rico_investidor/core/widgets/market_heatmap/stock_heatmap_block.dart';
 import 'package:rico_investidor/features/home/screens/us_market_hub_screen.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/models/asset_item.dart';
@@ -180,6 +181,16 @@ class _CountryHubScreenState extends State<CountryHubScreen> {
                     ),
                   ),
                 ),
+                if (widget.countryCode.toUpperCase() == 'US')
+                  SliverToBoxAdapter(
+                    child: StockHeatmapBlock(
+                      reloadKey: 'US',
+                      load: () => widget.repository.getUsHeatmap(),
+                      volumeLabel: 'NASDAQ · volume',
+                      mapAsset: (quote) => quote.toUsAssetItem(),
+                      onTap: _openAsset,
+                    ),
+                  ),
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
                   sliver: SliverGrid(

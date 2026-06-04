@@ -1,3 +1,4 @@
+import 'package:rico_investidor/core/markets/supported_market_countries.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const _countryCodeKey = 'preferred_market_country_code_v1';
@@ -22,13 +23,16 @@ class MarketPreferenceStorage {
     final code = prefs.getString(_countryCodeKey);
     if (code == null || code.trim().isEmpty) return null;
     final name = prefs.getString(_countryNameKey) ?? code;
-    return MarketPreference(code: code.toUpperCase(), name: name);
+    return normalizeMarketPreference(
+      MarketPreference(code: code.toUpperCase(), name: name),
+    );
   }
 
   Future<void> save(MarketPreference preference) async {
+    final normalized = normalizeMarketPreference(preference);
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_countryCodeKey, preference.code.toUpperCase());
-    await prefs.setString(_countryNameKey, preference.name);
+    await prefs.setString(_countryCodeKey, normalized.code);
+    await prefs.setString(_countryNameKey, normalized.name);
   }
 
   Future<void> clear() async {

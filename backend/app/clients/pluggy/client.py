@@ -2,6 +2,7 @@ import httpx
 
 from app.config import settings
 from app.core.exceptions import NotConfiguredError, UpstreamError
+from app.core.upstream_errors import log_upstream_failure, upstream_public_message
 
 
 class PluggyClient:
@@ -61,8 +62,14 @@ class PluggyClient:
         if response.status_code == 403:
             raise UpstreamError("Acesso Pluggy negado", status_code=502)
         if response.status_code >= 400:
+            log_upstream_failure(
+                provider="Pluggy",
+                status_code=response.status_code,
+                url=url,
+                body_snippet=response.text,
+            )
             raise UpstreamError(
-                f"Erro Pluggy ({response.status_code}): {response.text[:200]}",
+                upstream_public_message("Pluggy", response.status_code),
                 status_code=502,
             )
 
