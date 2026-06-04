@@ -64,9 +64,12 @@ class Settings(BaseSettings):
     pluggy_base_url: str = "https://api.pluggy.ai"
     open_finance_api_key: str = ""
     open_finance_store_path: Path = _BACKEND_ROOT / "data" / "open_finance_links.json"
+    app_env: str = "development"
     cors_origins: str = "http://127.0.0.1:*,http://localhost:*"
     rate_limit_per_minute: int = 480
     auth_rate_limit_per_minute: int = 20
+    logo_rate_limit_per_minute: int = 120
+    trust_proxy_headers: bool = False
     cache_max_entries: int = 512
     fii_fund_catalog_ttl_seconds: int = 3600
     fii_cache_ttl_seconds: int = 900
@@ -78,6 +81,11 @@ class Settings(BaseSettings):
     auth_users_path: Path = _BACKEND_ROOT / "data" / "users.json"
     # Swagger/ReDoc/OpenAPI. Em produção use DOCS_ENABLED=false.
     docs_enabled: bool = True
+
+
+    @property
+    def is_production(self) -> bool:
+        return self.app_env.strip().lower() == "production"
 
 
 settings = Settings()

@@ -649,6 +649,7 @@ extension GlobalMarketQuoteMapper on MarketQuoteDto {
       changePercent: changePercent,
       logoUrl: resolvedLogo,
       exchangeMic: exchange,
+      sparkline: sparkline,
     );
   }
 }

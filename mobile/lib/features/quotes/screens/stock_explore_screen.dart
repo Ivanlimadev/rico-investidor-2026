@@ -2,13 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
-import 'package:rico_investidor/core/widgets/asset_card_header.dart';
+import 'package:rico_investidor/features/global_markets/widgets/us_market_quote_list_tile.dart';
 import 'package:rico_investidor/core/search/asset_search_config.dart';
 import 'package:rico_investidor/core/search/unified_asset_search.dart';
 import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/quotes/models/stock_screener.dart';
 import 'package:rico_investidor/features/quotes/utils/stock_screener_presets.dart';
+import 'package:rico_investidor/core/widgets/market_heatmap/stock_heatmap_block.dart';
 import 'package:rico_investidor/models/market_category.dart';
 import 'package:rico_investidor/navigation/open_asset_detail.dart';
 
@@ -85,6 +86,8 @@ class _StockExploreScreenState extends State<StockExploreScreen> {
   StockScreenerPreset get _activePreset => _presets.firstWhere((p) => p.id == _presetId);
 
   bool get _canLoadMore => _page < _totalPages && !_loading && !_loadingMore;
+
+  bool get _showHeatmap => _categorySlug == 'acoes_br' && !_searchSnapshot.active;
 
   Future<void> _load({required bool reset}) async {
     if (reset) {
@@ -260,6 +263,62 @@ class _StockExploreScreenState extends State<StockExploreScreen> {
     }
     if (_items.isEmpty) return const Center(child: Text('Nenhum ativo neste filtro.'));
 
+    void openItem(StockScreenerItemDto item) {
+      openAssetDetail(
+        context,
+        asset: item.toAssetItem(),
+        fiiRepository: widget.fiiRepository,
+        quoteRepository: widget.repository,
+      );
+    }
+
+    if (_showHeatmap) {
+      return CustomScrollView(
+        slivers: [
+          SliverToBoxAdapter(
+            child: StockHeatmapBlock(
+              load: () => widget.repository.getHeatmap(),
+              volumeLabel: 'Volume B3',
+              onTap: (asset) => openAssetDetail(
+                context,
+                asset: asset,
+                fiiRepository: widget.fiiRepository,
+                quoteRepository: widget.repository,
+              ),
+            ),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            sliver: SliverList.separated(
+              itemCount: _items.length + (_canLoadMore || _loadingMore ? 1 : 0),
+              separatorBuilder: (context, index) => const SizedBox(height: 8),
+              itemBuilder: (context, index) {
+                if (index >= _items.length) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: OutlinedButton.icon(
+                      onPressed: _loadingMore ? null : () => _load(reset: false),
+                      icon: _loadingMore
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.expand_more),
+                      label: Text(_loadingMore ? 'Carregando…' : 'Carregar mais'),
+                    ),
+                  );
+                }
+
+                final item = _items[index];
+                return StockScreenerTile(item: item, onTap: () => openItem(item));
+              },
+            ),
+          ),
+        ],
+      );
+    }
+
     return ListView.separated(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
       itemCount: _items.length + (_canLoadMore || _loadingMore ? 1 : 0),
@@ -305,39 +364,25 @@ class StockScreenerTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final changeColor = item.isPositive ? AppColors.positive : AppColors.negative;
-
     return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(
+          color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+        ),
+      ),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: AssetCardHeader(
-                      symbol: item.symbol,
-                      name: item.name,
-                      logoUrl: item.logoUrl,
-                      logoSize: kAssetLogoSizeCompact,
-                      trailing: Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text(formatBrl(item.price), style: Theme.of(context).textTheme.titleSmall),
-                          Text(
-                            '${item.isPositive ? '+' : ''}${item.changePercent.toStringAsFixed(2)}%',
-                            style: TextStyle(color: changeColor, fontWeight: FontWeight.w700, fontSize: 13),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
+              QuoteMarketListRow(
+                asset: item.toAssetItem(),
+                formatPrice: formatBrl,
               ),
               const SizedBox(height: 10),
               Wrap(

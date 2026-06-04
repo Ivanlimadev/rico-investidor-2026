@@ -19,13 +19,13 @@ def test_list_exchange_market_falls_back_to_exchange_eod():
     service = GlobalMarketService(client=client)
     result = asyncio.run(
         service.list_exchange_market(
-            "XETR",
-            exchange_name="Xetra",
-            country_code="DE",
+            "XNAS",
+            exchange_name="NASDAQ",
+            country_code="US",
         )
     )
 
-    assert result.exchange_mic == "XETR"
+    assert result.exchange_mic == "XNAS"
     assert result.count == 1
     assert result.items[0].symbol == "SAP"
     assert result.items[0].price == 180.0

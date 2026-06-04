@@ -220,6 +220,31 @@ class BrapiClient:
         data = await self._get(f"/quote/{','.join(unique)}")
         return parse_quote_response(data)
 
+    async def get_quotes_with_history(
+        self,
+        tickers: list[str],
+        *,
+        range_: str = "3mo",
+    ) -> list[dict]:
+        """Cotação + historicalDataPrice para mini-gráficos na lista (em lotes de MAX_BATCH)."""
+        if not tickers:
+            return []
+
+        unique: list[str] = []
+        seen: set[str] = set()
+        for ticker in tickers:
+            normalized = ticker.upper().strip()
+            if normalized and normalized not in seen:
+                seen.add(normalized)
+                unique.append(normalized)
+
+        rows: list[dict] = []
+        for offset in range(0, len(unique), self.MAX_BATCH):
+            batch = unique[offset : offset + self.MAX_BATCH]
+            data = await self._get(f"/quote/{','.join(batch)}", params={"range": range_})
+            rows.extend(parse_quote_response(data))
+        return rows
+
     async def get_quotes_with_modules(self, tickers: list[str], *, modules: str) -> list[dict]:
         if not tickers:
             return []

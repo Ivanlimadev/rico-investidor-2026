@@ -18,6 +18,7 @@ class StockScreenerItemDto {
     this.returnOnEquity,
     this.priceToBook,
     this.provider = 'brapi',
+    this.sparkline = const [],
   });
 
   final String symbol;
@@ -34,6 +35,7 @@ class StockScreenerItemDto {
   final double? returnOnEquity;
   final double? priceToBook;
   final String provider;
+  final List<double> sparkline;
 
   bool get isPositive => changePercent >= 0;
 
@@ -59,6 +61,10 @@ class StockScreenerItemDto {
       returnOnEquity: numVal('return_on_equity'),
       priceToBook: numVal('price_to_book'),
       provider: json['provider'] as String? ?? 'brapi',
+      sparkline: (json['sparkline'] as List<dynamic>?)
+              ?.map((value) => (value as num).toDouble())
+              .toList() ??
+          const [],
     );
   }
 
@@ -72,6 +78,7 @@ class StockScreenerItemDto {
       logoUrl: resolveAssetLogoUrl(symbol, logoUrl, isFii: false),
       dividendYield12m: dividendYield12m,
       priceToBook: priceToBook,
+      sparkline: sparkline,
     );
   }
 

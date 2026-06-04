@@ -24,6 +24,8 @@ class MarketQuote(BaseModel):
     split_factor: float | None = None
     dividend_amount: float | None = None
     adj_close: float | None = None
+    # Últimos fechamentos EOD para mini-gráfico na lista (~24 pregões).
+    sparkline: list[float] = Field(default_factory=list)
 
 
 class MarketQuoteListResponse(BaseModel):
@@ -53,6 +55,7 @@ class StockScreenerItem(BaseModel):
     return_on_equity: float | None = None
     price_to_book: float | None = None
     provider: str = "brapi"
+    sparkline: list[float] = Field(default_factory=list)
 
 
 class StockScreenerResponse(BaseModel):
@@ -89,12 +92,15 @@ class StockMarketStats(BaseModel):
     day_low: float | None = None
     previous_close: float | None = None
     volume: float | None = None
+    avg_daily_volume: float | None = None
     market_cap: float | None = None
     price_earnings: float | None = None
     earnings_per_share: float | None = None
     fifty_two_week_low: float | None = None
     fifty_two_week_high: float | None = None
     fifty_two_week_range: str | None = None
+    price_range_sessions: int | None = None
+    price_range_label: str | None = None
     provider: str = "brapi"
 
 

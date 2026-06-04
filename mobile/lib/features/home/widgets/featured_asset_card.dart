@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/widgets/asset_card_header.dart';
 import 'package:rico_investidor/core/widgets/asset_logo.dart';
+import 'package:rico_investidor/core/widgets/quote_sparkline.dart';
 import 'package:rico_investidor/features/fii/utils/fii_format.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/market_category.dart';
@@ -54,6 +55,15 @@ class FeaturedAssetCard extends StatelessWidget {
                         color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
                       ),
                 ),
+                if (asset.sparkline.length >= 2) ...[
+                  const SizedBox(height: 8),
+                  QuoteSparkline(
+                    values: asset.sparkline,
+                    positive: asset.isPositive,
+                    width: double.infinity,
+                    height: 36,
+                  ),
+                ],
                 const Spacer(),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
@@ -64,20 +74,27 @@ class FeaturedAssetCard extends StatelessWidget {
                         style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 18),
                       ),
                     ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          asset.isPositive ? Icons.arrow_drop_up : Icons.arrow_drop_down,
-                          color: changeColor,
-                          size: 22,
-                        ),
-                        Text(
-                          '${asset.changePercent.abs().toStringAsFixed(2)}%',
-                          style: TextStyle(color: changeColor, fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                    ),
+                    if (asset.category == MarketCategory.stocks ||
+                        asset.category == MarketCategory.reits)
+                      QuoteChangeBadge(
+                        changePercent: asset.changePercent,
+                        positive: asset.isPositive,
+                      )
+                    else
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            asset.isPositive ? Icons.arrow_drop_up : Icons.arrow_drop_down,
+                            color: changeColor,
+                            size: 22,
+                          ),
+                          Text(
+                            '${asset.changePercent.abs().toStringAsFixed(2)}%',
+                            style: TextStyle(color: changeColor, fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
                   ],
                 ),
                 if (hasDy || hasPvp) ...[

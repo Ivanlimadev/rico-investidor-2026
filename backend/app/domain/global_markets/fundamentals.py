@@ -44,6 +44,12 @@ def _as_pct(value: object) -> float | None:
     return round(parsed, 2)
 
 
+def _valid_ratio(value: float | None, *, max_abs: float = 500.0) -> float | None:
+    if value is None or value <= 0 or value > max_abs:
+        return None
+    return round(value, 4)
+
+
 def unwrap_tickerinfo_payload(payload: dict | None) -> dict:
     if not payload:
         return {}
@@ -111,13 +117,15 @@ def map_fundamentals_from_tickerinfo(tickerinfo: dict | None) -> StockFundamenta
             or stats.get("dividendYield")
             or financial.get("dividendYield")
         ),
-        price_earnings=_safe_float(
-            _dig(tickerinfo, "pe_ratio")
-            or stats.get("trailingPE")
-            or stats.get("pe_ratio")
-            or tickerinfo.get("priceEarnings")
+        price_earnings=_valid_ratio(
+            _safe_float(
+                _dig(tickerinfo, "pe_ratio")
+                or stats.get("trailingPE")
+                or stats.get("pe_ratio")
+                or tickerinfo.get("priceEarnings")
+            )
         ),
-        price_to_book=_safe_float(stats.get("priceToBook") or _dig(tickerinfo, "price_to_book")),
+        price_to_book=_valid_ratio(_safe_float(stats.get("priceToBook") or _dig(tickerinfo, "price_to_book"))),
         return_on_equity=_as_pct(financial.get("returnOnEquity") or _dig(tickerinfo, "return_on_equity")),
         return_on_assets=_as_pct(financial.get("returnOnAssets")),
         profit_margin=_as_pct(financial.get("profitMargins") or stats.get("profitMargins")),
@@ -160,7 +168,11 @@ def merge_fundamentals(
     dividends_summary: GlobalStockDividendsSummary,
 ) -> StockFundamentals:
     fundamentals = map_fundamentals_from_tickerinfo(tickerinfo)
-    if fundamentals.dividend_yield_12m is None and dividends_summary.dividend_yield_ttm is not None:
+    if (
+        fundamentals.dividend_yield_12m is None
+        and dividends_summary.dividend_yield_ttm is not None
+        and dividends_summary.payments_12m > 0
+    ):
         fundamentals = fundamentals.model_copy(
             update={"dividend_yield_12m": dividends_summary.dividend_yield_ttm}
         )
@@ -182,14 +194,6 @@ def build_market_stats_from_quote(
         or _dig(tickerinfo or {}, "marketCapitalization")
         or _dig(tickerinfo or {}, "statistics", "marketCap")
     )
-    fifty_two_week_low = _safe_float(_dig(tickerinfo or {}, "fifty_two_week_low") or _dig(tickerinfo or {}, "52_week_low"))
-    fifty_two_week_high = _safe_float(
-        _dig(tickerinfo or {}, "fifty_two_week_high") or _dig(tickerinfo or {}, "52_week_high")
-    )
-    range_label = None
-    if fifty_two_week_low is not None and fifty_two_week_high is not None:
-        range_label = f"{fifty_two_week_low:.2f} - {fifty_two_week_high:.2f}"
-
     return StockMarketStats(
         open=open,
         day_high=high,
@@ -199,9 +203,6 @@ def build_market_stats_from_quote(
         market_cap=market_cap,
         price_earnings=fundamentals.price_earnings,
         earnings_per_share=fundamentals.earnings_per_share,
-        fifty_two_week_low=fifty_two_week_low,
-        fifty_two_week_high=fifty_two_week_high,
-        fifty_two_week_range=range_label,
         provider="marketstack",
     )
 

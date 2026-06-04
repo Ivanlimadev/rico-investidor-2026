@@ -12,6 +12,7 @@ from app.api.v1.meta import router as meta_router
 from app.api.v1.open_finance import router as open_finance_router
 from app.api.v1.indices import router as indices_router
 from app.api.v1.quotes import router as quotes_router
+from app.api.v1.related import router as related_router
 from app.api.v1.treasury import router as treasury_router
 from app.providers.fii_providers import fii_provider_rules
 from app.providers.registry import AssetClass, provider_for
@@ -27,6 +28,7 @@ router.include_router(fiis_router)
 router.include_router(macro_router)
 router.include_router(meta_router)
 router.include_router(quotes_router)
+router.include_router(related_router)
 router.include_router(treasury_router)
 router.include_router(indices_router)
 router.include_router(open_finance_router)

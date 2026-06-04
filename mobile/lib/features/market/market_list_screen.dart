@@ -4,6 +4,7 @@ import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/features/crypto/models/crypto_models.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
 import 'package:rico_investidor/core/widgets/asset_card_header.dart';
+import 'package:rico_investidor/features/global_markets/widgets/us_market_quote_list_tile.dart';
 import 'package:rico_investidor/features/crypto/widgets/crypto_live_market_list.dart';
 import 'package:rico_investidor/features/crypto/data/crypto_repository.dart';
 import 'package:rico_investidor/features/crypto/screens/crypto_explore_screen.dart';
@@ -21,6 +22,7 @@ import 'package:rico_investidor/features/fii/screens/fii_list_screen.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/quotes/screens/stock_compare_screen.dart';
 import 'package:rico_investidor/features/quotes/screens/stock_explore_screen.dart';
+import 'package:rico_investidor/core/widgets/market_heatmap/stock_heatmap_block.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/navigation/open_asset_detail.dart';
 import 'package:rico_investidor/models/market_category.dart';
@@ -264,7 +266,41 @@ class _MarketListScreenState extends State<MarketListScreen> {
                         fiiRepository: widget.fiiRepository,
                         quoteRepository: widget.quoteRepository,
                       )
-                    : ListView.separated(
+                    : widget.category == MarketCategory.acoesBr
+                        ? CustomScrollView(
+                            slivers: [
+                              SliverToBoxAdapter(
+                                child: StockHeatmapBlock(
+                                  load: () => widget.quoteRepository.getHeatmap(),
+                                  volumeLabel: 'Volume B3',
+                                  onTap: (asset) => openAssetDetail(
+                                    context,
+                                    asset: asset,
+                                    fiiRepository: widget.fiiRepository,
+                                    quoteRepository: widget.quoteRepository,
+                                  ),
+                                ),
+                              ),
+                              SliverPadding(
+                                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                                sliver: SliverList.separated(
+                                  itemCount: assets.length,
+                                  separatorBuilder: (context, index) => const SizedBox(height: 8),
+                                  itemBuilder: (context, index) => _AssetListTile(
+                                    asset: assets[index],
+                                    category: widget.category,
+                                    onTap: () => openAssetDetail(
+                                      context,
+                                      asset: assets[index],
+                                      fiiRepository: widget.fiiRepository,
+                                      quoteRepository: widget.quoteRepository,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          )
+                        : ListView.separated(
                         padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                         itemCount: assets.length,
                         separatorBuilder: (context, index) => const SizedBox(height: 8),
@@ -299,8 +335,21 @@ class _AssetListTile extends StatelessWidget {
   final VoidCallback onTap;
   final MarketCategory category;
 
+  bool get _useQuoteListTile =>
+      category == MarketCategory.acoesBr ||
+      category == MarketCategory.bdr ||
+      category == MarketCategory.etf;
+
   @override
   Widget build(BuildContext context) {
+    if (_useQuoteListTile) {
+      return UsMarketQuoteListTile(
+        asset: asset,
+        onTap: onTap,
+        formatPrice: formatBrl,
+      );
+    }
+
     final changeColor = asset.isPositive ? AppColors.positive : AppColors.negative;
     final isTreasury = category == MarketCategory.tesouroDireto;
     final isIndex = category == MarketCategory.indices;

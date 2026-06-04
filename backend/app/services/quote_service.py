@@ -25,6 +25,11 @@ from app.domain.quotes.category_map import (
     infer_category,
     is_international_etf,
 )
+from app.domain.market_heatmap.presets import (
+    DEFAULT_HEATMAP_LIMIT,
+    MAX_HEATMAP_LIMIT,
+    MIN_BR_STOCK_HEATMAP_VOLUME,
+)
 from app.providers.registry import AssetClass, DataProvider, provider_for
 
 
@@ -62,6 +67,9 @@ class QuoteService:
         self._catalog_cache: TtlCache[StockCatalogResponse] = TtlCache(catalog_ttl)
         self._catalog_total_cache: TtlCache[int] = TtlCache(catalog_ttl)
         self._featured_cache: TtlCache[MarketQuoteBatchResponse] = TtlCache(
+            settings.quote_cache_ttl_seconds,
+        )
+        self._heatmap_cache: TtlCache[MarketQuoteBatchResponse] = TtlCache(
             settings.quote_cache_ttl_seconds,
         )
 
@@ -233,7 +241,7 @@ class QuoteService:
         if asset_class is None:
             raise ValueError(f"Categoria inválida: {category_slug}")
 
-        cache_key = f"list:{category_slug}:{limit}:{page}"
+        cache_key = f"list:v2:{category_slug}:{limit}:{page}"
         cached = self._list_cache.get(cache_key)
         if cached:
             return cached
@@ -272,12 +280,70 @@ class QuoteService:
         for item in items:
             item.category = category_slug if category_slug == "etf_intl" else category_to_slug(asset_class)
 
-        result = MarketQuoteListResponse(items=items[:limit], count=min(len(items), limit))
+        trimmed = items[:limit]
+        enriched = await self._attach_brapi_sparklines(trimmed)
+        result = MarketQuoteListResponse(items=enriched, count=len(enriched))
         self._list_cache.set(cache_key, result)
         return result
 
+    async def _attach_brapi_sparklines(self, items: list[MarketQuote]) -> list[MarketQuote]:
+        if not items:
+            return items
+
+        from app.clients.brapi.stock_mapper import sparkline_from_price_points
+
+        symbols = [item.symbol for item in items]
+        spark_by_symbol: dict[str, list[float]] = {}
+        try:
+            raw_items = await self._client.get_quotes_with_history(symbols, range_="3mo")
+            for raw in raw_items:
+                symbol = str(raw.get("symbol") or raw.get("stock") or "").upper().strip()
+                if not symbol:
+                    continue
+                spark = sparkline_from_price_points(raw.get("historicalDataPrice") or [])
+                if spark:
+                    spark_by_symbol[symbol] = spark
+        except UpstreamError:
+            pass
+
+        enriched: list[MarketQuote] = []
+        for item in items:
+            spark = spark_by_symbol.get(item.symbol, [])
+            enriched.append(item.model_copy(update={"sparkline": spark}))
+        return enriched
+
+    async def _attach_screener_sparklines(self, result: StockScreenerResponse) -> StockScreenerResponse:
+        from app.clients.brapi.stock_mapper import sparkline_from_price_points
+
+        symbols = [item.symbol for item in result.items]
+        if not symbols:
+            return result
+
+        spark_by_symbol: dict[str, list[float]] = {}
+        try:
+            raw_items = await self._client.get_quotes_with_history(symbols, range_="3mo")
+            for raw in raw_items:
+                symbol = str(raw.get("symbol") or raw.get("stock") or "").upper().strip()
+                if not symbol:
+                    continue
+                spark = sparkline_from_price_points(raw.get("historicalDataPrice") or [])
+                if spark:
+                    spark_by_symbol[symbol] = spark
+        except UpstreamError:
+            pass
+
+        items = [
+            item.model_copy(
+                update={
+                    "sparkline": spark_by_symbol.get(item.symbol, [])
+                }
+            )
+            for item in result.items
+        ]
+        return result.model_copy(update={"items": items})
+
     async def featured_stocks(self) -> MarketQuoteBatchResponse:
-        cached = self._featured_cache.get("featured")
+        cached = self._featured_cache.get("featured:v2")
         if cached:
             return cached
 
@@ -296,8 +362,9 @@ class QuoteService:
 
         by_symbol = {item.symbol: item for item in items}
         ordered = [by_symbol[ticker] for ticker in FEATURED_STOCK_TICKERS if ticker in by_symbol]
+        ordered = await self._attach_brapi_sparklines(ordered)
         result = MarketQuoteBatchResponse(items=ordered, count=len(ordered))
-        self._featured_cache.set("featured", result)
+        self._featured_cache.set("featured:v2", result)
         return result
 
     async def get_stock_detail(
@@ -397,6 +464,7 @@ class QuoteService:
             min_price_to_book=min_price_to_book,
             max_price_to_book=max_price_to_book,
         )
+        result = await self._attach_screener_sparklines(result)
         self._screener_cache.set(cache_key, result)
         return result
 
@@ -455,6 +523,48 @@ class QuoteService:
             benchmark=normalized_benchmark,
         )
         self._performance_cache.set(cache_key, result)
+        return result
+
+    async def get_stock_heatmap(self, *, limit: int = DEFAULT_HEATMAP_LIMIT) -> MarketQuoteBatchResponse:
+        """Top ações B3 por volume do pregão — mapa de calor (somente ações BR)."""
+        safe_limit = max(1, min(limit, MAX_HEATMAP_LIMIT))
+        cache_key = f"heatmap:{safe_limit}"
+        cached = self._heatmap_cache.get(cache_key)
+        if cached:
+            return cached
+
+        screener = await self.screener(
+            quote_type="stock",
+            sort_by="volume",
+            sort_order="desc",
+            limit=min(safe_limit * 2, MAX_HEATMAP_LIMIT * 2),
+            page=1,
+        )
+        items: list[MarketQuote] = []
+        for row in screener.items:
+            if row.category != "acoes_br":
+                continue
+            if (row.volume or 0) < MIN_BR_STOCK_HEATMAP_VOLUME:
+                continue
+            items.append(
+                MarketQuote(
+                    symbol=row.symbol,
+                    name=row.name,
+                    price=row.price,
+                    change_percent=row.change_percent,
+                    category=row.category,
+                    provider=row.provider,
+                    volume=row.volume,
+                    logo_url=row.logo_url,
+                    dividend_yield_12m=row.dividend_yield_12m,
+                    price_to_book=row.price_to_book,
+                )
+            )
+            if len(items) >= safe_limit:
+                break
+
+        result = MarketQuoteBatchResponse(items=items, count=len(items), provider="brapi")
+        self._heatmap_cache.set(cache_key, result)
         return result
 
     async def compare_stocks(self, tickers: list[str]) -> StockCompareResponse:

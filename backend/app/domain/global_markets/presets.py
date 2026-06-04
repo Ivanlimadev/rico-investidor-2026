@@ -1,5 +1,7 @@
 """Presets de mercados globais — EUA primeiro, Brasil em seguida."""
 
+from app.domain.global_markets.regions import ENABLED_MARKET_COUNTRY_CODES
+
 FEATURED_US_TICKERS: tuple[str, ...] = (
     "AAPL",
     "MSFT",
@@ -45,8 +47,8 @@ BR_EXCHANGES: tuple[dict[str, str], ...] = (
     {"mic": "BVMF", "name": "B3", "country_code": "BR", "country_name": "Brasil"},
 )
 
-# Países exibidos primeiro no hub internacional.
-PRIORITY_COUNTRY_CODES: tuple[str, ...] = ("US", "BR", "CA", "DE", "GB", "FR", "JP", "HK", "AU", "CH", "NL", "IT", "ES")
+# Países exibidos no hub (hoje = mercados ativos; ver regions.py).
+PRIORITY_COUNTRY_CODES: tuple[str, ...] = ENABLED_MARKET_COUNTRY_CODES
 
 COUNTRY_DISPLAY_NAMES: dict[str, str] = {
     "US": "Estados Unidos",

@@ -1,14 +1,20 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
+import 'package:rico_investidor/core/auth/secure_storage_config.dart';
+import 'package:rico_investidor/core/auth/session_expired_exception.dart';
 import 'package:rico_investidor/core/config/api_config.dart';
 import 'package:rico_investidor/core/network/api_exception.dart';
 
 const _tokenKey = 'auth_access_token';
 const _deviceIdKey = 'auth_device_id';
+const _sessionKindKey = 'auth_session_kind';
+const _registeredKind = 'registered';
+const _anonymousKind = 'anonymous';
 
 typedef SessionRefreshListener = void Function();
 
@@ -16,7 +22,7 @@ class AuthSession {
   AuthSession({
     FlutterSecureStorage? storage,
     http.Client? client,
-  })  : _storage = storage ?? const FlutterSecureStorage(),
+  })  : _storage = storage ?? secureStorage,
         _client = client ?? http.Client();
 
   final FlutterSecureStorage _storage;
@@ -25,8 +31,13 @@ class AuthSession {
   String? _accessToken;
 
   SessionRefreshListener? onSessionRefreshed;
+  SessionRefreshListener? onSessionExpired;
 
   String? get accessToken => _accessToken;
+
+  bool get isRegisteredSession => _sessionKind == _registeredKind;
+
+  String? _sessionKind;
 
   Future<void> ensureAuthenticated() async {
     if (_accessToken != null && _accessToken!.isNotEmpty) {
@@ -36,6 +47,7 @@ class AuthSession {
     final cached = await _storage.read(key: _tokenKey);
     if (cached != null && cached.isNotEmpty) {
       _accessToken = cached;
+      _sessionKind = await _storage.read(key: _sessionKindKey) ?? _anonymousKind;
       return;
     }
 
@@ -51,7 +63,6 @@ class AuthSession {
           .timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 503) {
-        // Backend sem AUTH_SECRET — API pública.
         return;
       }
 
@@ -76,10 +87,8 @@ class AuthSession {
         throw ApiException('Token de autenticação ausente');
       }
 
-      _accessToken = token;
-      await _storage.write(key: _tokenKey, value: token);
+      await setAccessToken(token, registered: false);
     } on SocketException {
-      // Backend offline — segue sem token (API pública em dev).
       return;
     } on http.ClientException {
       return;
@@ -90,28 +99,38 @@ class AuthSession {
 
   Future<void> clear() async {
     _accessToken = null;
+    _sessionKind = null;
     await _storage.delete(key: _tokenKey);
+    await _storage.delete(key: _sessionKindKey);
   }
 
-  /// Limpa token expirado/inválido e obtém sessão anônima novamente.
+  /// Limpa token inválido. Contas registradas exigem novo login; anônimas renovam JWT.
   Future<void> refreshAfterUnauthorized() async {
+    final kind = _sessionKind ?? await _storage.read(key: _sessionKindKey);
     await clear();
+    if (kind == _registeredKind) {
+      onSessionExpired?.call();
+      throw const SessionExpiredException();
+    }
     await ensureAuthenticated();
     onSessionRefreshed?.call();
   }
 
-  Future<void> setAccessToken(String token) async {
+  Future<void> setAccessToken(String token, {required bool registered}) async {
     _accessToken = token;
+    _sessionKind = registered ? _registeredKind : _anonymousKind;
     await _storage.write(key: _tokenKey, value: token);
+    await _storage.write(key: _sessionKindKey, value: _sessionKind);
   }
 
   Future<String> _getOrCreateDeviceId() async {
     final existing = await _storage.read(key: _deviceIdKey);
-    if (existing != null && existing.length >= 8) {
+    if (existing != null && existing.length >= 16) {
       return existing;
     }
 
-    final created = 'rico-${DateTime.now().microsecondsSinceEpoch}';
+    final bytes = List<int>.generate(16, (_) => Random.secure().nextInt(256));
+    final created = 'rico-${base64Url.encode(bytes).replaceAll('=', '')}';
     await _storage.write(key: _deviceIdKey, value: created);
     return created;
   }

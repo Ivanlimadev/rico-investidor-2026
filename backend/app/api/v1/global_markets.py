@@ -35,6 +35,15 @@ async def explore_global_markets(
     )
 
 
+@router.get("/us/heatmap")
+async def us_stock_heatmap(
+    exchange: str = Query(default="XNAS", min_length=3, max_length=8),
+    limit: int = Query(default=18, ge=1, le=24),
+):
+    """Mapa de calor EUA — bolsa principal (NASDAQ) por volume EOD."""
+    return await global_market_service.get_us_heatmap(exchange=exchange, limit=limit)
+
+
 @router.get("/us/market")
 async def list_us_market(
     category: str = Query(default="stocks", pattern=r"^(stocks|reits)$"),
@@ -64,7 +73,7 @@ async def count_us_stocks():
 
 @router.get("/exchanges")
 async def list_world_exchanges():
-    """Bolsas agrupadas por país — EUA e Brasil primeiro."""
+    """Bolsas agrupadas por país — apenas EUA e Brasil (demais países desativados)."""
     return await global_market_service.list_world_exchanges()
 
 
@@ -134,7 +143,7 @@ async def get_global_stock_logo_png(symbol: str):
 async def get_global_stock_detail(
     symbol: str,
     exchange: str | None = Query(default=None, min_length=3, max_length=8),
-    candle_limit: int = Query(default=756, ge=30, le=1000),
+    candle_limit: int = Query(default=252, ge=30, le=1000),
     dividend_limit: int = Query(default=100, ge=1, le=500),
     split_limit: int = Query(default=50, ge=1, le=100),
     include_extras: bool = Query(default=True),

@@ -207,6 +207,12 @@ class CryptoService:
             provider="binance",
         )
 
+    async def get_rates_for_symbols(self, symbols: list[str]) -> CryptoListResponse:
+        normalized = [normalize_crypto_symbol(symbol) for symbol in symbols if symbol.strip()]
+        if not normalized:
+            return CryptoListResponse(items=[], count=0, provider="binance")
+        return await self._client.get_crypto_rates(normalized)
+
     async def get_quote(self, symbol: str) -> CryptoQuote:
         normalized = normalize_crypto_symbol(symbol)
         cache_key = f"quote:{normalized}"

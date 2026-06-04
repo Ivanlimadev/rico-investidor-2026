@@ -46,12 +46,21 @@ class AppBootstrapService {
     required GlobalMarketRepository globalMarketRepository,
   }) async {
     try {
-      final sections = await preferredMarketPreloader.load(
-        preference: preference,
-        quoteRepository: quoteRepository,
-        globalMarketRepository: globalMarketRepository,
-      );
-      await warmAssetLogoSymbols(_symbolsFromHubSections(sections));
+      final warmTasks = <Future<void>>[
+        preferredMarketPreloader
+            .load(
+              preference: preference,
+              quoteRepository: quoteRepository,
+              globalMarketRepository: globalMarketRepository,
+            )
+            .then((sections) => warmAssetLogoSymbols(_symbolsFromHubSections(sections))),
+      ];
+      if (preference.isBrazil) {
+        warmTasks.add(quoteRepository.getHeatmap().then((_) {}));
+      } else if (preference.code.toUpperCase() == 'US') {
+        warmTasks.add(globalMarketRepository.getUsHeatmap().then((_) {}));
+      }
+      await Future.wait(warmTasks, eagerError: false);
     } catch (_) {}
   }
 

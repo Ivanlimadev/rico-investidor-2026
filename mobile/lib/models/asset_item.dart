@@ -11,6 +11,7 @@ class AssetItem {
     this.dividendYield12m,
     this.priceToBook,
     this.exchangeMic,
+    this.sparkline = const [],
   });
 
   final String symbol;
@@ -22,6 +23,7 @@ class AssetItem {
   final double? dividendYield12m;
   final double? priceToBook;
   final String? exchangeMic;
+  final List<double> sparkline;
 
   bool get isPositive => changePercent >= 0;
 }

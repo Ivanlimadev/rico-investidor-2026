@@ -9,11 +9,14 @@ from app.config import settings
 from app.core.auth_middleware import AuthMiddleware
 from app.core.exceptions import AppError
 from app.core.http_client import close_http_client
+from app.core.cors_config import build_cors_origin_regex
+from app.core.production_guard import validate_production_settings
 from app.core.rate_limit import RateLimitMiddleware
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    validate_production_settings()
     yield
     await close_http_client()
 
@@ -39,14 +42,16 @@ def create_app(*, docs_enabled: bool | None = None) -> FastAPI:
         RateLimitMiddleware,
         max_requests=settings.rate_limit_per_minute,
         auth_max_requests=settings.auth_rate_limit_per_minute,
+        logo_max_requests=settings.logo_rate_limit_per_minute,
+        trust_proxy_headers=settings.trust_proxy_headers,
         window_seconds=60,
     )
     application.add_middleware(
         CORSMiddleware,
-        allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
+        allow_origin_regex=build_cors_origin_regex(),
         allow_credentials=False,
         allow_methods=["GET", "POST", "OPTIONS"],
-        allow_headers=["*"],
+        allow_headers=["Authorization", "Content-Type", "X-Open-Finance-Key"],
     )
     application.add_middleware(AuthMiddleware)
 

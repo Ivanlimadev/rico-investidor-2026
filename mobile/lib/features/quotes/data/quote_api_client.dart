@@ -32,6 +32,7 @@ class MarketQuoteDto {
     this.splitFactor,
     this.dividendAmount,
     this.adjClose,
+    this.sparkline = const [],
   });
 
   final String symbol;
@@ -53,6 +54,7 @@ class MarketQuoteDto {
   final double? splitFactor;
   final double? dividendAmount;
   final double? adjClose;
+  final List<double> sparkline;
 
   factory MarketQuoteDto.fromJson(Map<String, dynamic> json) {
     double? numVal(String key) {
@@ -88,6 +90,10 @@ class MarketQuoteDto {
       splitFactor: numVal('split_factor'),
       dividendAmount: numVal('dividend_amount'),
       adjClose: numVal('adj_close'),
+      sparkline: (json['sparkline'] as List<dynamic>?)
+              ?.map((value) => (value as num).toDouble())
+              .toList() ??
+          const [],
     );
   }
 
@@ -102,6 +108,7 @@ class MarketQuoteDto {
       dividendYield12m: dividendYield12m,
       priceToBook: priceToBook,
       exchangeMic: exchange,
+      sparkline: sparkline,
     );
   }
 
@@ -248,6 +255,14 @@ class QuoteApiClient {
   Future<QuoteListResponse> featured() {
     return _client.getJson(
       '/v1/quotes/featured',
+      fromJson: QuoteListResponse.fromJson,
+    );
+  }
+
+  Future<QuoteListResponse> getHeatmap({int limit = 18}) {
+    return _client.getJson(
+      '/v1/quotes/heatmap',
+      query: {'limit': '$limit'},
       fromJson: QuoteListResponse.fromJson,
     );
   }

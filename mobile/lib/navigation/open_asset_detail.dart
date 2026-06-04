@@ -21,12 +21,14 @@ void openAssetDetail(
   required AssetItem asset,
   required FiiRepository fiiRepository,
   required QuoteRepository quoteRepository,
+  GlobalMarketRepository? globalMarketRepository,
 }) {
   openTickerDetail(
     context,
     ticker: asset.symbol,
     fiiRepo: fiiRepository,
     quoteRepo: quoteRepository,
+    globalMarketRepo: globalMarketRepository,
     category: asset.category,
     exchangeMic: asset.exchangeMic,
   );
@@ -38,6 +40,7 @@ void openTickerDetail(
   required String ticker,
   FiiRepository? fiiRepo,
   QuoteRepository? quoteRepo,
+  GlobalMarketRepository? globalMarketRepo,
   MarketCategory? category,
   String? exchangeMic,
 }) {
@@ -45,6 +48,7 @@ void openTickerDetail(
   final normalized = trimmed.toUpperCase();
   final resolvedFiiRepo = fiiRepo ?? fiiRepository;
   final resolvedQuoteRepo = quoteRepo ?? quoteRepository;
+  final resolvedGlobalRepo = globalMarketRepo ?? globalMarketRepository;
 
   if (category == MarketCategory.tesouroDireto || trimmed.toLowerCase().startsWith('tesouro-')) {
     Navigator.of(context).push(
@@ -69,7 +73,7 @@ void openTickerDetail(
       MaterialPageRoute<void>(
         builder: (_) => GlobalStockDetailScreen(
           symbol: normalized,
-          repository: globalMarketRepository,
+          repository: resolvedGlobalRepo,
           exchange: exchangeMic,
         ),
       ),

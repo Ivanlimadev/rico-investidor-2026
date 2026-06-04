@@ -32,9 +32,16 @@ class _StockQuoteChartCardState extends State<StockQuoteChartCard> {
   @override
   Widget build(BuildContext context) {
     return Card(
+      elevation: 0,
       clipBehavior: Clip.none,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+        ),
+      ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -42,14 +49,14 @@ class _StockQuoteChartCardState extends State<StockQuoteChartCard> {
             Text(
               _style == QuoteChartStyle.candlestick
                   ? 'Candlestick · pregão B3'
-                  : 'Gráfico de linha · pregão B3',
+                  : 'Fechamento diário · B3',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 8),
             StockQuoteLineChart(
               ticker: widget.ticker,
               repository: widget.repository,
-              chartHeight: 240,
+              chartHeight: 220,
               initialPeriod: _period,
               initialStyle: _style,
               initialCandles: widget.initialCandles,

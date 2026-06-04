@@ -36,6 +36,20 @@ from app.domain.global_markets.models import (
     GlobalStockTickerInfo,
     WorldExchangesResponse,
 )
+from app.domain.market_heatmap.presets import (
+    DEFAULT_HEATMAP_LIMIT,
+    MAX_HEATMAP_LIMIT,
+    MIN_US_STOCK_HEATMAP_VOLUME,
+    US_HEATMAP_EOD_BATCH_SIZE,
+    US_NASDAQ_HEATMAP_CANDIDATES,
+    US_PRIMARY_EXCHANGE_MIC,
+)
+from app.domain.global_markets.regions import (
+    ENABLED_MARKET_COUNTRY_CODES,
+    is_market_country_enabled,
+    require_exchange_mic,
+    require_market_country,
+)
 from app.domain.global_markets.presets import (
     FEATURED_US_TICKERS,
     PRIORITY_COUNTRY_CODES,
@@ -71,6 +85,7 @@ class GlobalMarketService:
         )
         long_ttl = quote_ttl * 24
         self._featured_cache: StaleTtlCache[MarketQuoteBatchResponse] = StaleTtlCache(quote_ttl)
+        self._heatmap_cache: StaleTtlCache[MarketQuoteBatchResponse] = StaleTtlCache(quote_ttl)
         self._explore_cache: StaleTtlCache[GlobalStockExploreResponse] = StaleTtlCache(quote_ttl)
         self._candles_cache: StaleTtlCache[GlobalStockCandlesResponse] = StaleTtlCache(quote_ttl * 2)
         self._exchanges_cache: TtlCache[WorldExchangesResponse] = TtlCache(long_ttl)
@@ -120,6 +135,8 @@ class GlobalMarketService:
             intraday_interval=caps.intraday_interval,
             refresh_seconds=refresh,
             api_configured=self._client.configured,
+            enabled_country_codes=list(ENABLED_MARKET_COUNTRY_CODES),
+            global_markets_expanded=False,
         )
 
     def _order_quotes(self, symbols: list[str], quotes: list[MarketQuote]) -> list[MarketQuote]:
@@ -127,25 +144,120 @@ class GlobalMarketService:
         return [by_symbol[symbol] for symbol in symbols if symbol in by_symbol]
 
     async def list_featured_us(self) -> MarketQuoteBatchResponse:
-        cache_key = "featured_us"
+        cache_key = "featured_us:v2"
         cached = self._featured_cache.get(cache_key)
         if cached:
             return cached
 
         try:
-            symbols = list(FEATURED_US_TICKERS)
-            quotes = await self._client.map_quotes_with_change(
-                symbols,
-                category="stocks",
-                **self._quote_kwargs(),
+            from app.clients.marketstack.stock_mapper import (
+                map_eod_quotes_with_change,
+                sparklines_from_eod_items,
             )
+
+            symbols = list(FEATURED_US_TICKERS)
+            eod_rows = await self._fetch_eod_rows(
+                symbols,
+                exchange=US_PRIMARY_EXCHANGE_MIC,
+                chunk_size=max(len(symbols), 8),
+                lookback_days=90,
+            )
+            spark_map = sparklines_from_eod_items(eod_rows)
+            quotes = map_eod_quotes_with_change(eod_rows, category="stocks") if eod_rows else []
+            if not quotes:
+                quotes = await self._client.map_quotes_with_change(
+                    symbols,
+                    category="stocks",
+                    **self._quote_kwargs(),
+                )
             items = self._order_quotes(symbols, quotes)
-            items = [self._with_logo(item) for item in items]
+            items = [
+                self._with_logo(
+                    item.model_copy(
+                        update={
+                            "sparkline": self._sparkline_for_quote(item, spark_map),
+                        }
+                    )
+                )
+                for item in items
+            ]
             result = MarketQuoteBatchResponse(items=items, count=len(items), provider="marketstack")
             self._featured_cache.set(cache_key, result)
             return result
         except UpstreamError:
             stale = self._featured_cache.get_last_good(cache_key)
+            if stale is not None:
+                return stale
+            raise
+
+    async def get_us_heatmap(
+        self,
+        *,
+        exchange: str = US_PRIMARY_EXCHANGE_MIC,
+        limit: int = DEFAULT_HEATMAP_LIMIT,
+    ) -> MarketQuoteBatchResponse:
+        """Mapa de calor EUA — bolsa principal (NASDAQ) rankeada por volume EOD."""
+        normalized_exchange = exchange.upper().strip() or US_PRIMARY_EXCHANGE_MIC
+        safe_limit = max(1, min(limit, MAX_HEATMAP_LIMIT))
+        cache_key = f"us_heatmap:{normalized_exchange}:{safe_limit}"
+        cached = self._heatmap_cache.get(cache_key)
+        if cached:
+            return cached
+
+        try:
+            from app.clients.marketstack.stock_mapper import map_eod_quotes_with_change
+
+            if normalized_exchange != US_PRIMARY_EXCHANGE_MIC:
+                rows, _pagination = await self._client.get_exchange_eod(
+                    normalized_exchange,
+                    limit=100,
+                    offset=0,
+                )
+                quotes = map_eod_quotes_with_change(rows, category="stocks")
+            else:
+                symbols = list(US_NASDAQ_HEATMAP_CANDIDATES)
+                eod_rows = await self._fetch_eod_rows(
+                    symbols,
+                    exchange=normalized_exchange,
+                    chunk_size=US_HEATMAP_EOD_BATCH_SIZE,
+                )
+                quotes = map_eod_quotes_with_change(eod_rows, category="stocks")
+                if not quotes:
+                    featured = await self._safe_upstream(self.list_featured_us(), default=None)
+                    if featured is not None:
+                        quotes = list(featured.items)
+
+            ranked = sorted(
+                quotes,
+                key=lambda quote: quote.volume or 0.0,
+                reverse=True,
+            )
+            items = [
+                self._with_logo(
+                    quote.model_copy(update={"exchange": normalized_exchange}),
+                )
+                for quote in ranked
+                if (quote.volume or 0) >= MIN_US_STOCK_HEATMAP_VOLUME
+            ][:safe_limit]
+
+            if not items and ranked:
+                items = [
+                    self._with_logo(
+                        quote.model_copy(update={"exchange": normalized_exchange}),
+                    )
+                    for quote in ranked[:safe_limit]
+                ]
+
+            result = MarketQuoteBatchResponse(
+                items=items,
+                count=len(items),
+                provider="marketstack",
+            )
+            if items:
+                self._heatmap_cache.set(cache_key, result)
+            return result
+        except UpstreamError:
+            stale = self._heatmap_cache.get_last_good(cache_key)
             if stale is not None:
                 return stale
             raise
@@ -179,6 +291,18 @@ class GlobalMarketService:
     @staticmethod
     def _us_segments(category: str) -> tuple[tuple[str, str], ...]:
         return US_REITS_SEGMENTS if category == "reits" else US_STOCK_SEGMENTS
+
+    async def _exchange_totals_map(
+        self,
+        segments: tuple[tuple[str, str], ...],
+    ) -> dict[str, int]:
+        if not segments:
+            return {}
+        mics = [mic.upper() for mic, _name in segments]
+        totals = await asyncio.gather(
+            *[self._exchange_ticker_total(mic) for mic in mics],
+        )
+        return dict(zip(mics, totals))
 
     async def _exchange_ticker_total(self, mic: str) -> int:
         normalized_mic = mic.upper().strip()
@@ -245,6 +369,20 @@ class GlobalMarketService:
         limit: int,
         category: str,
     ) -> tuple[list[MarketQuote], int]:
+        if page == 1 and limit >= 20 and segments:
+            mic, _name = segments[0]
+            quotes, pagination = await self._fetch_exchange_quotes(
+                mic,
+                offset=0,
+                limit=limit,
+                search=None,
+                category=category,
+            )
+            page_total = self._pagination_total(pagination)
+            asyncio.create_task(self._exchange_totals_map(segments))
+            return quotes, page_total or len(quotes)
+
+        totals_map = await self._exchange_totals_map(segments)
         offset = (page - 1) * limit
         skip = offset
         need = limit
@@ -253,7 +391,7 @@ class GlobalMarketService:
         for mic, _name in segments:
             if need <= 0:
                 break
-            total = await self._exchange_ticker_total(mic)
+            total = totals_map.get(mic.upper(), 0)
             if skip >= total:
                 skip -= total
                 continue
@@ -268,10 +406,7 @@ class GlobalMarketService:
             need -= len(quotes)
             items.extend(quotes)
 
-        grand_total = 0
-        for mic, _name in segments:
-            grand_total += await self._exchange_ticker_total(mic)
-        return items, grand_total
+        return items, sum(totals_map.values())
 
     async def _search_us_segments(
         self,
@@ -286,14 +421,19 @@ class GlobalMarketService:
         seen: set[str] = set()
         fetch_limit = min(50, max(limit * page, limit))
 
-        for mic, _name in segments:
-            quotes, _pagination = await self._fetch_exchange_quotes(
-                mic,
-                offset=0,
-                limit=fetch_limit,
-                search=search,
-                category=category,
-            )
+        results = await asyncio.gather(
+            *[
+                self._fetch_exchange_quotes(
+                    mic,
+                    offset=0,
+                    limit=fetch_limit,
+                    search=search,
+                    category=category,
+                )
+                for mic, _name in segments
+            ],
+        )
+        for quotes, _pagination in results:
             for quote in quotes:
                 if quote.symbol in seen:
                     continue
@@ -317,7 +457,7 @@ class GlobalMarketService:
         safe_page = max(1, page)
         safe_limit = max(1, min(limit, 50))
         search_key = (search or "").strip()
-        cache_key = f"us_market:{normalized}:{safe_page}:{safe_limit}:{search_key.lower()}"
+        cache_key = f"us_market:v2:{normalized}:{safe_page}:{safe_limit}:{search_key.lower()}"
         cached = self._us_market_cache.get(cache_key)
         if cached:
             return cached
@@ -400,15 +540,17 @@ class GlobalMarketService:
             resolved_exchange = quote.exchange
 
         caps = marketstack_capabilities()
-        safe_limit = max(1, min(limit, caps.max_history_days))
-        cache_key = f"candles:{normalized}:{resolved_exchange}:{safe_limit}"
+        safe_limit = max(1, min(limit, 1000))
+        # Janela do plano inteira para o cliente recortar 3M/6M/1A (~66/132/252 pregões).
+        lookback_days = caps.max_history_days
+        cache_key = f"candles:{normalized}:{resolved_exchange}:{safe_limit}:{lookback_days}"
         cached = self._candles_cache.get(cache_key)
         if cached:
             return cached
 
         from app.clients.marketstack.stock_mapper import history_date_from
 
-        date_from = history_date_from(max_history_days=caps.max_history_days)
+        date_from = history_date_from(max_history_days=lookback_days)
         candles = await self._client.map_candles(
             normalized,
             date_from=date_from,
@@ -489,7 +631,7 @@ class GlobalMarketService:
         symbol: str,
         *,
         exchange: str | None = None,
-        candle_limit: int = 756,
+        candle_limit: int = 252,
         dividend_limit: int = 100,
         split_limit: int = 50,
         category: str = "stocks",
@@ -506,7 +648,7 @@ class GlobalMarketService:
         safe_candles = max(30, min(candle_limit, 1000))
         safe_dividends = max(1, min(dividend_limit, 500))
         cache_key = (
-            f"detail:v3:{normalized}:{exchange}:{safe_candles}:"
+            f"detail:v5:{normalized}:{exchange}:{safe_candles}:"
             f"{safe_dividends}:{split_limit}:{include_extras}"
         )
         cached = self._detail_cache.get(cache_key)
@@ -641,6 +783,10 @@ class GlobalMarketService:
             if quote is None:
                 raise UpstreamError(f"Cotação não encontrada: {normalized}", status_code=404)
 
+            from app.domain.global_markets.quote_reconcile import reconcile_quote_with_candles
+
+            quote = reconcile_quote_with_candles(quote, candles_resp.candles)
+
             mapped_dividends = enrich_dividend_dates(map_dividends(dividend_items))
             company = enrich_company_profile(build_company_profile(ticker_info), tickerinfo=tickerinfo)
             company = fmp_company_updates(company, fmp_profile)
@@ -666,6 +812,10 @@ class GlobalMarketService:
                 fallback_cap = fmp_market_cap(fmp_profile)
                 if fallback_cap is not None:
                     market_stats = market_stats.model_copy(update={"market_cap": fallback_cap})
+
+            from app.domain.global_markets.candle_stats import enrich_market_stats_from_candles
+
+            market_stats = enrich_market_stats_from_candles(market_stats, candles_resp.candles)
             quote = self._with_logo(quote)
 
             result = GlobalStockDetailResponse(
@@ -725,11 +875,11 @@ class GlobalMarketService:
         limit: int = 25,
         search: str | None = None,
     ) -> ExchangeMarketListResponse:
-        normalized = country_code.upper().strip()
+        normalized = require_market_country(country_code)
         safe_page = max(1, page)
         safe_limit = max(1, min(limit, 50))
         search_key = (search or "").strip()
-        cache_key = f"country_market:{normalized}:{safe_page}:{safe_limit}:{search_key.lower()}"
+        cache_key = f"country_market:v2:{normalized}:{safe_page}:{safe_limit}:{search_key.lower()}"
         cached = self._country_market_cache.get(cache_key)
         if cached:
             return cached
@@ -844,7 +994,7 @@ class GlobalMarketService:
     async def get_country_hub(self, country_code: str) -> CountryHubResponse:
         from app.clients.marketstack.stock_mapper import qualify_listing_symbol
 
-        normalized = country_code.upper().strip()
+        normalized = require_market_country(country_code)
         cache_key = f"country_hub:{normalized}"
         cached = self._country_hub_cache.get(cache_key)
         if cached and cached.sections:
@@ -1025,7 +1175,7 @@ class GlobalMarketService:
         )
 
     async def list_world_exchanges(self) -> WorldExchangesResponse:
-        cache_key = "world_exchanges"
+        cache_key = "world_exchanges:us_br"
         cached = self._exchanges_cache.get(cache_key)
         if cached:
             return cached
@@ -1044,6 +1194,8 @@ class GlobalMarketService:
         grouped: dict[str, CountryExchangesGroup] = {}
         for exchange in exchanges:
             code = (exchange.country_code or "XX").upper()
+            if not is_market_country_enabled(code):
+                continue
             country_name = country_display_name(code, exchange.country or code)
             group = grouped.get(code)
             if group is None:
@@ -1094,12 +1246,12 @@ class GlobalMarketService:
         limit: int = 25,
         search: str | None = None,
     ) -> ExchangeMarketListResponse:
-        normalized_mic = mic.upper().strip()
+        normalized_mic = require_exchange_mic(mic)
         safe_page = max(1, page)
         safe_limit = max(1, min(limit, 50))
         offset = (safe_page - 1) * safe_limit
         search_key = (search or "").strip().lower()
-        cache_key = f"exchange_market:{normalized_mic}:{safe_page}:{safe_limit}:{search_key}"
+        cache_key = f"exchange_market:v2:{normalized_mic}:{safe_page}:{safe_limit}:{search_key}"
         cached = self._exchange_market_cache.get(cache_key)
         if cached:
             return cached
@@ -1170,6 +1322,8 @@ class GlobalMarketService:
         symbols: list[str],
         *,
         exchange: str | None,
+        chunk_size: int = 8,
+        lookback_days: int = 12,
     ) -> list[dict]:
         if not symbols:
             return []
@@ -1194,24 +1348,45 @@ class GlobalMarketService:
         # Buscamos uma janela de pregões (não só o último candle) para que a
         # variação seja calculada vs. o fechamento anterior. Cobre fins de
         # semana e feriados longos: no domingo a variação exibida é a de sexta.
-        date_from = (datetime.now(UTC).date() - timedelta(days=12)).isoformat()
+        safe_lookback = max(3, min(lookback_days, 30))
+        date_from = (datetime.now(UTC).date() - timedelta(days=safe_lookback)).isoformat()
+        safe_chunk = max(1, min(chunk_size, 100))
 
-        rows: list[dict] = []
-        chunk_size = 8
+        suffixed_rows = await self._fetch_eod_symbol_chunks(
+            suffixed,
+            date_from=date_from,
+            exchange=None,
+            chunk_size=safe_chunk,
+        )
+        plain_rows = await self._fetch_eod_symbol_chunks(
+            plain,
+            date_from=date_from,
+            exchange=exchange,
+            chunk_size=safe_chunk,
+        )
+        return [*suffixed_rows, *plain_rows]
 
-        for start in range(0, len(suffixed), chunk_size):
-            chunk = suffixed[start : start + chunk_size]
+    async def _fetch_eod_symbol_chunks(
+        self,
+        symbols: list[str],
+        *,
+        date_from: str,
+        exchange: str | None,
+        chunk_size: int,
+    ) -> list[dict]:
+        if not symbols:
+            return []
+
+        chunks = [symbols[start : start + chunk_size] for start in range(0, len(symbols), chunk_size)]
+
+        async def fetch_chunk(chunk: list[str]) -> list[dict]:
             batch = await self._safe_upstream(
-                self._client.get_eod_range(chunk, date_from=date_from, limit=1000),
-                default=[],
-            )
-            if batch:
-                rows.extend(batch)
-
-        for start in range(0, len(plain), chunk_size):
-            chunk = plain[start : start + chunk_size]
-            batch = await self._safe_upstream(
-                self._client.get_eod_range(chunk, date_from=date_from, exchange=exchange, limit=1000),
+                self._client.get_eod_range(
+                    chunk,
+                    date_from=date_from,
+                    exchange=exchange,
+                    limit=1000,
+                ),
                 default=[],
             )
             if not batch and exchange:
@@ -1219,9 +1394,15 @@ class GlobalMarketService:
                     self._client.get_eod_range(chunk, date_from=date_from, limit=1000),
                     default=[],
                 )
-            if batch:
-                rows.extend(batch)
+            return batch or []
 
+        if len(chunks) == 1:
+            return await fetch_chunk(chunks[0])
+
+        batches = await asyncio.gather(*[fetch_chunk(chunk) for chunk in chunks])
+        rows: list[dict] = []
+        for batch in batches:
+            rows.extend(batch)
         return rows
 
     async def _quotes_from_ticker_rows(
@@ -1237,6 +1418,7 @@ class GlobalMarketService:
             map_ticker_symbol,
             normalize_marketstack_symbol,
             resolve_catalog_symbol,
+            sparklines_from_eod_items,
         )
 
         symbols: list[str] = []
@@ -1262,7 +1444,13 @@ class GlobalMarketService:
         else:
             resolved_exchange = exchange
 
-        eod_rows = await self._fetch_eod_rows(symbols, exchange=resolved_exchange)
+        eod_rows = await self._fetch_eod_rows(
+            symbols,
+            exchange=resolved_exchange,
+            chunk_size=max(len(symbols), 8),
+            lookback_days=90,
+        )
+        spark_map = sparklines_from_eod_items(eod_rows)
         mapped = map_eod_quotes_with_change(eod_rows, category=category)
         quotes: list[MarketQuote] = []
         for quote in mapped:
@@ -1272,10 +1460,28 @@ class GlobalMarketService:
                     "symbol": catalog_symbol,
                     "name": names.get(catalog_symbol, quote.name),
                     "exchange": quote.exchange or exchange,
+                    "sparkline": GlobalMarketService._sparkline_for_quote(
+                        quote.model_copy(update={"symbol": catalog_symbol}),
+                        spark_map,
+                    ),
                 }
             )
             quotes.append(self._with_logo(quote))
         return quotes
+
+    @staticmethod
+    def _sparkline_for_quote(
+        quote: MarketQuote,
+        spark_map: dict[str, list[float]],
+    ) -> list[float]:
+        from app.clients.marketstack.stock_mapper import normalize_marketstack_symbol
+
+        spark = (
+            spark_map.get(quote.symbol)
+            or spark_map.get(quote.symbol.upper())
+            or spark_map.get(normalize_marketstack_symbol(quote.symbol), [])
+        )
+        return spark if len(spark) >= 2 else []
 
     @staticmethod
     def _fallback_exchanges():

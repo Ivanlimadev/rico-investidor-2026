@@ -13,6 +13,8 @@ import 'package:rico_investidor/features/quotes/widgets/stock_dividends_summary_
 import 'package:rico_investidor/features/quotes/widgets/stock_recent_dividends_card.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/quotes/models/stock_quote_detail.dart';
+import 'package:rico_investidor/features/assets/models/related_assets.dart';
+import 'package:rico_investidor/features/assets/widgets/related_assets_card.dart';
 import 'package:rico_investidor/features/quotes/widgets/stock_about_card.dart';
 import 'package:rico_investidor/features/quotes/widgets/stock_financials_card.dart';
 import 'package:rico_investidor/features/quotes/widgets/stock_fundamental_history_card.dart';
@@ -348,6 +350,13 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                 const SizedBox(height: 16),
                 StockCorporateActionsCard(actions: detail.dividends.corporateActions),
               ],
+              const SizedBox(height: 16),
+              RelatedAssetsCard(
+                ticker: widget.ticker,
+                market: relatedMarketSlug(widget.category),
+                sector: detail.profile.sector,
+                industry: detail.profile.industry,
+              ),
               const SizedBox(height: 16),
               Card(
                 child: ListTile(

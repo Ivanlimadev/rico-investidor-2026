@@ -4,6 +4,7 @@ import asyncio
 
 import httpx
 
+from app.core.http_client import get_http_client
 from app.clients.marketstack.stock_mapper import (
     map_eod_candles,
     map_eod_quotes_with_change,
@@ -12,6 +13,7 @@ from app.clients.marketstack.stock_mapper import (
 )
 from app.config import settings
 from app.core.exceptions import NotConfiguredError, UpstreamError
+from app.core.upstream_errors import log_upstream_failure, upstream_public_message
 
 
 class MarketstackClient:
@@ -69,8 +71,7 @@ class MarketstackClient:
         for attempt in range(retries + 1):
             try:
                 async with self._request_limit:
-                    async with httpx.AsyncClient(timeout=30.0) as client:
-                        response = await client.get(url, params=query)
+                    response = await get_http_client().get(url, params=query)
             except httpx.RequestError as exc:
                 last_error = UpstreamError(
                     f"Falha ao conectar na Marketstack: {exc.__class__.__name__}",
@@ -94,8 +95,14 @@ class MarketstackClient:
             if response.status_code == 429:
                 raise UpstreamError("Marketstack: cota mensal esgotada", status_code=503)
             if response.status_code >= 400:
+                log_upstream_failure(
+                    provider="Marketstack",
+                    status_code=response.status_code,
+                    url=url,
+                    body_snippet=response.text,
+                )
                 raise UpstreamError(
-                    f"Erro Marketstack ({response.status_code}): {response.text[:200]}",
+                    upstream_public_message("Marketstack", response.status_code),
                     status_code=502,
                 )
 
@@ -105,10 +112,18 @@ class MarketstackClient:
 
             error = payload.get("error")
             if isinstance(error, dict):
-                message = str(error.get("message") or "Erro Marketstack")
                 code = int(error.get("code") or 502)
                 status = 503 if code == 429 else 502
-                last_error = UpstreamError(message, status_code=status)
+                log_upstream_failure(
+                    provider="Marketstack",
+                    status_code=code,
+                    url=url,
+                    body_snippet=str(error.get("message") or ""),
+                )
+                last_error = UpstreamError(
+                    upstream_public_message("Marketstack", code),
+                    status_code=status,
+                )
                 if code in {429, 502, 503, 504} and attempt < retries:
                     await asyncio.sleep(0.5 * (attempt + 1))
                     continue
@@ -374,8 +389,7 @@ class MarketstackClient:
         for attempt in range(retries + 1):
             try:
                 async with self._request_limit:
-                    async with httpx.AsyncClient(timeout=30.0) as client:
-                        response = await client.get(url, params=query)
+                    response = await get_http_client().get(url, params=query)
             except httpx.RequestError as exc:
                 last_error = UpstreamError(
                     f"Falha ao conectar na Marketstack: {exc.__class__.__name__}",
@@ -397,8 +411,14 @@ class MarketstackClient:
             if response.status_code == 429:
                 raise UpstreamError("Marketstack: cota mensal esgotada", status_code=503)
             if response.status_code >= 400:
+                log_upstream_failure(
+                    provider="Marketstack",
+                    status_code=response.status_code,
+                    url=url,
+                    body_snippet=response.text,
+                )
                 raise UpstreamError(
-                    f"Erro Marketstack ({response.status_code}): {response.text[:200]}",
+                    upstream_public_message("Marketstack", response.status_code),
                     status_code=502,
                 )
 
@@ -408,10 +428,18 @@ class MarketstackClient:
 
             error = payload.get("error")
             if isinstance(error, dict):
-                message = str(error.get("message") or "Erro Marketstack")
                 code = int(error.get("code") or 502)
                 status = 503 if code == 429 else 502
-                last_error = UpstreamError(message, status_code=status)
+                log_upstream_failure(
+                    provider="Marketstack",
+                    status_code=code,
+                    url=url,
+                    body_snippet=str(error.get("message") or ""),
+                )
+                last_error = UpstreamError(
+                    upstream_public_message("Marketstack", code),
+                    status_code=status,
+                )
                 if code in {429, 502, 503, 504} and attempt < retries:
                     await asyncio.sleep(0.5 * (attempt + 1))
                     continue

@@ -8,12 +8,15 @@ class StockMarketStatsDto {
     this.dayLow,
     this.previousClose,
     this.volume,
+    this.avgDailyVolume,
     this.marketCap,
     this.priceEarnings,
     this.earningsPerShare,
     this.fiftyTwoWeekLow,
     this.fiftyTwoWeekHigh,
     this.fiftyTwoWeekRange,
+    this.priceRangeSessions,
+    this.priceRangeLabel,
   });
 
   final double? open;
@@ -21,12 +24,15 @@ class StockMarketStatsDto {
   final double? dayLow;
   final double? previousClose;
   final double? volume;
+  final double? avgDailyVolume;
   final double? marketCap;
   final double? priceEarnings;
   final double? earningsPerShare;
   final double? fiftyTwoWeekLow;
   final double? fiftyTwoWeekHigh;
   final String? fiftyTwoWeekRange;
+  final int? priceRangeSessions;
+  final String? priceRangeLabel;
 
   factory StockMarketStatsDto.fromJson(Map<String, dynamic> json) {
     double? numVal(String key) {
@@ -41,12 +47,15 @@ class StockMarketStatsDto {
       dayLow: numVal('day_low'),
       previousClose: numVal('previous_close'),
       volume: numVal('volume'),
+      avgDailyVolume: numVal('avg_daily_volume'),
       marketCap: numVal('market_cap'),
       priceEarnings: numVal('price_earnings'),
       earningsPerShare: numVal('earnings_per_share'),
       fiftyTwoWeekLow: numVal('fifty_two_week_low'),
       fiftyTwoWeekHigh: numVal('fifty_two_week_high'),
       fiftyTwoWeekRange: json['fifty_two_week_range'] as String?,
+      priceRangeSessions: (json['price_range_sessions'] as num?)?.toInt(),
+      priceRangeLabel: json['price_range_label'] as String?,
     );
   }
 }

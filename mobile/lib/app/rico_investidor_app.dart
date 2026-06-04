@@ -107,6 +107,7 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
   void initState() {
     super.initState();
     authSession.onSessionRefreshed = _onAuthSessionRefreshed;
+    authSession.onSessionExpired = _onSessionExpired;
     _loadPortfolio();
     _loadAccountState();
     _loadPreference();
@@ -123,12 +124,64 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
     if (authSession.onSessionRefreshed == _onAuthSessionRefreshed) {
       authSession.onSessionRefreshed = null;
     }
+    if (authSession.onSessionExpired == _onSessionExpired) {
+      authSession.onSessionExpired = null;
+    }
     super.dispose();
   }
 
   void _onAuthSessionRefreshed() {
     if (!mounted) return;
     unawaited(_loadAccountState());
+  }
+
+  void _onSessionExpired() {
+    if (!mounted) return;
+    unawaited(_handleSessionExpired());
+  }
+
+  Future<void> _handleSessionExpired() async {
+    final nav = _navigatorKey.currentState;
+    if (nav == null) return;
+
+    nav.popUntil((route) => route.isFirst);
+
+    _scaffoldMessengerKey.currentState?.clearSnackBars();
+    _scaffoldMessengerKey.currentState?.showSnackBar(
+      const SnackBar(
+        content: Text('Sessão expirada. Entre novamente para continuar.'),
+        duration: Duration(seconds: 5),
+      ),
+    );
+
+    if (!mounted) return;
+    setState(() => _profile = createDefaultProfile());
+
+    await nav.push<void>(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (context) => LoginScreen(
+          sessionExpired: true,
+          onSuccess: () async {
+            Navigator.of(context).pop();
+            await _completeAccountOnboarding();
+          },
+        ),
+      ),
+    );
+
+    if (!mounted) return;
+    if (!authSession.isRegisteredSession) {
+      await authSession.ensureAuthenticated();
+    }
+    try {
+      final profile = await authRepository.fetchProfile();
+      if (!mounted) return;
+      setState(() => _profile = profile);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _profile = createDefaultProfile());
+    }
   }
 
   Future<void> _warmIntroData() async {
@@ -183,10 +236,11 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
     setState(() => _accountOnboardingCompleted = true);
   }
 
-  void _openLogin() {
+  void _openLogin({bool sessionExpired = false}) {
     _navigatorKey.currentState?.push(
       MaterialPageRoute<void>(
         builder: (context) => LoginScreen(
+          sessionExpired: sessionExpired,
           onSuccess: () async {
             Navigator.of(context).pop();
             await _completeAccountOnboarding();

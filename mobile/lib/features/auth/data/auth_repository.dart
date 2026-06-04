@@ -36,7 +36,7 @@ class AuthRepository {
       path: '/v1/auth/login',
       body: {'email': email, 'password': password},
     );
-    await authSession.setAccessToken(token);
+    await authSession.setAccessToken(token, registered: true);
   }
 
   Future<void> register({
@@ -48,7 +48,7 @@ class AuthRepository {
       path: '/v1/auth/register',
       body: {'email': email, 'password': password, 'name': name},
     );
-    await authSession.setAccessToken(token);
+    await authSession.setAccessToken(token, registered: true);
   }
 
   Future<String> _exchangeCredentials({

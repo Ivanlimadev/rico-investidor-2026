@@ -7,6 +7,7 @@ import 'package:rico_investidor/features/home/widgets/market_category_card.dart'
 import 'package:rico_investidor/features/market/market_list_screen.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/quotes/screens/stock_explore_screen.dart';
+import 'package:rico_investidor/core/widgets/market_heatmap/stock_heatmap_block.dart';
 import 'package:rico_investidor/features/home/data/brazilian_hub_sections.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/brazilian_market_hub.dart';
@@ -96,6 +97,14 @@ class _BrazilianMarketHubScreenState extends State<BrazilianMarketHubScreen> {
                         color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
                       ),
                 ),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: StockHeatmapBlock(
+                reloadKey: 'BR',
+                load: () => widget.quoteRepository.getHeatmap(),
+                volumeLabel: 'Volume B3',
+                onTap: _openAsset,
               ),
             ),
             SliverPadding(

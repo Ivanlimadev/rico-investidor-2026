@@ -14,6 +14,8 @@ class GlobalStockFundamentalsCard extends StatelessWidget {
     final items = <(String, String)>[];
     void add(String label, double? value, {bool asPct = false, bool asUsd = false}) {
       if (value == null) return;
+      if ((label == 'P/L' || label == 'P/VP') && (value <= 0 || value > 500)) return;
+      if (asPct && value <= 0) return;
       final text = asPct
           ? formatPct(value)
           : asUsd

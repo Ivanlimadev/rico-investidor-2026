@@ -16,7 +16,7 @@ void main() {
       ),
     );
 
-    final rows = partitionHeatmapRows(items);
+    final rows = partitionCryptoHeatmapRows(items);
 
     expect(rows.length, 3);
     expect(rows[0].length, 2);

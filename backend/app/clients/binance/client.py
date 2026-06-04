@@ -18,6 +18,7 @@ from app.domain.crypto.presets import CRYPTO_NAMES, CRYPTO_CHART_PRESETS, DISPLA
 from app.config import settings
 from app.core.cache import TtlCache
 from app.core.exceptions import UpstreamError
+from app.core.upstream_errors import log_upstream_failure, upstream_public_message
 from app.domain.crypto.models import (
     CryptoAvailableResponse,
     CryptoCandlesResponse,
@@ -65,8 +66,14 @@ class BinanceClient:
         if response.status_code == 400:
             raise UpstreamError("Par de criptomoeda inválido na Binance", status_code=404)
         if response.status_code >= 400:
+            log_upstream_failure(
+                provider="Binance",
+                status_code=response.status_code,
+                url=url,
+                body_snippet=response.text,
+            )
             raise UpstreamError(
-                f"Erro Binance ({response.status_code}): {response.text[:200]}",
+                upstream_public_message("Binance", response.status_code),
                 status_code=502,
             )
 

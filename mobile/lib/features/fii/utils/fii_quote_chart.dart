@@ -12,6 +12,18 @@ enum FiiQuotePeriod {
   max,
 }
 
+/// Períodos do gráfico de ações (B3 / BDR) — sem MAX (histórico completo é lento e inconsistente).
+const stockQuotePeriodChoices = <FiiQuotePeriod>[
+  FiiQuotePeriod.day1,
+  FiiQuotePeriod.day5,
+  FiiQuotePeriod.month1,
+  FiiQuotePeriod.month3,
+  FiiQuotePeriod.month6,
+  FiiQuotePeriod.ytd,
+  FiiQuotePeriod.year1,
+  FiiQuotePeriod.years5,
+];
+
 enum QuoteChartStyle {
   line,
   candlestick,
@@ -98,6 +110,74 @@ List<FiiCandleBar> sortedQuoteBars(List<FiiCandleBar> bars) {
   return List<FiiCandleBar>.from(bars)..sort((a, b) => a.tradeDate.compareTo(b.tradeDate));
 }
 
+/// Remove pregões duplicados (mesma data), mantendo o último valor.
+List<FiiCandleBar> dedupeQuoteBarsByDate(List<FiiCandleBar> bars) {
+  final sorted = sortedQuoteBars(bars);
+  if (sorted.isEmpty) return sorted;
+
+  final deduped = <FiiCandleBar>[];
+  for (final bar in sorted) {
+    final dateKey = bar.tradeDate.contains('T') ? bar.tradeDate.split('T').first : bar.tradeDate;
+    if (deduped.isEmpty) {
+      deduped.add(bar);
+      continue;
+    }
+    final prevKey = deduped.last.tradeDate.contains('T')
+        ? deduped.last.tradeDate.split('T').first
+        : deduped.last.tradeDate;
+    if (dateKey == prevKey) {
+      deduped[deduped.length - 1] = bar;
+    } else {
+      deduped.add(bar);
+    }
+  }
+  return deduped;
+}
+
+/// Último pregão por data parseada (não depende só da ordenação lexicográfica).
+DateTime? latestTradeDateInBars(List<FiiCandleBar> bars) {
+  DateTime? latest;
+  for (final bar in bars) {
+    final day = parseTradeDate(bar.tradeDate);
+    if (day != null && (latest == null || day.isAfter(latest))) {
+      latest = day;
+    }
+  }
+  return latest;
+}
+
+/// Janela ancorada no pregão mais recente (3M/6M são subconjuntos do histórico completo).
+List<FiiCandleBar> barsForTrailingCalendarDays(
+  List<FiiCandleBar> bars, {
+  required int calendarDays,
+}) {
+  final sorted = dedupeQuoteBarsByDate(bars);
+  if (sorted.isEmpty) return sorted;
+
+  final anchor = latestTradeDateInBars(sorted);
+  if (anchor == null) return sorted;
+
+  final cutoff = anchor.subtract(Duration(days: calendarDays));
+  return sorted
+      .where((bar) {
+        final day = parseTradeDate(bar.tradeDate);
+        return day != null && !day.isBefore(cutoff);
+      })
+      .toList();
+}
+
+/// Últimos N pregões (mesma regra do gráfico B3) — 3M/6M/1A ficam distintos.
+List<FiiCandleBar> barsForTrailingTradingDays(List<FiiCandleBar> bars, {required int maxBars}) {
+  final sorted = dedupeQuoteBarsByDate(bars);
+  if (sorted.length <= maxBars) return sorted;
+  return sorted.sublist(sorted.length - maxBars);
+}
+
+DateTime? parseTradeDate(String raw) {
+  final normalized = raw.contains('T') ? raw.split('T').first : raw;
+  return DateTime.tryParse(normalized);
+}
+
 double? periodChangePct(List<FiiCandleBar> bars) {
   final sorted = sortedQuoteBars(bars);
   if (sorted.length < 2) return null;
@@ -139,9 +219,13 @@ String formatQuoteDateTime(DateTime date) {
   return '$day/$month/${date.year}';
 }
 
+/// Largura do plot horizontal (pregão ≈ 3px; curto usa largura mínima legível).
 double quoteChartScrollWidth(int pointCount) {
-  if (pointCount <= 80) return 0;
-  return pointCount * 2.8;
+  const minWidth = 280.0;
+  if (pointCount < 2) return minWidth;
+  final computed = pointCount * 3.2;
+  if (computed < minWidth) return minWidth;
+  return computed;
 }
 
 String axisLabelForIndex(List<FiiCandleBar> sorted, int index, FiiQuotePeriod period) {

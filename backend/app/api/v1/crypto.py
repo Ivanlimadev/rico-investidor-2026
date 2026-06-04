@@ -114,7 +114,7 @@ async def get_crypto_candles(
     limit: int = Query(default=252, ge=1, le=1000),
     preset: str | None = Query(default=None, pattern=r"^[a-z0-9_]+$"),
 ):
-    """OHLCV — intervalo Binance ou preset (1d, 1w, 1m, 3m, 1y, max)."""
+    """OHLCV — intervalo Binance ou preset (1d, 1w, 1m, 3m, 1y). Preset max legado → 1w."""
     if preset:
         return await crypto_service.get_candles_preset(symbol, preset=preset)
     return await crypto_service.get_candles(symbol, interval=interval, limit=limit)

@@ -17,6 +17,14 @@ async def featured_quotes():
     return await quote_service.featured_stocks()
 
 
+@router.get("/heatmap")
+async def stock_heatmap(
+    limit: int = Query(default=18, ge=1, le=24),
+):
+    """Mapa de calor — top ações B3 por volume do pregão."""
+    return await quote_service.get_stock_heatmap(limit=limit)
+
+
 @router.get("/search")
 async def search_quotes(
     q: str = Query(default="", min_length=2, max_length=80),

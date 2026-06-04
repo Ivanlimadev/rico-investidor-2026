@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
-import 'package:rico_investidor/core/widgets/asset_card_header.dart';
+import 'package:rico_investidor/features/global_markets/widgets/us_market_quote_list_tile.dart';
 import 'package:rico_investidor/core/widgets/asset_country_flag.dart';
 import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
 import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
@@ -215,55 +214,20 @@ class _CountryMarketScreenState extends State<CountryMarketScreen> {
           }
 
           final asset = _items[index];
-          final positive = asset.changePercent >= 0;
-          final changeColor = positive ? AppColors.positive : AppColors.negative;
-
-          return Card(
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => GlobalStockDetailScreen(
-                      symbol: asset.symbol,
-                      repository: widget.repository,
-                      exchange: asset.exchangeMic,
-                    ),
+          return UsMarketQuoteListTile(
+            asset: asset,
+            formatPrice: _formatPrice,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => GlobalStockDetailScreen(
+                    symbol: asset.symbol,
+                    repository: widget.repository,
+                    exchange: asset.exchangeMic,
                   ),
-                );
-              },
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: AssetCardHeader(
-                        symbol: asset.symbol,
-                        name: asset.name,
-                        logoUrl: asset.logoUrl,
-                        logoSize: kAssetLogoSizeCompact,
-                        nameMaxLines: 1,
-                      ),
-                    ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          _formatPrice(asset.price),
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
-                        ),
-                        Text(
-                          '${positive ? '+' : ''}${asset.changePercent.toStringAsFixed(2)}%',
-                          style: Theme.of(context).textTheme.labelMedium?.copyWith(color: changeColor),
-                        ),
-                      ],
-                    ),
-                  ],
                 ),
-              ),
-            ),
+              );
+            },
           );
         },
       ),

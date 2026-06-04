@@ -13,13 +13,14 @@ from app.domain.global_markets.models import (
     GlobalStockTickerInfo,
 )
 
+# Aproximação em pregões (EUA ~252/ano) — mais fiel que meses × 30 dias.
 RETURN_PERIODS: tuple[tuple[str, int], ...] = (
-    ("1M", 1),
-    ("3M", 3),
-    ("1A", 12),
-    ("2A", 24),
-    ("3A", 36),
-    ("5A", 60),
+    ("1M", 21),
+    ("3M", 63),
+    ("1A", 252),
+    ("2A", 504),
+    ("3A", 756),
+    ("5A", 1260),
 )
 
 
@@ -103,17 +104,12 @@ def summarize_dividends(
     )
 
 
-def _price_at_or_before(candles: list[GlobalStockCandle], target: datetime) -> float | None:
-    best_date: datetime | None = None
-    best_price: float | None = None
-    for candle in candles:
-        day = _parse_day(candle.date)
-        if day is None or day > target:
-            continue
-        if best_date is None or day >= best_date:
-            best_date = day
-            best_price = candle.close
-    return best_price
+def _price_sessions_back(candles: list[GlobalStockCandle], sessions_back: int) -> float | None:
+    if not candles or sessions_back < 1:
+        return None
+    index = max(0, len(candles) - 1 - sessions_back)
+    price = candles[index].close
+    return price if price is not None and price > 0 else None
 
 
 def compute_returns(
@@ -122,10 +118,10 @@ def compute_returns(
     current_price: float | None = None,
     as_of: datetime | None = None,
 ) -> list[GlobalStockReturnPeriod]:
+    del as_of  # referência = último pregão do histórico
     if not candles:
         return []
 
-    now = as_of or datetime.now(UTC)
     sorted_candles = sorted(candles, key=lambda candle: candle.date)
     latest_price = current_price
     if latest_price is None and sorted_candles:
@@ -134,17 +130,18 @@ def compute_returns(
         return []
 
     rows: list[GlobalStockReturnPeriod] = []
-    for label, months in RETURN_PERIODS:
-        target = now - timedelta(days=months * 30)
-        start_price = _price_at_or_before(sorted_candles, target)
+    for label, sessions_back in RETURN_PERIODS:
+        if len(sorted_candles) <= sessions_back:
+            continue
+        start_price = _price_sessions_back(sorted_candles, sessions_back)
         if start_price is None or start_price <= 0:
-            rows.append(GlobalStockReturnPeriod(label=label, months_back=months))
             continue
         return_pct = round(((latest_price - start_price) / start_price) * 100, 2)
+        months_back = max(1, round(sessions_back / 21))
         rows.append(
             GlobalStockReturnPeriod(
                 label=label,
-                months_back=months,
+                months_back=months_back,
                 return_pct=return_pct,
             )
         )

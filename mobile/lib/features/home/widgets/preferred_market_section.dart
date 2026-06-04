@@ -9,6 +9,8 @@ import 'package:rico_investidor/features/home/data/preferred_market_preloader.da
 import 'package:rico_investidor/features/home/screens/brazilian_market_hub_screen.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/quotes/screens/stock_explore_screen.dart';
+import 'package:rico_investidor/core/widgets/market_heatmap/stock_heatmap_block.dart';
+import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/market_category.dart';
 import 'package:rico_investidor/navigation/open_asset_detail.dart';
@@ -75,6 +77,7 @@ class _PreferredMarketSectionState extends State<PreferredMarketSection> {
       asset: asset,
       fiiRepository: widget.fiiRepository,
       quoteRepository: widget.quoteRepository,
+      globalMarketRepository: widget.globalMarketRepository,
     );
   }
 
@@ -137,6 +140,23 @@ class _PreferredMarketSectionState extends State<PreferredMarketSection> {
           onChange: widget.onChangePreferred,
         ),
         _ActionsRow(onRanking: _openRanking, onFullHub: _openFullHub),
+        if (widget.preference.isBrazil)
+          StockHeatmapBlock(
+            key: ValueKey('heatmap-${widget.preference.code}'),
+            reloadKey: widget.preference.code,
+            load: () => widget.quoteRepository.getHeatmap(),
+            volumeLabel: 'Volume B3',
+            onTap: _openAsset,
+          )
+        else if (widget.preference.code.toUpperCase() == 'US')
+          StockHeatmapBlock(
+            key: ValueKey('heatmap-${widget.preference.code}'),
+            reloadKey: widget.preference.code,
+            load: () => widget.globalMarketRepository.getUsHeatmap(),
+            volumeLabel: 'NASDAQ · volume',
+            mapAsset: (quote) => quote.toUsAssetItem(),
+            onTap: _openAsset,
+          ),
         FutureBuilder<List<MarketHubSectionData>>(
           future: _future,
           builder: (context, snapshot) {

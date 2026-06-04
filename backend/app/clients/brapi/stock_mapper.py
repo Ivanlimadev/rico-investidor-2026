@@ -336,6 +336,52 @@ def map_market_stats(item: dict) -> StockMarketStats:
     )
 
 
+def _parse_brapi_price_point_date(value: object) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        try:
+            return datetime.fromtimestamp(int(value), tz=UTC)
+        except (OSError, OverflowError, ValueError):
+            return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.isdigit():
+        try:
+            return datetime.fromtimestamp(int(text), tz=UTC)
+        except (OSError, OverflowError, ValueError):
+            return None
+    normalized = text.replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+
+
+def sparkline_from_price_points(price_points: list[dict], *, max_points: int = 24) -> list[float]:
+    rows: list[tuple[str, float]] = []
+    for point in price_points:
+        close = point.get("close")
+        if close is None:
+            continue
+        try:
+            close_f = float(close)
+        except (TypeError, ValueError):
+            continue
+        parsed = _parse_brapi_price_point_date(point.get("date"))
+        if parsed is None:
+            continue
+        rows.append((parsed.strftime("%Y-%m-%d"), close_f))
+
+    rows.sort(key=lambda row: row[0])
+    closes = [price for _, price in rows]
+    cap = max(2, min(max_points, 60))
+    if len(closes) > cap:
+        closes = closes[-cap:]
+    return closes if len(closes) >= 2 else []
+
+
 def map_stock_candles(
     *,
     ticker: str,
