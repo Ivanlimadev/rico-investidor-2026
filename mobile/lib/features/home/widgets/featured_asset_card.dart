@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
+import 'package:rico_investidor/core/widgets/asset_card_header.dart';
 import 'package:rico_investidor/core/widgets/asset_logo.dart';
 import 'package:rico_investidor/core/widgets/quote_sparkline.dart';
 import 'package:rico_investidor/features/fii/utils/fii_format.dart';
