@@ -4,7 +4,7 @@ from app.domain.global_markets.models import GlobalStockDividendsSummary
 
 
 def test_merge_fundamentals_uses_dividend_summary_when_tickerinfo_missing():
-    summary = GlobalStockDividendsSummary(dividend_yield_ttm=2.5)
+    summary = GlobalStockDividendsSummary(dividend_yield_ttm=2.5, payments_12m=2)
 
     fundamentals = merge_fundamentals(tickerinfo=None, dividends_summary=summary)
 

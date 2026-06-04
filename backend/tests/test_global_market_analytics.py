@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from app.domain.global_markets.analytics import (
     build_company_profile,
@@ -30,11 +30,16 @@ def test_summarize_dividends_ttm_and_yield():
 
 
 def test_compute_returns_from_candles():
+    """Rentabilidade 1A usa ~252 pregões, não datas de calendário."""
+    start = datetime(2024, 1, 2, tzinfo=UTC)
     candles = [
-        GlobalStockCandle(date="2024-01-02", close=80),
-        GlobalStockCandle(date="2025-01-02", close=90),
-        GlobalStockCandle(date="2026-05-20", close=100),
+        GlobalStockCandle(
+            date=(start + timedelta(days=i)).strftime("%Y-%m-%d"),
+            close=90.0,
+        )
+        for i in range(253)
     ]
+    candles[-1] = GlobalStockCandle(date="2026-05-20", close=100)
 
     rows = compute_returns(candles, current_price=100, as_of=datetime(2026, 5, 25, tzinfo=UTC))
 
