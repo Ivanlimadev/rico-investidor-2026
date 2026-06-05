@@ -1,6 +1,7 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
+import 'package:rico_investidor/core/widgets/async_section_placeholder.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/quotes/models/stock_fundamental_history.dart';
 import 'package:rico_investidor/features/quotes/models/stock_financials.dart';
@@ -29,11 +30,19 @@ class _StockFundamentalHistoryCardState extends State<StockFundamentalHistoryCar
     _loadFuture = widget.repository.getFundamentalHistory(widget.ticker);
   }
 
+  void _reload() {
+    setState(() {
+      _loadFuture = widget.repository.getFundamentalHistory(widget.ticker);
+    });
+  }
+
   double? _metricValue(FundamentalHistoryPeriodDto period) {
     return switch (_metric) {
       'roe' => period.returnOnEquity,
       'dy' => period.dividendYield12m,
       'pe' => period.priceEarnings,
+      'ebitda' => period.ebitda,
+      'fcf' => period.freeCashflow,
       _ => period.totalRevenue,
     };
   }
@@ -43,6 +52,7 @@ class _StockFundamentalHistoryCardState extends State<StockFundamentalHistoryCar
     return switch (_metric) {
       'roe' || 'dy' => '${value.toStringAsFixed(1)}%',
       'pe' => value.toStringAsFixed(2),
+      'ebitda' || 'fcf' || 'revenue' => formatFinancialValue(value),
       _ => formatFinancialValue(value),
     };
   }
@@ -61,8 +71,19 @@ class _StockFundamentalHistoryCardState extends State<StockFundamentalHistoryCar
           );
         }
 
-        if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
-          return const SizedBox.shrink();
+        if (snapshot.hasError) {
+          return AsyncSectionPlaceholder(
+            title: 'Evolução trimestral',
+            message: 'Não foi possível carregar o histórico fundamental.',
+            onRetry: _reload,
+          );
+        }
+
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return const AsyncSectionPlaceholder(
+            title: 'Evolução trimestral',
+            message: 'Histórico fundamental indisponível para este ativo.',
+          );
         }
 
         final periods = List<FundamentalHistoryPeriodDto>.from(snapshot.data!.periods)
@@ -72,7 +93,12 @@ class _StockFundamentalHistoryCardState extends State<StockFundamentalHistoryCar
             .where((entry) => entry.value != null)
             .toList();
 
-        if (points.length < 2) return const SizedBox.shrink();
+        if (points.length < 2) {
+          return const AsyncSectionPlaceholder(
+            title: 'Evolução trimestral',
+            message: 'Dados insuficientes para o indicador selecionado.',
+          );
+        }
 
         final maxY = points.map((entry) => entry.value!).reduce((a, b) => a > b ? a : b);
         final minY = points.map((entry) => entry.value!).reduce((a, b) => a < b ? a : b);
@@ -92,6 +118,8 @@ class _StockFundamentalHistoryCardState extends State<StockFundamentalHistoryCar
                   runSpacing: 8,
                   children: [
                     _buildMetricChip(id: 'revenue', label: 'Receita'),
+                    _buildMetricChip(id: 'ebitda', label: 'EBITDA'),
+                    _buildMetricChip(id: 'fcf', label: 'FCF'),
                     _buildMetricChip(id: 'roe', label: 'ROE'),
                     _buildMetricChip(id: 'dy', label: 'DY 12m'),
                     _buildMetricChip(id: 'pe', label: 'P/L'),

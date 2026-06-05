@@ -24,6 +24,15 @@ RETURN_PERIODS: tuple[tuple[str, int], ...] = (
 )
 
 
+def _dividend_bucket_year(item: GlobalStockDividend) -> int | None:
+    """Ano do pagamento (preferido) ou data ex para totais anuais."""
+    for raw in (item.payment_date, item.date, item.ex_date):
+        day = _parse_day(raw) if raw else None
+        if day is not None:
+            return day.year
+    return None
+
+
 def _parse_day(raw: str) -> datetime | None:
     text = str(raw or "").strip()
     if len(text) < 10:
@@ -73,11 +82,20 @@ def summarize_dividends(
     avg_amount_12m = round(ttm_total / payments_12m, 4) if payments_12m > 0 else None
 
     annual: dict[int, float] = defaultdict(float)
-    for day, item in parsed:
-        annual[day.year] += item.amount
+    annual_payments: dict[int, int] = defaultdict(int)
+    for _, item in parsed:
+        bucket_year = _dividend_bucket_year(item)
+        if bucket_year is None:
+            continue
+        annual[bucket_year] += item.amount
+        annual_payments[bucket_year] += 1
 
     annual_rows = [
-        {"year": year, "total": round(total, 4)}
+        {
+            "year": year,
+            "total": round(total, 4),
+            "payments": annual_payments.get(year, 0),
+        }
         for year, total in sorted(annual.items(), reverse=True)
     ]
 
@@ -118,7 +136,6 @@ def compute_returns(
     current_price: float | None = None,
     as_of: datetime | None = None,
 ) -> list[GlobalStockReturnPeriod]:
-    del as_of  # referência = último pregão do histórico
     if not candles:
         return []
 
@@ -145,4 +162,35 @@ def compute_returns(
                 return_pct=return_pct,
             )
         )
+
+    ytd_pct = _ytd_return_pct(sorted_candles, latest_price=latest_price, as_of=as_of)
+    if ytd_pct is not None and not any(row.label == "YTD" for row in rows):
+        rows.insert(
+            min(2, len(rows)),
+            GlobalStockReturnPeriod(label="YTD", months_back=1, return_pct=ytd_pct),
+        )
+
     return rows
+
+
+def _ytd_return_pct(
+    sorted_candles: list[GlobalStockCandle],
+    *,
+    latest_price: float,
+    as_of: datetime | None,
+) -> float | None:
+    """Rentabilidade no ano corrente (primeiro pregão do ano → última cotação)."""
+    ref = as_of or datetime.now(UTC)
+    year = ref.year
+    start_price: float | None = None
+    for candle in sorted_candles:
+        day = _parse_day(candle.date)
+        if day is None or day.year < year:
+            continue
+        close = candle.close
+        if close is not None and close > 0:
+            start_price = close
+            break
+    if start_price is None or start_price <= 0:
+        return None
+    return round(((latest_price - start_price) / start_price) * 100, 2)

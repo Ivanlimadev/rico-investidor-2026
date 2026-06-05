@@ -120,6 +120,7 @@ class _CountryMarketCard extends StatelessWidget {
           builder: (_) => BrazilianMarketHubScreen(
             fiiRepository: fiiRepository,
             quoteRepository: quoteRepository,
+            globalMarketRepository: repository,
           ),
         ),
       );

@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.api.v1.dividends import router as dividends_router
 from app.api.v1.crypto import router as crypto_router
 from app.api.v1.currency import router as currency_router
 from app.api.v1.global_markets import router as global_markets_router
@@ -28,6 +29,7 @@ router.include_router(fiis_router)
 router.include_router(macro_router)
 router.include_router(meta_router)
 router.include_router(quotes_router)
+router.include_router(dividends_router)
 router.include_router(related_router)
 router.include_router(treasury_router)
 router.include_router(indices_router)

@@ -23,6 +23,16 @@ def normalize_reference_date(value: str | None) -> str | None:
     return value.split(" ", 1)[0]
 
 
+def _payment_year(payment_date: str | None, reference_date: str | None) -> int | None:
+    for raw in (payment_date, reference_date):
+        if raw and len(raw) >= 4:
+            try:
+                return int(raw[:4])
+            except ValueError:
+                continue
+    return None
+
+
 def pct_from_ratio(value: float | None) -> float | None:
     if value is None:
         return None
@@ -134,8 +144,9 @@ def map_distributions(
                 value_per_share=float(value),
             )
         )
-        if ref:
-            by_year[int(ref[:4])].append(float(value))
+        year = _payment_year(paid, ref)
+        if year is not None:
+            by_year[year].append(float(value))
 
     annual_summary = [
         FiiDistributionYearSummary(

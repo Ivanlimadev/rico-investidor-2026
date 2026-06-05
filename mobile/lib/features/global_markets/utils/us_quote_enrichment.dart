@@ -15,16 +15,23 @@ class UsQuoteEnrichment {
     '5A': 1260,
   };
 
+  static List<GlobalStockCandleDto> _validCandles(List<GlobalStockCandleDto> candles) {
+    return List<GlobalStockCandleDto>.from(candles)
+      ..retainWhere((candle) => candle.hasUsableClose)
+      ..sort((a, b) => a.date.compareTo(b.date));
+  }
+
   static MarketQuoteDto reconcileQuote(MarketQuoteDto quote, List<GlobalStockCandleDto> candles) {
-    if (candles.isEmpty) return quote;
-    final sorted = List<GlobalStockCandleDto>.from(candles)..sort((a, b) => a.date.compareTo(b.date));
+    final sorted = _validCandles(candles);
+    if (sorted.isEmpty) return quote;
+
     final last = sorted.last;
-    final price = last.close;
+    final price = last.chartClose;
     if (price <= 0) return quote;
 
     double? previousClose = quote.previousClose;
     if (sorted.length >= 2) {
-      previousClose = sorted[sorted.length - 2].close;
+      previousClose = sorted[sorted.length - 2].chartClose;
     }
     final changePercent = previousClose != null && previousClose > 0
         ? ((price - previousClose) / previousClose) * 100
@@ -61,15 +68,25 @@ class UsQuoteEnrichment {
       );
     }
 
-    final sorted = List<GlobalStockCandleDto>.from(candles)..sort((a, b) => a.date.compareTo(b.date));
+    final sorted = _validCandles(candles);
+    if (sorted.isEmpty) {
+      return StockMarketStatsDto(
+        open: quote.open,
+        dayHigh: quote.high,
+        dayLow: quote.low,
+        previousClose: quote.previousClose,
+        volume: quote.volume,
+      );
+    }
     final window = sorted.length > 252 ? sorted.sublist(sorted.length - 252) : sorted;
 
     double? weekHigh;
     double? weekLow;
     if (window.length >= 5) {
       for (final c in window) {
-        final high = c.high ?? c.close;
-        final low = c.low ?? c.close;
+        final close = c.chartClose;
+        final high = c.high ?? close;
+        final low = c.low ?? close;
         weekHigh = weekHigh == null ? high : (high > weekHigh! ? high : weekHigh);
         weekLow = weekLow == null ? low : (low < weekLow! ? low : weekLow);
       }
@@ -107,13 +124,13 @@ class UsQuoteEnrichment {
   }) {
     if (candles.length < 2 || currentPrice <= 0) return const [];
 
-    final sorted = List<GlobalStockCandleDto>.from(candles)..sort((a, b) => a.date.compareTo(b.date));
+    final sorted = _validCandles(candles);
     final rows = <GlobalStockReturnPeriodDto>[];
 
     for (final entry in _returnSessions.entries) {
       final back = entry.value;
       if (sorted.length <= back) continue;
-      final start = sorted[sorted.length - 1 - back].close;
+      final start = sorted[sorted.length - 1 - back].chartClose;
       if (start <= 0) continue;
       final pct = ((currentPrice - start) / start) * 100;
       rows.add(

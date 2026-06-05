@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:rico_investidor/core/widgets/async_section_placeholder.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/quotes/models/stock_macro.dart';
 
@@ -21,8 +22,18 @@ class StockMacroCard extends StatelessWidget {
           );
         }
 
-        if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
-          return const SizedBox.shrink();
+        if (snapshot.hasError) {
+          return const AsyncSectionPlaceholder(
+            title: 'Contexto macro',
+            message: 'Não foi possível carregar Selic, IPCA e CDI. Puxe para atualizar.',
+          );
+        }
+
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return const AsyncSectionPlaceholder(
+            title: 'Contexto macro',
+            message: 'Indicadores macro indisponíveis no momento.',
+          );
         }
 
         final macro = snapshot.data!;
@@ -49,6 +60,12 @@ class StockMacroCard extends StatelessWidget {
                         label: 'IPCA 12m',
                         value: '${macro.ipca12m!.toStringAsFixed(2)}%',
                         subtitle: macro.ipcaAsOf,
+                      ),
+                    if (macro.cdi != null)
+                      _MacroTile(
+                        label: 'CDI',
+                        value: '${macro.cdi!.toStringAsFixed(2)}% a.a.',
+                        subtitle: macro.cdiAsOf,
                       ),
                   ],
                 ),

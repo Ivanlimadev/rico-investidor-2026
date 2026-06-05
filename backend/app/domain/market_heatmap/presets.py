@@ -10,8 +10,11 @@ US_PRIMARY_EXCHANGE_MIC = "XNAS"
 MIN_BR_STOCK_HEATMAP_VOLUME = 500_000
 MIN_US_STOCK_HEATMAP_VOLUME = 100_000
 
-# Símbolos por requisição EOD na Marketstack (heatmap usa lote único).
-US_HEATMAP_EOD_BATCH_SIZE = 40
+# Símbolos consultados na Marketstack (lote único). 24 líquidos bastam para rankear 18 tiles.
+US_HEATMAP_FETCH_COUNT = 24
+US_HEATMAP_EOD_BATCH_SIZE = US_HEATMAP_FETCH_COUNT
+# Pregões de histórico para variação 24h (fim de semana/feriado).
+US_HEATMAP_LOOKBACK_DAYS = 5
 
 # Candidatos líquidos NASDAQ — rankeados localmente por volume EOD.
 US_NASDAQ_HEATMAP_CANDIDATES: tuple[str, ...] = (

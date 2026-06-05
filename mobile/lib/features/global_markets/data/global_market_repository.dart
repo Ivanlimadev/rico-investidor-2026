@@ -15,8 +15,28 @@ class GlobalMarketRepository {
 
   final GlobalMarketApiClient _api;
   final _featuredCache = SessionCache<List<AssetItem>>(ttl: const Duration(minutes: 5));
+  final _heatmapCache = SessionCache<QuoteListResponse>(ttl: const Duration(minutes: 5));
   final _exchangesCache = SessionCache<WorldExchangesResponseDto>(ttl: const Duration(hours: 6));
+  final Map<String, SessionCache<GlobalStockDetailDto>> _detailCache = {};
+  final Map<String, Future<GlobalStockDetailDto>> _detailInFlight = {};
   Future<List<AssetItem>>? _featuredFuture;
+  Future<QuoteListResponse>? _heatmapFuture;
+
+  String _detailCacheKey(
+    String symbol,
+    String? exchange,
+    int candleLimit,
+    int dividendLimit,
+    int splitLimit,
+  ) =>
+      '${symbol.toUpperCase()}:${exchange ?? ''}:$candleLimit:$dividendLimit:$splitLimit';
+
+  SessionCache<GlobalStockDetailDto> _detailCacheFor(String key) {
+    return _detailCache.putIfAbsent(
+      key,
+      () => SessionCache<GlobalStockDetailDto>(ttl: const Duration(minutes: 10)),
+    );
+  }
 
   Future<List<AssetItem>> listFeaturedUsAssets() {
     final cached = _featuredCache.get();
@@ -51,10 +71,31 @@ class GlobalMarketRepository {
   }
 
   Future<QuoteListResponse> getUsHeatmap({int limit = 18, String exchange = 'XNAS'}) {
-    return _withRetry(
-      () => _api.getUsHeatmap(limit: limit, exchange: exchange),
-      fallbackMessage: 'Não foi possível carregar o mapa de calor EUA.',
-    );
+    final cached = _heatmapCache.get();
+    if (cached != null) return Future.value(cached);
+
+    return _heatmapFuture ??= _loadUsHeatmap(limit: limit, exchange: exchange);
+  }
+
+  void invalidateHeatmapCache() {
+    _heatmapCache.clear();
+    _heatmapFuture = null;
+  }
+
+  Future<QuoteListResponse> _loadUsHeatmap({
+    required int limit,
+    required String exchange,
+  }) async {
+    try {
+      final response = await _withRetry(
+        () => _api.getUsHeatmap(limit: limit, exchange: exchange),
+        fallbackMessage: 'Não foi possível carregar o mapa de calor EUA.',
+      );
+      _heatmapCache.set(response);
+      return response;
+    } finally {
+      _heatmapFuture = null;
+    }
   }
 
   Future<WorldExchangesResponseDto> listWorldExchanges() async {
@@ -185,6 +226,39 @@ class GlobalMarketRepository {
     int candleLimit = defaultCandleLimit,
     int dividendLimit = defaultDividendLimit,
     int splitLimit = 50,
+  }) {
+    final key = _detailCacheKey(symbol, exchange, candleLimit, dividendLimit, splitLimit);
+    final cache = _detailCacheFor(key);
+    final cached = cache.get();
+    if (cached != null) return Future.value(cached);
+
+    final inFlight = _detailInFlight[key];
+    if (inFlight != null) return inFlight;
+
+    final future = _fetchDetail(
+      symbol,
+      exchange: exchange,
+      candleLimit: candleLimit,
+      dividendLimit: dividendLimit,
+      splitLimit: splitLimit,
+    ).then((detail) {
+      cache.set(detail);
+      _detailInFlight.remove(key);
+      return detail;
+    }).catchError((Object error, StackTrace stack) {
+      _detailInFlight.remove(key);
+      Error.throwWithStackTrace(error, stack);
+    });
+    _detailInFlight[key] = future;
+    return future;
+  }
+
+  Future<GlobalStockDetailDto> _fetchDetail(
+    String symbol, {
+    String? exchange,
+    required int candleLimit,
+    required int dividendLimit,
+    required int splitLimit,
   }) async {
     Object? lastError;
 

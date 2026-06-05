@@ -70,5 +70,85 @@ class FmpClient:
             return payload
         return None
 
+    async def get_ratios_ttm(self, symbol: str) -> dict | None:
+        """Ratios TTM (P/L, ROE, margens) — mesma base ``stable`` do perfil."""
+        if not self._api_key:
+            return None
+
+        api_symbol = fmp_api_symbol(symbol)
+        if not api_symbol:
+            return None
+
+        url = f"{self._base_url}/ratios-ttm"
+        params = {"symbol": api_symbol, "apikey": self._api_key}
+        try:
+            client = get_http_client()
+            response = await client.get(url, params=params, timeout=15.0)
+        except httpx.RequestError as exc:
+            raise UpstreamError(
+                f"FMP indisponível: {exc.__class__.__name__}", status_code=502
+            ) from exc
+
+        if response.status_code == 404:
+            return None
+        if response.status_code in (401, 403):
+            raise UpstreamError("FMP API key inválida", status_code=response.status_code)
+        if response.status_code == 429:
+            raise UpstreamError("FMP limite de requisições atingido", status_code=429)
+        if response.status_code >= 400:
+            raise UpstreamError(f"FMP erro {response.status_code}", status_code=502)
+
+        try:
+            payload = response.json()
+        except ValueError:
+            return None
+
+        if isinstance(payload, list):
+            first = payload[0] if payload else None
+            return first if isinstance(first, dict) else None
+        if isinstance(payload, dict) and payload:
+            return payload
+        return None
+
+    async def get_key_metrics_ttm(self, symbol: str) -> dict | None:
+        """ROE, ROA e métricas de retorno (TTM) — complementa ``ratios-ttm``."""
+        if not self._api_key:
+            return None
+
+        api_symbol = fmp_api_symbol(symbol)
+        if not api_symbol:
+            return None
+
+        url = f"{self._base_url}/key-metrics-ttm"
+        params = {"symbol": api_symbol, "apikey": self._api_key}
+        try:
+            client = get_http_client()
+            response = await client.get(url, params=params, timeout=15.0)
+        except httpx.RequestError as exc:
+            raise UpstreamError(
+                f"FMP indisponível: {exc.__class__.__name__}", status_code=502
+            ) from exc
+
+        if response.status_code == 404:
+            return None
+        if response.status_code in (401, 403):
+            raise UpstreamError("FMP API key inválida", status_code=response.status_code)
+        if response.status_code == 429:
+            raise UpstreamError("FMP limite de requisições atingido", status_code=429)
+        if response.status_code >= 400:
+            raise UpstreamError(f"FMP erro {response.status_code}", status_code=502)
+
+        try:
+            payload = response.json()
+        except ValueError:
+            return None
+
+        if isinstance(payload, list):
+            first = payload[0] if payload else None
+            return first if isinstance(first, dict) else None
+        if isinstance(payload, dict) and payload:
+            return payload
+        return None
+
 
 fmp_client = FmpClient()

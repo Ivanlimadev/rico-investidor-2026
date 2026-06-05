@@ -6,6 +6,8 @@ import 'package:rico_investidor/core/widgets/asset_card_header.dart';
 import 'package:rico_investidor/core/widgets/asset_quick_actions.dart';
 import 'package:rico_investidor/features/currency/data/currency_repository.dart';
 import 'package:rico_investidor/features/currency/models/currency_models.dart';
+import 'package:rico_investidor/core/utils/asset_candle_mappers.dart';
+import 'package:rico_investidor/core/widgets/what_if_investment_card.dart';
 import 'package:rico_investidor/features/currency/widgets/currency_history_chart.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 
@@ -118,6 +120,14 @@ class _CurrencyDetailScreenState extends State<CurrencyDetailScreen> {
               ],
               const SizedBox(height: 16),
               _QuoteStatsGrid(quote: quote),
+              if (mid != null && mid > 0) ...[
+                const SizedBox(height: 12),
+                WhatIfInvestmentCard(
+                  currentPrice: mid,
+                  history: historyFromCurrency(history),
+                  unitLabel: 'cotação',
+                ),
+              ],
               const SizedBox(height: 16),
               CurrencyHistoryChart(pair: quote.pair, history: history),
               const SizedBox(height: 12),

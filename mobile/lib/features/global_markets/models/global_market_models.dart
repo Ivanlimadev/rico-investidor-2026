@@ -581,7 +581,14 @@ class GlobalStockCandleDto {
   final double? adjClose;
   final double? volume;
 
-  double get chartClose => adjClose ?? close;
+  double get chartClose {
+    if (close > 0) return close;
+    final adj = adjClose;
+    if (adj != null && adj > 0) return adj;
+    return close;
+  }
+
+  bool get hasUsableClose => chartClose > 0;
 
   factory GlobalStockCandleDto.fromJson(Map<String, dynamic> json) {
     double? numVal(String key) {
@@ -590,13 +597,17 @@ class GlobalStockCandleDto {
       return (value as num).toDouble();
     }
 
+    final rawClose = numVal('close') ?? 0;
+    final adj = numVal('adj_close');
+    final effectiveClose = rawClose > 0 ? rawClose : (adj != null && adj > 0 ? adj : rawClose);
+
     return GlobalStockCandleDto(
       date: json['date'] as String? ?? '',
-      close: (json['close'] as num).toDouble(),
+      close: effectiveClose,
       open: numVal('open'),
       high: numVal('high'),
       low: numVal('low'),
-      adjClose: numVal('adj_close'),
+      adjClose: adj,
       volume: numVal('volume'),
     );
   }

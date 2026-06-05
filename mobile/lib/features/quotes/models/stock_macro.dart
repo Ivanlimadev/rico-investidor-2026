@@ -4,6 +4,8 @@ class BrazilMacroDto {
     this.selicAsOf,
     this.ipca12m,
     this.ipcaAsOf,
+    this.cdi,
+    this.cdiAsOf,
     this.provider = 'brapi',
   });
 
@@ -11,9 +13,11 @@ class BrazilMacroDto {
   final String? selicAsOf;
   final double? ipca12m;
   final String? ipcaAsOf;
+  final double? cdi;
+  final String? cdiAsOf;
   final String provider;
 
-  bool get isEmpty => selic == null && ipca12m == null;
+  bool get isEmpty => selic == null && ipca12m == null && cdi == null;
 
   factory BrazilMacroDto.fromJson(Map<String, dynamic> json) {
     double? numVal(String key) {
@@ -27,6 +31,8 @@ class BrazilMacroDto {
       selicAsOf: json['selic_as_of'] as String?,
       ipca12m: numVal('ipca_12m'),
       ipcaAsOf: json['ipca_as_of'] as String?,
+      cdi: numVal('cdi'),
+      cdiAsOf: json['cdi_as_of'] as String?,
       provider: json['provider'] as String? ?? 'brapi',
     );
   }

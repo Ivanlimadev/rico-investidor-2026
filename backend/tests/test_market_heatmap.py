@@ -1,5 +1,5 @@
 import asyncio
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from app.clients.brapi.models import StockScreenerItem, StockScreenerResponse
 from app.clients.brapi.models import MarketQuote
@@ -49,7 +49,17 @@ def test_get_stock_heatmap_ranks_by_volume_and_filters_acoes_br():
     )
 
     service = QuoteService(client=client)
-    result = asyncio.run(service.get_stock_heatmap(limit=2))
+    async def passthrough(response):
+        return response
+
+    with (
+        patch.object(service, "_enrich_screener_with_bolsai_dy", passthrough),
+        patch(
+            "app.services.quote_service.br_proventos_service.fetch_dividend_yields_batch",
+            AsyncMock(return_value={}),
+        ),
+    ):
+        result = asyncio.run(service.get_stock_heatmap(limit=2))
 
     assert result.count == 2
     assert [item.symbol for item in result.items] == ["PETR4", "VALE3"]
@@ -58,16 +68,67 @@ def test_get_stock_heatmap_ranks_by_volume_and_filters_acoes_br():
 
 def test_get_us_heatmap_ranks_nasdaq_candidates_by_volume():
     client = AsyncMock()
-    client.map_quotes_with_change.return_value = [
-        MarketQuote(
-            symbol="AAPL",
-            name="Apple",
-            price=190.0,
-            change_percent=1.0,
-            category="stocks",
-            provider="marketstack",
-            volume=80_000_000,
-        ),
+
+    async def fake_eod_rows(symbols, **kwargs):
+        return [
+            {
+                "symbol": "NVDA",
+                "date": "2026-06-01",
+                "close": 900.0,
+                "open": 890.0,
+                "high": 910.0,
+                "low": 880.0,
+                "volume": 120_000_000,
+            },
+            {
+                "symbol": "NVDA",
+                "date": "2026-05-30",
+                "close": 878.0,
+                "open": 870.0,
+                "high": 885.0,
+                "low": 865.0,
+                "volume": 100_000_000,
+            },
+            {
+                "symbol": "AAPL",
+                "date": "2026-06-01",
+                "close": 190.0,
+                "open": 188.0,
+                "high": 191.0,
+                "low": 187.0,
+                "volume": 80_000_000,
+            },
+            {
+                "symbol": "AAPL",
+                "date": "2026-05-30",
+                "close": 188.0,
+                "open": 186.0,
+                "high": 189.0,
+                "low": 185.0,
+                "volume": 70_000_000,
+            },
+            {
+                "symbol": "TSLA",
+                "date": "2026-06-01",
+                "close": 250.0,
+                "open": 248.0,
+                "high": 252.0,
+                "low": 246.0,
+                "volume": 50_000,
+            },
+            {
+                "symbol": "TSLA",
+                "date": "2026-05-30",
+                "close": 248.0,
+                "open": 245.0,
+                "high": 249.0,
+                "low": 244.0,
+                "volume": 48_000,
+            },
+        ]
+
+    service = GlobalMarketService(client=client)
+    with patch.object(service, "_build_us_heatmap_items", AsyncMock(return_value=[
         MarketQuote(
             symbol="NVDA",
             name="NVIDIA",
@@ -76,20 +137,20 @@ def test_get_us_heatmap_ranks_nasdaq_candidates_by_volume():
             category="stocks",
             provider="marketstack",
             volume=120_000_000,
+            exchange="XNAS",
         ),
         MarketQuote(
-            symbol="TSLA",
-            name="Tesla",
-            price=250.0,
-            change_percent=-1.0,
+            symbol="AAPL",
+            name="Apple",
+            price=190.0,
+            change_percent=1.0,
             category="stocks",
             provider="marketstack",
-            volume=50_000,
+            volume=80_000_000,
+            exchange="XNAS",
         ),
-    ]
-
-    service = GlobalMarketService(client=client)
-    result = asyncio.run(service.get_us_heatmap(limit=2))
+    ])):
+        result = asyncio.run(service.get_us_heatmap(limit=2))
 
     assert result.count == 2
     assert [item.symbol for item in result.items] == ["NVDA", "AAPL"]

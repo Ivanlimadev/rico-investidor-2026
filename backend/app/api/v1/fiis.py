@@ -55,7 +55,7 @@ async def get_fii_distributions(
     ticker: str,
     years: int = Query(default=5, ge=1, le=20),
 ):
-    """Distribuições — fonte: Brapi."""
+    """Distribuições — Bolsai (fallback Brapi)."""
     return await fii_service.get_distributions(ticker, years=years)
 
 

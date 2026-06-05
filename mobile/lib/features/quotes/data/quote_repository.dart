@@ -21,7 +21,22 @@ class QuoteRepository {
   final QuoteApiClient _api;
   final Map<MarketCategory, List<StockCatalogItemDto>> _catalogByCategory = {};
   final _featuredCache = SessionCache<List<AssetItem>>(ttl: const Duration(minutes: 5));
+  final _heatmapCache = SessionCache<QuoteListResponse>(ttl: const Duration(minutes: 5));
+  final _macroCache = SessionCache<BrazilMacroDto>(ttl: const Duration(minutes: 30));
+  final Map<String, SessionCache<StockQuoteDetailDto>> _detailCache = {};
+  final Map<String, Future<StockQuoteDetailDto>> _detailInFlight = {};
+  Future<QuoteListResponse>? _heatmapFuture;
   Future<List<AssetItem>>? _featuredFuture;
+
+  String _detailCacheKey(String symbol, int candleLimit, int dividendLimit) =>
+      '${symbol.toUpperCase()}:$candleLimit:$dividendLimit';
+
+  SessionCache<StockQuoteDetailDto> _detailCacheFor(String key) {
+    return _detailCache.putIfAbsent(
+      key,
+      () => SessionCache<StockQuoteDetailDto>(ttl: const Duration(minutes: 10)),
+    );
+  }
 
   bool supportsCategory(MarketCategory category) {
     return switch (category) {
@@ -116,16 +131,40 @@ class QuoteRepository {
     return _api.getQuote(symbol);
   }
 
+  static const defaultCandleLimit = 252;
+  static const extendedCandleLimit = 1260;
+  static const defaultDividendLimit = 120;
+  static const extendedDividendLimit = 500;
+
   Future<StockQuoteDetailDto> getStockDetail(
     String symbol, {
-    int candleLimit = 252,
-    int dividendLimit = 120,
+    int candleLimit = defaultCandleLimit,
+    int dividendLimit = defaultDividendLimit,
   }) {
-    return _api.getDetail(
-      symbol,
-      candleLimit: candleLimit,
-      dividendLimit: dividendLimit,
-    );
+    final key = _detailCacheKey(symbol, candleLimit, dividendLimit);
+    final cache = _detailCacheFor(key);
+    final cached = cache.get();
+    if (cached != null) return Future.value(cached);
+
+    final inFlight = _detailInFlight[key];
+    if (inFlight != null) return inFlight;
+
+    final future = _api
+        .getDetail(
+          symbol,
+          candleLimit: candleLimit,
+          dividendLimit: dividendLimit,
+        )
+        .then((detail) {
+      cache.set(detail);
+      _detailInFlight.remove(key);
+      return detail;
+    }).catchError((Object error, StackTrace stack) {
+      _detailInFlight.remove(key);
+      Error.throwWithStackTrace(error, stack);
+    });
+    _detailInFlight[key] = future;
+    return future;
   }
 
   Future<List<FiiCandleBar>> getStockCandles(String symbol, {FiiQuotePeriod? period}) async {
@@ -139,7 +178,24 @@ class QuoteRepository {
     return response.candles;
   }
 
-  Future<BrazilMacroDto> getBrazilMacro() => _api.getBrazilMacro();
+  Future<BrazilMacroDto> getBrazilMacro({bool forceRefresh = false}) async {
+    if (forceRefresh) _macroCache.clear();
+    final cached = _macroCache.get();
+    if (cached != null) return cached;
+    final result = await _api.getBrazilMacro();
+    _macroCache.set(result);
+    return result;
+  }
+
+  void invalidateStockDetail(
+    String symbol, {
+    int candleLimit = extendedCandleLimit,
+    int dividendLimit = extendedDividendLimit,
+  }) {
+    final key = _detailCacheKey(symbol, candleLimit, dividendLimit);
+    _detailCache.remove(key);
+    _detailInFlight.remove(key);
+  }
 
   Future<DictionaryResponseDto> getFundamentalsDictionary() {
     return _api.getDictionary(category: 'statistics');
@@ -176,7 +232,20 @@ class QuoteRepository {
   }
 
   Future<QuoteListResponse> getHeatmap({int limit = 18}) {
-    return _api.getHeatmap(limit: limit);
+    final cached = _heatmapCache.get();
+    if (cached != null) return Future.value(cached);
+
+    return _heatmapFuture ??= _loadHeatmap(limit: limit);
+  }
+
+  Future<QuoteListResponse> _loadHeatmap({required int limit}) async {
+    try {
+      final response = await _api.getHeatmap(limit: limit);
+      _heatmapCache.set(response);
+      return response;
+    } finally {
+      _heatmapFuture = null;
+    }
   }
 
   Future<StockCompareResponseDto> compareStocks(List<String> tickers) {

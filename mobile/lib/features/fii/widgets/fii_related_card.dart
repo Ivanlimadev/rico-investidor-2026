@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
+import 'package:rico_investidor/core/widgets/async_section_placeholder.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
 import 'package:rico_investidor/core/widgets/asset_card_header.dart';
 import 'package:rico_investidor/core/widgets/asset_logo.dart';
@@ -33,8 +34,18 @@ class FiiRelatedCard extends StatelessWidget {
           );
         }
 
+        if (snapshot.hasError) {
+          return const AsyncSectionPlaceholder(
+            title: 'FIIs relacionados',
+            message: 'Não foi possível carregar FIIs do mesmo segmento.',
+          );
+        }
+
         if (!snapshot.hasData || snapshot.data!.isEmpty) {
-          return const SizedBox.shrink();
+          return const AsyncSectionPlaceholder(
+            title: 'FIIs relacionados',
+            message: 'Nenhum FII relacionado encontrado.',
+          );
         }
 
         final items = snapshot.data!;

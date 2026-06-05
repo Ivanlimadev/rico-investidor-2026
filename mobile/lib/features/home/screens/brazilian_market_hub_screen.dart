@@ -8,7 +8,8 @@ import 'package:rico_investidor/features/market/market_list_screen.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/quotes/screens/stock_explore_screen.dart';
 import 'package:rico_investidor/core/widgets/market_heatmap/stock_heatmap_block.dart';
-import 'package:rico_investidor/features/home/data/brazilian_hub_sections.dart';
+import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
+import 'package:rico_investidor/features/home/data/preferred_market_preloader.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/brazilian_market_hub.dart';
 import 'package:rico_investidor/models/market_category.dart';
@@ -19,11 +20,13 @@ class BrazilianMarketHubScreen extends StatefulWidget {
     super.key,
     required this.fiiRepository,
     required this.quoteRepository,
+    required this.globalMarketRepository,
     this.marketCount,
   });
 
   final FiiRepository fiiRepository;
   final QuoteRepository quoteRepository;
+  final GlobalMarketRepository globalMarketRepository;
   final int? Function(MarketCategory category)? marketCount;
 
   @override
@@ -39,13 +42,17 @@ class _BrazilianMarketHubScreenState extends State<BrazilianMarketHubScreen> {
     _sectionsFuture = _loadSections();
   }
 
-  Future<List<MarketHubSectionData>> _loadSections() {
-    return loadBrazilianHubSections(widget.quoteRepository);
+  Future<List<MarketHubSectionData>> _loadSections({bool forceRefresh = false}) {
+    return preferredMarketPreloader.loadBrazilianHub(
+      quoteRepository: widget.quoteRepository,
+      globalMarketRepository: widget.globalMarketRepository,
+      forceRefresh: forceRefresh,
+    );
   }
 
   Future<void> _refresh() async {
     setState(() {
-      _sectionsFuture = _loadSections();
+      _sectionsFuture = _loadSections(forceRefresh: true);
     });
     await _sectionsFuture;
   }

@@ -214,26 +214,106 @@ class StockCorporateActionDto {
   }
 }
 
+class StockDividendEventDto {
+  const StockDividendEventDto({
+    this.label,
+    this.comDate,
+    this.exDate,
+    this.paymentDate,
+    this.valuePerShare,
+    this.isProjected = false,
+  });
+
+  final String? label;
+  final String? comDate;
+  final String? exDate;
+  final String? paymentDate;
+  final double? valuePerShare;
+  final bool isProjected;
+
+  factory StockDividendEventDto.fromJson(Map<String, dynamic> json) {
+    return StockDividendEventDto(
+      label: json['label'] as String?,
+      comDate: json['com_date'] as String?,
+      exDate: json['ex_date'] as String?,
+      paymentDate: json['payment_date'] as String?,
+      valuePerShare: (json['value_per_share'] as num?)?.toDouble(),
+      isProjected: json['is_projected'] as bool? ?? false,
+    );
+  }
+}
+
+class StockDividendsSummaryDto {
+  const StockDividendsSummaryDto({
+    this.dividendYieldDisplay,
+    this.ttmPerShareDisplay,
+    this.dividendYieldAvg5y,
+    this.dividendYieldAvg10y,
+    this.frequencyLabel,
+    this.avgAmount12m,
+    this.payments12m,
+    this.nextDividend,
+    this.upcoming = const [],
+  });
+
+  final double? dividendYieldDisplay;
+  final double? ttmPerShareDisplay;
+  final double? dividendYieldAvg5y;
+  final double? dividendYieldAvg10y;
+  final String? frequencyLabel;
+  final double? avgAmount12m;
+  final int? payments12m;
+  final StockDividendEventDto? nextDividend;
+  final List<StockDividendEventDto> upcoming;
+
+  factory StockDividendsSummaryDto.fromJson(Map<String, dynamic> json) {
+    final upcomingRaw = json['upcoming'] as List<dynamic>? ?? const [];
+    final nextRaw = json['next_dividend'] as Map<String, dynamic>?;
+    return StockDividendsSummaryDto(
+      dividendYieldDisplay: (json['dividend_yield_display'] as num?)?.toDouble(),
+      ttmPerShareDisplay: (json['ttm_per_share_display'] as num?)?.toDouble(),
+      dividendYieldAvg5y: (json['dividend_yield_avg_5y'] as num?)?.toDouble(),
+      dividendYieldAvg10y: (json['dividend_yield_avg_10y'] as num?)?.toDouble(),
+      frequencyLabel: json['frequency_label'] as String?,
+      avgAmount12m: (json['avg_amount_12m'] as num?)?.toDouble(),
+      payments12m: (json['payments_12m'] as num?)?.toInt(),
+      nextDividend: nextRaw == null ? null : StockDividendEventDto.fromJson(nextRaw),
+      upcoming: upcomingRaw
+          .map((e) => StockDividendEventDto.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+}
+
 class StockDividendsDto {
   const StockDividendsDto({
     required this.payments,
     this.annualSummary = const [],
     this.ttmPerShare,
+    this.dividendYieldTtm,
     this.totalPayments,
     this.corporateActions = const [],
+    this.summary = const StockDividendsSummaryDto(),
   });
 
   final List<FiiDistributionPayment> payments;
   final List<FiiDistributionYear> annualSummary;
   final double? ttmPerShare;
+  final double? dividendYieldTtm;
   final int? totalPayments;
   final List<StockCorporateActionDto> corporateActions;
+  final StockDividendsSummaryDto summary;
+
+  double? get displayDividendYield =>
+      summary.dividendYieldDisplay ?? dividendYieldTtm;
 
   factory StockDividendsDto.fromJson(Map<String, dynamic> json) {
     final rawPayments = json['payments'] as List<dynamic>? ?? const [];
     final rawSummary = json['annual_summary'] as List<dynamic>? ?? const [];
     final rawActions = json['corporate_actions'] as List<dynamic>? ?? const [];
+    final summaryRaw = json['summary'] as Map<String, dynamic>? ?? const {};
     final ttm = json['ttm_per_share'];
+    final dy = json['dividend_yield_ttm'];
 
     return StockDividendsDto(
       payments: rawPayments
@@ -243,10 +323,12 @@ class StockDividendsDto {
           .map((item) => FiiDistributionYear.fromJson(item as Map<String, dynamic>))
           .toList(),
       ttmPerShare: ttm == null ? null : (ttm as num).toDouble(),
+      dividendYieldTtm: dy == null ? null : (dy as num).toDouble(),
       totalPayments: json['total_payments'] as int?,
       corporateActions: rawActions
           .map((item) => StockCorporateActionDto.fromJson(item as Map<String, dynamic>))
           .toList(),
+      summary: StockDividendsSummaryDto.fromJson(summaryRaw),
     );
   }
 }
@@ -259,6 +341,7 @@ class StockQuoteDetailDto {
     required this.fundamentals,
     required this.candles,
     required this.dividends,
+    this.provider = 'brapi',
   });
 
   final MarketQuoteDto quote;
@@ -267,6 +350,7 @@ class StockQuoteDetailDto {
   final StockFundamentalsDto fundamentals;
   final List<FiiCandleBar> candles;
   final StockDividendsDto dividends;
+  final String provider;
 
   List<FiiDistributionPayment> get payments => dividends.payments;
 
@@ -286,6 +370,7 @@ class StockQuoteDetailDto {
           .map((item) => FiiCandleBar.fromJson(item as Map<String, dynamic>))
           .toList(),
       dividends: StockDividendsDto.fromJson(json['dividends'] as Map<String, dynamic>? ?? const {}),
+      provider: json['provider'] as String? ?? 'brapi',
     );
   }
 }

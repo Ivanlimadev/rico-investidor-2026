@@ -56,7 +56,9 @@ class _StockHeatmapBlockState extends State<StockHeatmapBlock> {
 
   Future<QuoteListResponse?> _load() async {
     try {
-      await authSession.ensureAuthenticated();
+      if (authSession.accessToken == null || authSession.accessToken!.isEmpty) {
+        await authSession.ensureAuthenticated();
+      }
       final response = await widget.load();
       if (response == null || response.items.isEmpty) return null;
       return response;

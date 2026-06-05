@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:rico_investidor/core/widgets/async_section_placeholder.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/quotes/models/stock_financials.dart';
 
@@ -68,8 +69,19 @@ class _StockFinancialsCardState extends State<StockFinancialsCard>
           );
         }
 
-        if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
-          return const SizedBox.shrink();
+        if (snapshot.hasError) {
+          return AsyncSectionPlaceholder(
+            title: 'Demonstrações financeiras',
+            message: 'Não foi possível carregar as demonstrações.',
+            onRetry: () => setState(() => _loadFuture = _fetchFinancials()),
+          );
+        }
+
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return const AsyncSectionPlaceholder(
+            title: 'Demonstrações financeiras',
+            message: 'Demonstrações indisponíveis para este ativo.',
+          );
         }
 
         final financials = snapshot.data!;

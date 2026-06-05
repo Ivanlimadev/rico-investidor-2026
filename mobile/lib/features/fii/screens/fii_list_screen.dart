@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
-import 'package:rico_investidor/core/config/api_config.dart';
 import 'package:rico_investidor/core/search/asset_search_config.dart';
 import 'package:rico_investidor/core/search/unified_asset_search.dart';
 import 'package:rico_investidor/features/fii/data/fii_repository.dart';
@@ -186,8 +185,6 @@ class _FiiListScreenState extends State<FiiListScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(_error!, textAlign: TextAlign.center),
-              const SizedBox(height: 8),
-              Text('API: ${ApiConfig.baseUrl}', style: Theme.of(context).textTheme.labelSmall),
               const SizedBox(height: 12),
               FilledButton(onPressed: _load, child: const Text('Tentar novamente')),
             ],

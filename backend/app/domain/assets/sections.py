@@ -38,11 +38,19 @@ def stock_sections(stock: StockQuoteDetailResponse, asset_class: AssetClass) -> 
 
 def stock_notes(stock: StockQuoteDetailResponse, asset_class: AssetClass) -> list[str]:
     notes: list[str] = []
+    dividends = stock.dividends
 
+    if dividends.provider == "bolsai":
+        notes.append(
+            "Proventos, DY 12m e gráfico anual de dividendos: fonte Bolsai (CVM/B3)."
+        )
+    if stock.provider == "hybrid":
+        notes.append(
+            "Cotação e perfil: Brapi. Proventos, fundamentos TTM e histórico longo: Bolsai."
+        )
     if asset_class == AssetClass.ETF_BR:
         notes.append(
-            "ETF: a Brapi entrega cotação e histórico; fundamentos contábeis e proventos "
-            "costumam vir vazios — isso é esperado, não indica falha na API."
+            "ETF: cotação e histórico via Brapi; proventos via Bolsai quando disponíveis."
         )
     elif asset_class == AssetClass.BDR and not _has_fundamentals(stock.fundamentals):
         notes.append(

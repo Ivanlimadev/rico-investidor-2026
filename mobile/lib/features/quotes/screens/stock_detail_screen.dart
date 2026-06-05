@@ -6,10 +6,11 @@ import 'package:rico_investidor/core/widgets/asset_card_header.dart';
 import 'package:rico_investidor/core/widgets/asset_logo.dart';
 import 'package:rico_investidor/core/widgets/asset_quick_actions.dart';
 import 'package:rico_investidor/models/asset_item.dart';
-import 'package:rico_investidor/features/fii/widgets/fii_history_charts.dart';
 import 'package:rico_investidor/core/widgets/asset_returns_card.dart';
+import 'package:rico_investidor/core/widgets/last_dividend_card.dart';
+import 'package:rico_investidor/core/widgets/what_if_investment_card.dart';
 import 'package:rico_investidor/features/quotes/widgets/stock_corporate_actions_card.dart';
-import 'package:rico_investidor/features/quotes/widgets/stock_dividends_summary_card.dart';
+import 'package:rico_investidor/features/quotes/widgets/br_stock_dividends_section.dart';
 import 'package:rico_investidor/features/quotes/widgets/stock_recent_dividends_card.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/quotes/models/stock_quote_detail.dart';
@@ -23,7 +24,7 @@ import 'package:rico_investidor/features/quotes/widgets/stock_macro_card.dart';
 import 'package:rico_investidor/features/quotes/widgets/stock_market_stats_card.dart';
 import 'package:rico_investidor/features/quotes/screens/stock_compare_screen.dart';
 import 'package:rico_investidor/features/quotes/widgets/stock_quote_chart_card.dart';
-import 'package:rico_investidor/models/fii_models.dart';
+import 'package:rico_investidor/core/utils/data_provider_label.dart';
 import 'package:rico_investidor/models/market_category.dart';
 
 class StockDetailScreen extends StatefulWidget {
@@ -48,8 +49,8 @@ class StockDetailScreen extends StatefulWidget {
 
 class _StockDetailScreenState extends State<StockDetailScreen> {
   late Future<StockQuoteDetailDto> _loadFuture;
-  StockQuoteDetailDto? _extendedDetail;
   AssetItem? _actionAsset;
+  int _refreshGeneration = 0;
 
   AssetItem _actionAssetFrom(StockQuoteDetailDto detail) {
     final quote = detail.quote;
@@ -60,7 +61,8 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
       price: quote.price,
       changePercent: quote.changePercent,
       logoUrl: detail.profile.logoUrl,
-      dividendYield12m: detail.fundamentals.dividendYield12m,
+      dividendYield12m:
+          detail.dividends.displayDividendYield ?? detail.fundamentals.dividendYield12m,
     );
   }
 
@@ -73,33 +75,44 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
     setState(() => _actionAsset = asset);
   }
 
+  Future<StockQuoteDetailDto> _fetchDetail() {
+    return widget.repository
+        .getStockDetail(
+          widget.ticker,
+          candleLimit: QuoteRepository.extendedCandleLimit,
+          dividendLimit: QuoteRepository.extendedDividendLimit,
+        )
+        .then((detail) {
+      if (mounted) _applyActionAsset(detail);
+      return detail;
+    });
+  }
+
+  void _retry() {
+    setState(() {
+      _actionAsset = null;
+      _loadFuture = _fetchDetail();
+    });
+  }
+
+  Future<void> _onRefresh() async {
+    widget.repository.invalidateStockDetail(widget.ticker);
+    setState(() {
+      _refreshGeneration++;
+      _loadFuture = _fetchDetail();
+    });
+    await _loadFuture;
+  }
+
   @override
   void initState() {
     super.initState();
     if (widget.initialDetail != null) {
       _actionAsset = _actionAssetFrom(widget.initialDetail!);
-      _loadFuture = Future.value(widget.initialDetail);
-      _loadExtendedDetail();
-      return;
+      _loadFuture = Future.value(widget.initialDetail!);
+    } else {
+      _loadFuture = _fetchDetail();
     }
-
-    _loadFuture = widget.repository.getStockDetail(widget.ticker).then((detail) {
-      _applyActionAsset(detail);
-      _loadExtendedDetail();
-      return detail;
-    });
-  }
-
-  Future<void> _loadExtendedDetail() async {
-    try {
-      final extended = await widget.repository.getStockDetail(
-        widget.ticker,
-        candleLimit: 1260,
-        dividendLimit: 500,
-      );
-      if (!mounted) return;
-      setState(() => _extendedDetail = extended);
-    } catch (_) {}
   }
 
   @override
@@ -135,10 +148,20 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
-                child: Text(
-                  'Não foi possível carregar ${widget.ticker}.',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodyLarge,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Não foi possível carregar ${widget.ticker}.',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodyLarge,
+                    ),
+                    const SizedBox(height: 12),
+                    FilledButton(
+                      onPressed: _retry,
+                      child: const Text('Tentar novamente'),
+                    ),
+                  ],
                 ),
               ),
             );
@@ -146,14 +169,20 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
 
           final detail = snapshot.data!;
           final quote = detail.quote;
-          final candles = _extendedDetail?.candles ?? detail.candles;
-          final dividendPayments = _extendedDetail?.dividends.payments ?? detail.dividends.payments;
-          final dy = detail.fundamentals.dividendYield12m;
+          final candles = detail.candles;
+          final dividendPayments = detail.dividends.payments;
+          final dividendsDto = detail.dividends;
+          final dy =
+              dividendsDto.displayDividendYield ?? detail.fundamentals.dividendYield12m;
+          final showBrDividendsSection = widget.category == MarketCategory.acoesBr;
           final isPositive = quote.changePercent >= 0;
           final changeColor = isPositive ? AppColors.positive : AppColors.negative;
           final logoUrl = detail.profile.logoUrl;
 
-          return ListView(
+          return RefreshIndicator(
+            onRefresh: _onRefresh,
+            child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
             children: [
               if (widget.notes.isNotEmpty) ...[
@@ -265,7 +294,7 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                                 border: Border.all(color: AppColors.positive.withValues(alpha: 0.25)),
                               ),
                               child: Text(
-                                'DY 12m ${dy.toStringAsFixed(2)}%',
+                                '${showBrDividendsSection ? 'DY atual' : 'DY 12m'} ${dy.toStringAsFixed(2)}%',
                                 style: TextStyle(
                                   color: AppColors.positive,
                                   fontWeight: FontWeight.w700,
@@ -290,9 +319,24 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                   ),
                 ),
               ),
+              if (lastPaidPayment(dividendPayments) != null) ...[
+                const SizedBox(height: 12),
+                LastDividendCard(
+                  payments: dividendPayments,
+                  dividendYield12m: dy,
+                ),
+              ],
               if (candles.isNotEmpty) ...[
                 const SizedBox(height: 16),
                 AssetReturnsCard(
+                  currentPrice: quote.price,
+                  candles: candles,
+                  payments: dividendPayments,
+                ),
+              ],
+              if (quote.price > 0) ...[
+                const SizedBox(height: 12),
+                WhatIfInvestmentCard(
                   currentPrice: quote.price,
                   candles: candles,
                   payments: dividendPayments,
@@ -305,7 +349,10 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
               ),
               if (widget.category == MarketCategory.acoesBr) ...[
                 const SizedBox(height: 16),
-                StockMacroCard(repository: widget.repository),
+                StockMacroCard(
+                  key: ValueKey('macro_$_refreshGeneration'),
+                  repository: widget.repository,
+                ),
               ],
               const SizedBox(height: 16),
               StockQuoteChartCard(
@@ -318,33 +365,29 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
               if (widget.category == MarketCategory.acoesBr) ...[
                 const SizedBox(height: 16),
                 StockFundamentalHistoryCard(
+                  key: ValueKey('fund_hist_$_refreshGeneration'),
                   ticker: widget.ticker,
                   repository: widget.repository,
                 ),
                 const SizedBox(height: 16),
                 StockFinancialsCard(
+                  key: ValueKey('financials_$_refreshGeneration'),
                   ticker: widget.ticker,
                   repository: widget.repository,
                 ),
               ],
               const SizedBox(height: 16),
               StockMarketStatsCard(stats: detail.marketStats),
-              if (detail.dividends.payments.isNotEmpty) ...[
+              if (showBrDividendsSection &&
+                  (dividendsDto.payments.isNotEmpty || dividendsDto.displayDividendYield != null)) ...[
                 const SizedBox(height: 16),
-                StockDividendsSummaryCard(
-                  dividends: detail.dividends,
+                BrStockDividendsSection(
+                  dividends: dividendsDto,
                   dividendYield12m: dy,
                 ),
-              ],
-              if (detail.dividends.annualSummary.isNotEmpty) ...[
+              ] else if (dividendsDto.payments.isNotEmpty) ...[
                 const SizedBox(height: 16),
-                FiiDistributionsChart(
-                  annualSummary: _recentAnnualSummary(detail.dividends.annualSummary),
-                ),
-              ],
-              if (detail.dividends.payments.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                StockRecentDividendsCard(payments: detail.dividends.payments),
+                StockRecentDividendsCard(payments: dividendsDto.payments),
               ],
               if (detail.dividends.corporateActions.isNotEmpty) ...[
                 const SizedBox(height: 16),
@@ -352,6 +395,7 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
               ],
               const SizedBox(height: 16),
               RelatedAssetsCard(
+                key: ValueKey('related_$_refreshGeneration'),
                 ticker: widget.ticker,
                 market: relatedMarketSlug(widget.category),
                 sector: detail.profile.sector,
@@ -362,10 +406,11 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                 child: ListTile(
                   leading: const Icon(Icons.cloud_outlined),
                   title: const Text('Fonte de dados'),
-                  subtitle: Text(quote.provider.toUpperCase()),
+                  subtitle: Text(formatDataProvider(detail.provider)),
                 ),
               ),
             ],
+            ),
           );
         },
       ),
@@ -373,7 +418,3 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
   }
 }
 
-List<FiiDistributionYear> _recentAnnualSummary(List<FiiDistributionYear> summary, {int limit = 12}) {
-  final sorted = List<FiiDistributionYear>.from(summary)..sort((a, b) => b.year.compareTo(a.year));
-  return sorted.take(limit).toList();
-}

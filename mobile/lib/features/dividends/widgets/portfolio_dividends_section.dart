@@ -33,6 +33,22 @@ class _PortfolioDividendsSectionState extends State<PortfolioDividendsSection> {
     _syncDividends();
   }
 
+  @override
+  void didUpdateWidget(PortfolioDividendsSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_holdingsSignature(oldWidget.portfolio) != _holdingsSignature(widget.portfolio)) {
+      _syncDividends();
+    }
+  }
+
+  String _holdingsSignature(PortfolioState portfolio) {
+    final parts = portfolio.holdings
+        .map((h) => '${h.symbol}:${h.quantity}')
+        .toList()
+      ..sort();
+    return parts.join('|');
+  }
+
   Future<void> _syncDividends() async {
     setState(() {
       _syncing = true;

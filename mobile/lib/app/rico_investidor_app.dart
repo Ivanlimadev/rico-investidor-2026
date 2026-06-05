@@ -21,7 +21,6 @@ import 'package:rico_investidor/services/asset_search_service.dart';
 import 'package:rico_investidor/features/home/data/preferred_market_preloader.dart';
 import 'package:rico_investidor/services/app_bootstrap_service.dart';
 import 'package:rico_investidor/services/market_preference_storage.dart';
-import 'package:rico_investidor/services/portfolio_dividend_service.dart';
 import 'package:rico_investidor/services/portfolio_fx_service.dart';
 import 'package:rico_investidor/services/portfolio_price_service.dart';
 import 'package:rico_investidor/services/portfolio_storage.dart';
@@ -66,11 +65,12 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
 
   void _onPortfolioChanged() {
     setState(() {});
-    _portfolioStorage.save(
-      holdings: _portfolio.holdings,
-      dividends: _portfolio.dividends,
+    unawaited(
+      _portfolioStorage.save(
+        holdings: _portfolio.holdings,
+        dividends: _portfolio.dividends,
+      ),
     );
-    unawaited(_syncPortfolioDividends());
   }
 
   Future<void> _loadPortfolio() async {
@@ -84,23 +84,12 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
         usdBrlRate: _portfolio.usdBrlRate,
       );
     });
-    unawaited(_syncPortfolioDividends());
   }
 
   Future<void> _loadPortfolioFx() async {
     final rate = await portfolioFxService.fetchUsdBrlRate();
     if (!mounted || rate == null) return;
     setState(() => _portfolio.usdBrlRate = rate);
-  }
-
-  Future<void> _syncPortfolioDividends() async {
-    await portfolioDividendService.syncPortfolioDividends(_portfolio);
-    if (!mounted) return;
-    setState(() {});
-    await _portfolioStorage.save(
-      holdings: _portfolio.holdings,
-      dividends: _portfolio.dividends,
-    );
   }
 
   @override
@@ -114,7 +103,6 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
     unawaited(_loadPortfolioFx());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_warmIntroData());
-      unawaited(_syncPortfolioDividends());
       Future<void>.delayed(const Duration(seconds: 2), _refreshPortfolioPrices);
     });
   }
@@ -379,6 +367,7 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
       homeRepository: _homeRepository,
       fiiRepository: _fiiRepository,
       quoteRepository: _quoteRepository,
+      globalMarketRepository: _globalMarketRepository,
       isDarkMode: _themeMode == ThemeMode.dark,
       onToggleTheme: _toggleTheme,
       preferredMarket: preference,

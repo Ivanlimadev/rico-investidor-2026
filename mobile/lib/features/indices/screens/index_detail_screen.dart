@@ -5,6 +5,8 @@ import 'package:rico_investidor/core/widgets/asset_card_header.dart';
 import 'package:rico_investidor/core/widgets/asset_quick_actions.dart';
 import 'package:rico_investidor/features/indices/data/indices_repository.dart';
 import 'package:rico_investidor/features/indices/models/indices_models.dart';
+import 'package:rico_investidor/core/utils/asset_candle_mappers.dart';
+import 'package:rico_investidor/core/widgets/what_if_investment_card.dart';
 import 'package:rico_investidor/features/indices/widgets/index_history_chart.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 
@@ -111,6 +113,14 @@ class _IndexDetailScreenState extends State<IndexDetailScreen> {
               ),
               const SizedBox(height: 16),
               _StatsGrid(quote: quote),
+              if (quote.price > 0) ...[
+                const SizedBox(height: 12),
+                WhatIfInvestmentCard(
+                  currentPrice: quote.price,
+                  history: historyFromIndex(history),
+                  unitLabel: 'ponto',
+                ),
+              ],
               const SizedBox(height: 16),
               IndexHistoryChart(history: history),
             ],

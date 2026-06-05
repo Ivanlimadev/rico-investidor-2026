@@ -32,13 +32,28 @@ class Settings(BaseSettings):
 
     brapi_api_key: str = ""
     brapi_base_url: str = "https://brapi.dev/api"
+    # Bolsai — proventos e fundamentos TTM B3. Sem chave, agenda BR usa só Brapi.
+    bolsai_api_key: str = ""
+    bolsai_base_url: str = "https://api.usebolsai.com/api/v1"
+    # free = 200 req/dia | pro = 10k req/dia (ajusta limites padrão quando não sobrescritos).
+    bolsai_plan: str = "pro"
+    # Agenda BR: universo de tickers consultados na Bolsai por rebuild.
+    bolsai_calendar_max_tickers: int = 350
+    # Pro: inclui catálogo B3 + FIIs na agenda de proventos.
+    bolsai_calendar_include_catalog: bool = True
+    bolsai_dy_enrich_concurrency: int = 10
+    # Tickers enriquecidos com fundamentos TTM por página de lista/screener.
+    bolsai_dy_list_max_symbols: int = 100
+    # Cache por ticker — fundamentos/proventos mudam no fechamento (evita calls repetidas).
+    bolsai_ticker_cache_ttl_seconds: int = 7200
     marketstack_api_key: str = ""
     marketstack_base_url: str = "https://api.marketstack.com/v2"
     marketstack_plan: str = "basic"
     marketstack_intraday_interval: str = "5min"
     marketstack_realtime_cache_ttl_seconds: int = 60
     # Financial Modeling Prep — opcional. Plano grátis (250 req/dia) enriquece o
-    # perfil de empresas internacionais (descrição, setor, site, etc.).
+    # perfil internacional e ratios TTM (P/L, ROE, margens) quando Marketstack
+    # não expõe tickerinfo (planos abaixo de Business).
     fmp_api_key: str = ""
     fmp_base_url: str = "https://financialmodelingprep.com/stable"
     fmp_profile_cache_ttl_seconds: int = 60 * 60 * 24 * 7

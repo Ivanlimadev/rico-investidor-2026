@@ -79,11 +79,6 @@ def parse_screener_params(params: dict[str, str]) -> ScreenerFilters:
     pvp_gt = _float("pvp_gt")
     pvp_lt = _float("pvp_lt")
     vacancy_lt = _float("vacancy_pct_lt")
-    if vacancy_lt is not None:
-        raise AppError(
-            "Filtro vacancy_pct_lt indisponível — a Brapi não expõe vacância de FIIs.",
-            status_code=400,
-        )
     segment = params.get("segment")
     fund_type = params.get("fund_type")
     search = params.get("search") or params.get("q")

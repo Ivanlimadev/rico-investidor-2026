@@ -1,5 +1,6 @@
 import asyncio
 
+from app.clients.brapi.models import MarketQuoteBatchResponse
 from app.domain.home.models import HomeFeedResponse, MarketCounts
 from app.services.crypto_service import crypto_service
 from app.services.currency_service import currency_service
@@ -74,7 +75,7 @@ class HomeService:
         market_counts.etf_intl = quote_service.get_cached_catalog_total("etf_intl")
 
         if isinstance(featured_stocks, Exception):
-            raise featured_stocks
+            featured_stocks = MarketQuoteBatchResponse(items=[], count=0)
         if isinstance(featured_fiis, Exception):
             raise featured_fiis
 

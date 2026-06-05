@@ -7,14 +7,36 @@ import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/models/market_category.dart';
 import 'package:rico_investidor/services/market_preference_storage.dart';
 
-/// Cache de seções do mercado preferido — compartilhado entre intro e home.
+/// Cache de seções do mercado preferido — compartilhado entre intro, home e hub BR.
 class PreferredMarketPreloader {
   PreferredMarketPreloader._();
   static final PreferredMarketPreloader instance = PreferredMarketPreloader._();
 
+  static const brazilPreference = MarketPreference(code: 'BR', name: 'Brasil');
+
   final _cache = SessionCache<List<MarketHubSectionData>>(ttl: const Duration(minutes: 5));
   String? _cachedCode;
   Future<List<MarketHubSectionData>>? _inFlight;
+
+  /// Hub brasileiro — reutiliza o mesmo cache da home quando o mercado preferido é BR.
+  Future<List<MarketHubSectionData>> loadBrazilianHub({
+    required QuoteRepository quoteRepository,
+    required GlobalMarketRepository globalMarketRepository,
+    bool forceRefresh = false,
+  }) {
+    if (forceRefresh) {
+      if (_cachedCode == brazilPreference.code) {
+        _cache.clear();
+        _cachedCode = null;
+      }
+      _inFlight = null;
+    }
+    return load(
+      preference: brazilPreference,
+      quoteRepository: quoteRepository,
+      globalMarketRepository: globalMarketRepository,
+    );
+  }
 
   Future<List<MarketHubSectionData>> load({
     required MarketPreference preference,

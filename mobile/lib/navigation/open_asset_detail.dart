@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:rico_investidor/features/assets/screens/asset_detail_screen.dart';
 import 'package:rico_investidor/features/crypto/screens/crypto_detail_screen.dart';
 import 'package:rico_investidor/features/crypto/models/crypto_models.dart';
 import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
 import 'package:rico_investidor/features/global_markets/screens/global_stock_detail_screen.dart';
 import 'package:rico_investidor/features/currency/screens/currency_detail_screen.dart';
 import 'package:rico_investidor/features/fii/data/fii_repository.dart';
-import 'package:rico_investidor/features/fii/screens/fii_detail_screen.dart';
 import 'package:rico_investidor/features/fii/utils/fii_ticker.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/quotes/screens/stock_detail_screen.dart';
@@ -99,12 +99,13 @@ void openTickerDetail(
     return;
   }
 
-  if (isFiiTicker(normalized)) {
+  if (_isBrListedAsset(normalized, category)) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => FiiDetailScreen(
+        builder: (_) => AssetDetailScreen(
           ticker: normalized,
-          repository: resolvedFiiRepo,
+          fiiRepository: resolvedFiiRepo,
+          quoteRepository: resolvedQuoteRepo,
         ),
       ),
     );
@@ -120,6 +121,19 @@ void openTickerDetail(
       ),
     ),
   );
+}
+
+bool _isBrListedAsset(String ticker, MarketCategory? category) {
+  if (category == MarketCategory.acoesBr ||
+      category == MarketCategory.bdr ||
+      category == MarketCategory.etf ||
+      category == MarketCategory.fiis) {
+    return true;
+  }
+  if (category != null) return false;
+  if (isFiiTicker(ticker)) return true;
+  final inferred = _inferStockCategory(ticker);
+  return inferred == MarketCategory.acoesBr || inferred == MarketCategory.bdr;
 }
 
 MarketCategory _inferStockCategory(String symbol) {

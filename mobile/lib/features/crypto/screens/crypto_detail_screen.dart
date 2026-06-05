@@ -11,6 +11,8 @@ import 'package:rico_investidor/features/assets/models/related_assets.dart';
 import 'package:rico_investidor/features/assets/widgets/related_assets_card.dart';
 import 'package:rico_investidor/features/crypto/widgets/crypto_chart_card.dart';
 import 'package:rico_investidor/features/crypto/widgets/crypto_fundamentals_card.dart';
+import 'package:rico_investidor/core/utils/asset_candle_mappers.dart';
+import 'package:rico_investidor/core/widgets/what_if_investment_card.dart';
 import 'package:rico_investidor/features/crypto/widgets/crypto_performance_row.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/market_category.dart';
@@ -35,6 +37,7 @@ class _CryptoDetailScreenState extends State<CryptoDetailScreen> {
   double? _livePrice;
   bool _streamLive = false;
   AssetItem? _actionAsset;
+  List<CryptoCandleDto> _simulationCandles = const [];
 
   CryptoRepository get _repository => widget.repository ?? cryptoRepository;
 
@@ -46,8 +49,17 @@ class _CryptoDetailScreenState extends State<CryptoDetailScreen> {
         setState(() => _actionAsset = detail.quote.toAssetItem());
       }
       _startLivePrice(detail.quote.symbol);
+      _loadSimulationCandles(detail.quote.symbol);
       return detail;
     });
+  }
+
+  Future<void> _loadSimulationCandles(String symbol) async {
+    try {
+      final response = await _repository.getCandles(symbol, preset: '1y');
+      if (!mounted) return;
+      setState(() => _simulationCandles = response.candles);
+    } catch (_) {}
   }
 
   @override
@@ -162,6 +174,17 @@ class _CryptoDetailScreenState extends State<CryptoDetailScreen> {
                   ],
                 ],
               ),
+              if (displayPrice > 0) ...[
+                const SizedBox(height: 12),
+                WhatIfInvestmentCard(
+                  currentPrice: displayPrice,
+                  candles: candleBarsFromCrypto(
+                    _simulationCandles.isNotEmpty ? _simulationCandles : detail.candles,
+                  ),
+                  currency: WhatIfInvestmentCurrency.usd,
+                  unitLabel: 'moeda',
+                ),
+              ],
               if (profile != null) ...[
                 const SizedBox(height: 14),
                 CryptoPerformanceRow(performance: profile.performance),

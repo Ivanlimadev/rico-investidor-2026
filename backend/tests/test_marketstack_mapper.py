@@ -1,4 +1,6 @@
 from app.clients.marketstack.stock_mapper import (
+    map_eod_candles,
+    map_eod_quote,
     map_eod_quotes_with_change,
     map_exchange,
     normalize_marketstack_symbol,
@@ -47,6 +49,44 @@ def test_map_eod_quotes_with_change():
     assert quotes[0].price == 110.0
     assert quotes[0].change_percent == 10.0
     assert quotes[0].provider == "marketstack"
+
+
+def test_map_eod_quote_ignores_zero_close_rows():
+    quote = map_eod_quote(
+        {"symbol": "META", "close": 0.0, "adj_close": 0.0, "date": "2026-06-04T00:00:00+0000"},
+        category="stocks",
+    )
+    assert quote is None
+
+    quote = map_eod_quote(
+        {"symbol": "META", "close": 0.0, "adj_close": 622.98, "date": "2026-06-03T00:00:00+0000"},
+        category="stocks",
+    )
+    assert quote is not None
+    assert quote.price == 622.98
+
+
+def test_map_eod_candles_skips_zero_close_bars():
+    rows = [
+        {"date": "2026-06-02T00:00:00+0000", "close": 597.63, "adj_close": 597.63},
+        {"date": "2026-06-03T00:00:00+0000", "close": 622.98, "adj_close": 622.98},
+        {"date": "2026-06-04T00:00:00+0000", "close": 0.0, "adj_close": 0.0},
+    ]
+    candles = map_eod_candles(rows)
+    assert len(candles) == 2
+    assert candles[-1].close == 622.98
+
+
+def test_map_eod_quotes_with_change_skips_zero_latest_bar():
+    rows = [
+        {"symbol": "META", "close": 0.0, "adj_close": 0.0, "date": "2026-06-04T00:00:00+0000"},
+        {"symbol": "META", "close": 622.98, "adj_close": 622.98, "date": "2026-06-03T00:00:00+0000"},
+        {"symbol": "META", "close": 597.63, "adj_close": 597.63, "date": "2026-06-02T00:00:00+0000"},
+    ]
+    quotes = map_eod_quotes_with_change(rows, category="stocks")
+    assert len(quotes) == 1
+    assert quotes[0].price == 622.98
+    assert quotes[0].previous_close == 597.63
 
 
 def test_map_exchange():

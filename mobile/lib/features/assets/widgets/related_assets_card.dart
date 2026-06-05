@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
+import 'package:rico_investidor/core/widgets/async_section_placeholder.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
 import 'package:rico_investidor/core/widgets/asset_card_header.dart';
 import 'package:rico_investidor/core/widgets/asset_logo.dart';
@@ -47,8 +48,18 @@ class RelatedAssetsCard extends StatelessWidget {
           );
         }
 
+        if (snapshot.hasError) {
+          return AsyncSectionPlaceholder(
+            title: title,
+            message: 'Não foi possível carregar ativos relacionados.',
+          );
+        }
+
         if (!snapshot.hasData || snapshot.data!.items.isEmpty) {
-          return const SizedBox.shrink();
+          return const AsyncSectionPlaceholder(
+            title: 'Ativos relacionados',
+            message: 'Nenhum ativo relacionado encontrado para este ticker.',
+          );
         }
 
         final response = snapshot.data!;

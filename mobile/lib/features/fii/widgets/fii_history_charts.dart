@@ -1,22 +1,30 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
+import 'package:rico_investidor/core/utils/annual_dividend_summary.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
+import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
 import 'package:rico_investidor/models/fii_models.dart';
 
 class FiiDistributionsChart extends StatefulWidget {
   const FiiDistributionsChart({
     super.key,
     required this.annualSummary,
+    this.payments = const [],
+    this.globalDividends = const [],
     this.title = 'Proventos por cota (anual)',
     this.valueFormatter = formatBrl,
     this.maxYears = 10,
+    this.perShareLabel = 'ação',
   });
 
   final List<FiiDistributionYear> annualSummary;
+  final List<FiiDistributionPayment> payments;
+  final List<GlobalStockDividendDto> globalDividends;
   final String title;
   final String Function(double value) valueFormatter;
   final int maxYears;
+  final String perShareLabel;
 
   @override
   State<FiiDistributionsChart> createState() => _FiiDistributionsChartState();
@@ -27,9 +35,14 @@ class _FiiDistributionsChartState extends State<FiiDistributionsChart> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.annualSummary.isEmpty) return const SizedBox.shrink();
+    final resolved = resolveAnnualDividendSummary(
+      annualSummary: widget.annualSummary,
+      payments: widget.payments,
+      globalDividends: widget.globalDividends,
+    );
+    if (resolved.isEmpty) return const SizedBox.shrink();
 
-    final sorted = List<FiiDistributionYear>.from(widget.annualSummary)
+    final sorted = List<FiiDistributionYear>.from(resolved)
       ..sort((a, b) => a.year.compareTo(b.year));
 
     final maxYears = widget.maxYears.clamp(4, 20);
@@ -39,9 +52,10 @@ class _FiiDistributionsChartState extends State<FiiDistributionsChart> {
     final maxValue = visible
         .map((row) => row.totalPerShare ?? 0)
         .fold(0.0, (current, value) => value > current ? value : current);
-    final chartMax = maxValue <= 0 ? 1.0 : maxValue * 1.18;
+    final chartMax = maxValue <= 0 ? 1.0 : maxValue * 1.28;
     final barWidth = visible.length > 10 ? 10.0 : visible.length > 7 ? 14.0 : 18.0;
     final groupsSpace = visible.length > 8 ? 8.0 : 14.0;
+    final labelFontSize = visible.length > 8 ? 8.0 : 10.0;
 
     final bars = <BarChartGroupData>[];
     for (var i = 0; i < visible.length; i++) {
@@ -86,40 +100,24 @@ class _FiiDistributionsChartState extends State<FiiDistributionsChart> {
                   ),
               ],
             ),
+            const SizedBox(height: 4),
+            Text(
+              'Total por ${widget.perShareLabel} no ano (soma dos pagamentos)',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                  ),
+            ),
             if (selected != null) ...[
               const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                decoration: BoxDecoration(
-                  color: AppColors.positive.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    Text('${selected.year}', style: Theme.of(context).textTheme.labelLarge),
-                    const Spacer(),
-                    Text(
-                      selected.totalPerShare != null
-                          ? widget.valueFormatter(selected.totalPerShare!)
-                          : '—',
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.positive,
-                          ),
-                    ),
-                  ],
-                ),
-              ),
-            ] else ...[
-              const SizedBox(height: 4),
-              Text(
-                'Toque na barra para ver o valor',
-                style: Theme.of(context).textTheme.bodySmall,
+              _YearDetailChip(
+                year: selected.year,
+                totalLabel: _formatBarValue(selected.totalPerShare),
+                payments: selected.payments,
               ),
             ],
             const SizedBox(height: 8),
             SizedBox(
-              height: 176,
+              height: 196,
               child: BarChart(
                 BarChartData(
                   alignment: BarChartAlignment.spaceAround,
@@ -138,9 +136,14 @@ class _FiiDistributionsChartState extends State<FiiDistributionsChart> {
                     touchTooltipData: BarTouchTooltipData(
                       getTooltipColor: (_) => Theme.of(context).colorScheme.inverseSurface,
                       getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                        final value = visible[groupIndex].totalPerShare;
+                        final row = visible[groupIndex];
+                        final value = row.totalPerShare;
+                        final payments = row.payments;
+                        final paymentsLine = payments != null && payments > 0
+                            ? '\n$payments pagamento${payments == 1 ? '' : 's'}'
+                            : '';
                         return BarTooltipItem(
-                          '${visible[groupIndex].year}\n${value != null ? widget.valueFormatter(value) : '—'}',
+                          '${row.year}\n${value != null ? widget.valueFormatter(value) : '—'}$paymentsLine',
                           TextStyle(
                             color: Theme.of(context).colorScheme.onInverseSurface,
                             fontWeight: FontWeight.w600,
@@ -152,8 +155,38 @@ class _FiiDistributionsChartState extends State<FiiDistributionsChart> {
                   ),
                   titlesData: FlTitlesData(
                     leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                     rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    topTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 30,
+                        getTitlesWidget: (value, meta) {
+                          final index = value.round();
+                          if ((value - index).abs() > 0.001) {
+                            return const SizedBox.shrink();
+                          }
+                          if (index < 0 || index >= visible.length) {
+                            return const SizedBox.shrink();
+                          }
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                _formatBarValue(visible[index].totalPerShare),
+                                textAlign: TextAlign.center,
+                                maxLines: 1,
+                                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                      fontWeight: FontWeight.w800,
+                                      color: AppColors.positive,
+                                      fontSize: labelFontSize,
+                                    ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
                     bottomTitles: AxisTitles(
                       sideTitles: SideTitles(
                         showTitles: true,
@@ -191,6 +224,54 @@ class _FiiDistributionsChartState extends State<FiiDistributionsChart> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  String _formatBarValue(double? value) {
+    if (value == null || value <= 0) return '—';
+    return widget.valueFormatter(value);
+  }
+}
+
+class _YearDetailChip extends StatelessWidget {
+  const _YearDetailChip({
+    required this.year,
+    required this.totalLabel,
+    this.payments,
+  });
+
+  final int year;
+  final String totalLabel;
+  final int? payments;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.positive.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Text('$year', style: Theme.of(context).textTheme.labelLarge),
+          if (payments != null && payments! > 0) ...[
+            const SizedBox(width: 8),
+            Text(
+              '$payments pagamento${payments == 1 ? '' : 's'}',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+          const Spacer(),
+          Text(
+            totalLabel,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.positive,
+                ),
+          ),
+        ],
       ),
     );
   }

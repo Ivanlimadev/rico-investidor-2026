@@ -54,9 +54,11 @@ class GlobalStockDividendsSection extends StatelessWidget {
           const SizedBox(height: 12),
           FiiDistributionsChart(
             annualSummary: annual,
+            globalDividends: dividends,
             title: 'Dividendos pagos por ano',
             valueFormatter: formatUsd,
             maxYears: 8,
+            perShareLabel: 'ação',
           ),
         ],
         if (summary.upcoming.isNotEmpty) ...[

@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
-import 'package:rico_investidor/core/config/api_config.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
 import 'package:rico_investidor/core/widgets/asset_card_header.dart';
 import 'package:rico_investidor/core/widgets/asset_logo.dart';
 import 'package:rico_investidor/core/widgets/asset_quick_actions.dart';
+import 'package:rico_investidor/core/utils/dividend_payment_mappers.dart';
+import 'package:rico_investidor/core/widgets/last_dividend_card.dart';
+import 'package:rico_investidor/core/widgets/what_if_investment_card.dart';
 import 'package:rico_investidor/features/fii/utils/fii_format.dart';
 import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
 import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
@@ -14,7 +16,6 @@ import 'package:rico_investidor/features/global_markets/screens/global_stock_com
 import 'package:rico_investidor/features/assets/models/related_assets.dart';
 import 'package:rico_investidor/features/assets/widgets/related_assets_card.dart';
 import 'package:rico_investidor/features/global_markets/widgets/global_stock_about_card.dart';
-import 'package:rico_investidor/models/market_category.dart';
 import 'package:rico_investidor/features/global_markets/widgets/global_stock_dividends_section.dart';
 import 'package:rico_investidor/features/global_markets/widgets/global_stock_fifty_two_week_card.dart';
 import 'package:rico_investidor/features/global_markets/widgets/global_stock_quote_chart.dart';
@@ -43,47 +44,32 @@ class GlobalStockDetailScreen extends StatefulWidget {
 
 class _GlobalStockDetailScreenState extends State<GlobalStockDetailScreen> {
   late Future<GlobalStockDetailDto> _future;
-  GlobalStockDetailDto? _extendedDetail;
   AssetItem? _actionAsset;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _future = _fetchDetail();
   }
 
-  void _load() {
-    _future = widget.repository
+  Future<GlobalStockDetailDto> _fetchDetail() {
+    return widget.repository
         .getDetail(
           widget.symbol,
           exchange: widget.exchange,
-          candleLimit: GlobalMarketRepository.defaultCandleLimit,
-          dividendLimit: GlobalMarketRepository.defaultDividendLimit,
+          candleLimit: GlobalMarketRepository.extendedCandleLimit,
+          dividendLimit: GlobalMarketRepository.extendedDividendLimit,
         )
         .then((detail) {
       if (mounted) setState(() => _actionAsset = detail.quote);
-      _loadExtendedDetail();
       return detail;
     });
-  }
-
-  Future<void> _loadExtendedDetail() async {
-    try {
-      final extended = await widget.repository.getDetail(
-        widget.symbol,
-        exchange: widget.exchange,
-        candleLimit: GlobalMarketRepository.extendedCandleLimit,
-        dividendLimit: GlobalMarketRepository.extendedDividendLimit,
-      );
-      if (!mounted) return;
-      setState(() => _extendedDetail = extended);
-    } catch (_) {}
   }
 
   void _retry() {
     setState(() {
       _actionAsset = null;
-      _load();
+      _future = _fetchDetail();
     });
   }
 
@@ -140,10 +126,9 @@ class _GlobalStockDetailScreenState extends State<GlobalStockDetailScreen> {
           }
 
           final detail = snapshot.data!;
-          final display = _extendedDetail ?? detail;
           final quote = detail.quote;
           final meta = detail.quoteMeta;
-          final dy = display.dividendsSummary.dividendYieldTtm ?? detail.fundamentals.dividendYield12m;
+          final dy = detail.dividendsSummary.dividendYieldTtm ?? detail.fundamentals.dividendYield12m;
           final positive = quote.changePercent >= 0;
           final changeColor = positive ? AppColors.positive : AppColors.negative;
 
@@ -161,25 +146,41 @@ class _GlobalStockDetailScreenState extends State<GlobalStockDetailScreen> {
               ),
               const SizedBox(height: 12),
               StockMarketStatsCard(
-                stats: display.marketStats,
+                stats: detail.marketStats,
                 useUsd: true,
                 title: 'Pregão e indicadores',
                 hideValuationMetrics: true,
                 quotePrice: meta.price,
                 quoteAdjClose: meta.adjClose,
               ),
-              if (display.marketStats.fiftyTwoWeekLow != null &&
-                  display.marketStats.fiftyTwoWeekHigh != null) ...[
+              if (detail.marketStats.fiftyTwoWeekLow != null &&
+                  detail.marketStats.fiftyTwoWeekHigh != null) ...[
                 const SizedBox(height: 12),
                 GlobalStockFiftyTwoWeekCard(
-                  stats: display.marketStats,
+                  stats: detail.marketStats,
                   currentPrice: quote.price,
-                  title: display.marketStats.priceRangeLabel ?? 'Faixa de preços',
+                  title: detail.marketStats.priceRangeLabel ?? 'Faixa de preços',
                 ),
               ],
               if (detail.returns.any((r) => r.returnPct != null)) ...[
                 const SizedBox(height: 12),
                 GlobalStockReturnsCard(returns: detail.returns),
+              ],
+              if (detail.dividends.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                LastDividendCard.global(
+                  dividends: detail.dividends,
+                  dividendYield12m: dy,
+                ),
+              ],
+              if (quote.price > 0) ...[
+                const SizedBox(height: 12),
+                WhatIfInvestmentCard(
+                  currentPrice: quote.price,
+                  candles: candleBarsFromGlobal(detail.candles),
+                  payments: paymentsFromGlobalDividends(detail.dividends),
+                  currency: WhatIfInvestmentCurrency.usd,
+                ),
               ],
               const SizedBox(height: 12),
               GlobalStockFundamentalsCard(fundamentals: detail.fundamentals),
@@ -193,20 +194,20 @@ class _GlobalStockDetailScreenState extends State<GlobalStockDetailScreen> {
                 ),
               ],
               const SizedBox(height: 16),
-              GlobalStockQuoteChart(candles: display.candles),
-              if (display.dividends.isNotEmpty ||
-                  display.dividendsSummary.ttmPerShare != null ||
-                  display.dividendsSummary.nextDividend != null) ...[
+              GlobalStockQuoteChart(candles: detail.candles),
+              if (detail.dividends.isNotEmpty ||
+                  detail.dividendsSummary.ttmPerShare != null ||
+                  detail.dividendsSummary.nextDividend != null) ...[
                 const SizedBox(height: 16),
                 GlobalStockDividendsSection(
-                  summary: display.dividendsSummary,
-                  dividends: display.dividends,
-                  total: display.dividendsTotal,
+                  summary: detail.dividendsSummary,
+                  dividends: detail.dividends,
+                  total: detail.dividendsTotal,
                 ),
               ],
-              if (display.splits.isNotEmpty) ...[
+              if (detail.splits.isNotEmpty) ...[
                 const SizedBox(height: 12),
-                GlobalStockSplitsCard(splits: display.splits, total: display.splitsTotal),
+                GlobalStockSplitsCard(splits: detail.splits, total: detail.splitsTotal),
               ],
               const SizedBox(height: 12),
               GlobalStockAboutCard(company: detail.company),
@@ -222,10 +223,9 @@ class _GlobalStockDetailScreenState extends State<GlobalStockDetailScreen> {
                 child: ListTile(
                   leading: const Icon(Icons.cloud_outlined),
                   title: const Text('Fonte de dados'),
-                  subtitle: Text('Marketstack · ${detail.plan.toUpperCase()} · ${detail.dataMode.toUpperCase()}'),
-                  trailing: Text(
-                    ApiConfig.baseUrl.replaceFirst('http://', '').replaceFirst('https://', ''),
-                    style: Theme.of(context).textTheme.labelSmall,
+                  subtitle: Text(
+                    'Cotações via backend · Marketstack ${detail.plan.toUpperCase()} · '
+                    '${detail.dataMode.toUpperCase()}',
                   ),
                 ),
               ),

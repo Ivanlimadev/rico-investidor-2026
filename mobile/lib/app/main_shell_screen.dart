@@ -5,6 +5,7 @@ import 'package:rico_investidor/app/tab_root_navigator.dart';
 import 'package:rico_investidor/features/community/community_tab_screen.dart';
 import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/home/data/home_repository.dart';
+import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/finances/finances_tab_screen.dart';
 import 'package:rico_investidor/features/home/home_screen.dart';
@@ -35,6 +36,7 @@ class MainShellScreen extends StatefulWidget {
     required this.homeRepository,
     required this.fiiRepository,
     required this.quoteRepository,
+    required this.globalMarketRepository,
     required this.isDarkMode,
     required this.onToggleTheme,
     required this.preferredMarket,
@@ -51,6 +53,7 @@ class MainShellScreen extends StatefulWidget {
   final HomeRepository homeRepository;
   final FiiRepository fiiRepository;
   final QuoteRepository quoteRepository;
+  final GlobalMarketRepository globalMarketRepository;
   final bool isDarkMode;
   final VoidCallback onToggleTheme;
   final MarketPreference preferredMarket;
@@ -191,6 +194,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
                 onPortfolioChanged: widget.onPortfolioChanged,
                 fiiRepository: widget.fiiRepository,
                 quoteRepository: widget.quoteRepository,
+                globalMarketRepository: widget.globalMarketRepository,
                 isDarkMode: widget.isDarkMode,
                 onToggleTheme: widget.onToggleTheme,
                 onLogin: widget.onLogin,

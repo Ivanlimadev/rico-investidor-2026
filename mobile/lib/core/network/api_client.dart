@@ -66,10 +66,12 @@ class ApiClient {
     String path, {
     Map<String, String>? query,
     required T Function(Map<String, dynamic>) fromJson,
+    Duration? timeout,
   }) async {
     return _execute(
       path: path,
       fromJson: fromJson,
+      timeout: timeout ?? _timeout,
       send: () => _client.get(uri(path, query), headers: _headers()),
     );
   }
@@ -83,10 +85,11 @@ class ApiClient {
     required String path,
     required T Function(Map<String, dynamic>) fromJson,
     required Future<http.Response> Function() send,
+    Duration timeout = _timeout,
     bool unauthorizedRetried = false,
     bool rateLimitRetried = false,
   }) async {
-    final response = await send().timeout(_timeout);
+    final response = await send().timeout(timeout);
 
     if (response.statusCode == 401 && !unauthorizedRetried && _shouldRetryUnauthorized(path)) {
       try {
@@ -98,6 +101,7 @@ class ApiClient {
         path: path,
         fromJson: fromJson,
         send: send,
+        timeout: timeout,
         unauthorizedRetried: true,
         rateLimitRetried: rateLimitRetried,
       );
@@ -109,6 +113,7 @@ class ApiClient {
         path: path,
         fromJson: fromJson,
         send: send,
+        timeout: timeout,
         unauthorizedRetried: unauthorizedRetried,
         rateLimitRetried: true,
       );

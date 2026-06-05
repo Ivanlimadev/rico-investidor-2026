@@ -5,6 +5,8 @@ import 'package:rico_investidor/core/widgets/asset_card_header.dart';
 import 'package:rico_investidor/core/widgets/asset_quick_actions.dart';
 import 'package:rico_investidor/features/treasury/data/treasury_repository.dart';
 import 'package:rico_investidor/features/treasury/models/treasury_models.dart';
+import 'package:rico_investidor/core/utils/asset_candle_mappers.dart';
+import 'package:rico_investidor/core/widgets/what_if_investment_card.dart';
 import 'package:rico_investidor/features/treasury/widgets/treasury_history_chart.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 
@@ -121,6 +123,14 @@ class _TreasuryDetailScreenState extends State<TreasuryDetailScreen> {
               ],
               const SizedBox(height: 16),
               _QuoteStatsGrid(bond: bond, rateUnit: rateUnit),
+              if (bond.displayPrice != null && bond.displayPrice! > 0) ...[
+                const SizedBox(height: 12),
+                WhatIfInvestmentCard(
+                  currentPrice: bond.displayPrice,
+                  history: historyFromTreasury(history),
+                  unitLabel: 'título',
+                ),
+              ],
               const SizedBox(height: 16),
               TreasuryHistoryChart(history: history),
               if (bond.rateInfo?.description != null) ...[

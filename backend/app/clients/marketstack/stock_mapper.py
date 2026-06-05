@@ -29,6 +29,17 @@ def _eod_session_close(item: dict) -> float | None:
     return _safe_float(item.get("close") or item.get("last"))
 
 
+def _effective_eod_close(item: dict) -> float | None:
+    """Fechamento utilizável: ignora zeros da API e cai para adj_close."""
+    close = _eod_session_close(item)
+    if close is not None and close > 0:
+        return close
+    adj = _safe_float(item.get("adj_close"))
+    if adj is not None and adj > 0:
+        return adj
+    return None
+
+
 def _eod_session_open(item: dict) -> float | None:
     return _safe_float(item.get("open"))
 
@@ -139,9 +150,7 @@ def map_eod_quote(
     name: str | None = None,
 ) -> MarketQuote | None:
     symbol = str(item.get("symbol") or "").upper().strip()
-    close = _eod_session_close(item)
-    if close is None:
-        close = _safe_float(item.get("adj_close"))
+    close = _effective_eod_close(item)
     if not symbol or close is None:
         return None
 
@@ -242,11 +251,20 @@ def map_eod_quotes_with_change(
     quotes: list[MarketQuote] = []
     for symbol, rows in grouped.items():
         rows.sort(key=lambda row: row[0] or datetime.min.replace(tzinfo=UTC), reverse=True)
-        latest = rows[0][1]
+        latest_item = None
         previous_close = None
-        if len(rows) > 1:
-            previous_close = _eod_session_close(rows[1][1]) or _safe_float(rows[1][1].get("adj_close"))
-        quote = map_eod_quote(latest, category=category, previous_close=previous_close)
+        for index, (_, item) in enumerate(rows):
+            if _effective_eod_close(item) is None:
+                continue
+            if latest_item is None:
+                latest_item = item
+                continue
+            if previous_close is None:
+                previous_close = _effective_eod_close(item)
+                break
+        if latest_item is None:
+            continue
+        quote = map_eod_quote(latest_item, category=category, previous_close=previous_close)
         if quote:
             quotes.append(quote)
     return quotes
@@ -263,7 +281,7 @@ def sparklines_from_eod_items(
         symbol = str(item.get("symbol") or "").upper().strip()
         if not symbol:
             continue
-        close = _eod_session_close(item) or _safe_float(item.get("adj_close"))
+        close = _effective_eod_close(item)
         if close is None:
             continue
         grouped.setdefault(symbol, []).append((_parse_date(item.get("date")), close))
@@ -283,9 +301,7 @@ def sparklines_from_eod_items(
 def map_eod_candles(items: Iterable[dict]) -> list[GlobalStockCandle]:
     candles: list[GlobalStockCandle] = []
     for item in items:
-        close = _eod_session_close(item)
-        if close is None:
-            close = _safe_float(item.get("adj_close"))
+        close = _effective_eod_close(item)
         if close is None:
             continue
         parsed = _parse_date(item.get("date"))

@@ -111,11 +111,35 @@ class StockCorporateAction(BaseModel):
     ex_date: str | None = None
 
 
+class StockDividendEvent(BaseModel):
+    label: str | None = None
+    com_date: str | None = None
+    ex_date: str | None = None
+    payment_date: str | None = None
+    value_per_share: float | None = None
+    is_projected: bool = False
+
+
+class StockDividendsSummary(BaseModel):
+    dividend_yield_display: float | None = None
+    ttm_per_share_display: float | None = None
+    dividend_yield_avg_5y: float | None = None
+    dividend_yield_avg_10y: float | None = None
+    frequency_label: str | None = None
+    avg_amount_12m: float | None = None
+    payments_12m: int | None = None
+    next_dividend: StockDividendEvent | None = None
+    upcoming: list[StockDividendEvent] = Field(default_factory=list)
+
+
 class StockDividendsResponse(BaseModel):
     ticker: str
+    name: str | None = None
     count: int
     total_payments: int | None = None
     ttm_per_share: float | None = None
+    dividend_yield_ttm: float | None = None
+    summary: StockDividendsSummary = Field(default_factory=StockDividendsSummary)
     annual_summary: list[FiiDistributionYearSummary] = Field(default_factory=list)
     payments: list[FiiDistributionPayment] = Field(default_factory=list)
     corporate_actions: list[StockCorporateAction] = Field(default_factory=list)
@@ -194,6 +218,14 @@ class StockFinancialsResponse(BaseModel):
     value_added: list[FinancialPeriod] = Field(default_factory=list)
     provider: str = "brapi"
 
+    def is_empty(self) -> bool:
+        return not (
+            self.income_statement
+            or self.balance_sheet
+            or self.cash_flow
+            or self.value_added
+        )
+
 
 class PerformancePoint(BaseModel):
     trade_date: str
@@ -219,6 +251,8 @@ class BrazilMacroResponse(BaseModel):
     selic_as_of: str | None = None
     ipca_12m: float | None = None
     ipca_as_of: str | None = None
+    cdi: float | None = None
+    cdi_as_of: str | None = None
     provider: str = "brapi"
 
 
@@ -238,11 +272,32 @@ class DictionaryResponse(BaseModel):
     provider: str = "brapi"
 
 
+class StockCompareReturnPeriod(BaseModel):
+    label: str
+    return_pct: float | None = None
+
+
+class StockCompareDividendsSnapshot(BaseModel):
+    dividend_yield_display: float | None = None
+    dividend_yield_ttm: float | None = None
+    ttm_per_share: float | None = None
+    frequency_label: str | None = None
+    payments_12m: int | None = None
+    next_com_date: str | None = None
+    next_payment_date: str | None = None
+    next_amount: float | None = None
+    provider: str | None = None
+
+
 class StockCompareItem(BaseModel):
     quote: MarketQuote
     profile: StockProfile
     fundamentals: StockFundamentals
     market_stats: StockMarketStats
+    dividends: StockCompareDividendsSnapshot = Field(
+        default_factory=StockCompareDividendsSnapshot
+    )
+    returns: list[StockCompareReturnPeriod] = Field(default_factory=list)
     provider: str = "brapi"
 
 

@@ -4,6 +4,7 @@ import asyncio
 
 from app.clients.brapi.models import MarketQuote, MarketQuoteBatchResponse, StockCompareItem, StockCompareResponse
 from app.clients.fmp.client import FmpClient
+from app.clients.fmp.fundamentals_mapper import map_fundamentals_from_fmp
 from app.clients.fmp.profile_mapper import fmp_company_updates, fmp_market_cap
 from app.clients.marketstack.client import MarketstackClient
 from app.clients.marketstack.stock_mapper import with_us_logo
@@ -41,6 +42,8 @@ from app.domain.market_heatmap.presets import (
     MAX_HEATMAP_LIMIT,
     MIN_US_STOCK_HEATMAP_VOLUME,
     US_HEATMAP_EOD_BATCH_SIZE,
+    US_HEATMAP_FETCH_COUNT,
+    US_HEATMAP_LOOKBACK_DAYS,
     US_NASDAQ_HEATMAP_CANDIDATES,
     US_PRIMARY_EXCHANGE_MIC,
 )
@@ -85,7 +88,8 @@ class GlobalMarketService:
         )
         long_ttl = quote_ttl * 24
         self._featured_cache: StaleTtlCache[MarketQuoteBatchResponse] = StaleTtlCache(quote_ttl)
-        self._heatmap_cache: StaleTtlCache[MarketQuoteBatchResponse] = StaleTtlCache(quote_ttl)
+        heatmap_ttl = max(quote_ttl * 2, 600)
+        self._heatmap_cache: StaleTtlCache[MarketQuoteBatchResponse] = StaleTtlCache(heatmap_ttl)
         self._explore_cache: StaleTtlCache[GlobalStockExploreResponse] = StaleTtlCache(quote_ttl)
         self._candles_cache: StaleTtlCache[GlobalStockCandlesResponse] = StaleTtlCache(quote_ttl * 2)
         self._exchanges_cache: TtlCache[WorldExchangesResponse] = TtlCache(long_ttl)
@@ -101,6 +105,16 @@ class GlobalMarketService:
         self._fmp_profile_cache: TtlCache[dict] = TtlCache(settings.fmp_profile_cache_ttl_seconds)
         self._fmp_profile_disk = DiskJsonCache(
             settings.fmp_cache_dir / "profiles",
+            ttl_seconds=settings.fmp_profile_cache_ttl_seconds,
+        )
+        self._fmp_ratios_cache: TtlCache[dict] = TtlCache(settings.fmp_profile_cache_ttl_seconds)
+        self._fmp_ratios_disk = DiskJsonCache(
+            settings.fmp_cache_dir / "ratios_ttm",
+            ttl_seconds=settings.fmp_profile_cache_ttl_seconds,
+        )
+        self._fmp_metrics_cache: TtlCache[dict] = TtlCache(settings.fmp_profile_cache_ttl_seconds)
+        self._fmp_metrics_disk = DiskJsonCache(
+            settings.fmp_cache_dir / "key_metrics_ttm",
             ttl_seconds=settings.fmp_profile_cache_ttl_seconds,
         )
         self._fmp_negative = NegativeCache(settings.fmp_negative_cache_ttl_seconds)
@@ -190,6 +204,70 @@ class GlobalMarketService:
                 return stale
             raise
 
+    async def _us_heatmap_quotes_from_latest(
+        self,
+        symbols: list[str],
+        *,
+        exchange: str,
+    ) -> list[MarketQuote]:
+        """Fallback rápido — uma chamada ``eod/latest`` (sem variação se faltar histórico)."""
+        from app.clients.marketstack.stock_mapper import map_eod_quote
+
+        rows = await self._safe_upstream(
+            self._client.get_eod_latest(symbols, exchange=exchange),
+            default=[],
+        )
+        quotes: list[MarketQuote] = []
+        for row in rows or []:
+            quote = map_eod_quote(row, category="stocks")
+            if quote is not None:
+                quotes.append(quote.model_copy(update={"exchange": exchange}))
+        return quotes
+
+    async def _build_us_heatmap_items(
+        self,
+        *,
+        exchange: str,
+        safe_limit: int,
+    ) -> list[MarketQuote]:
+        from app.clients.marketstack.stock_mapper import map_eod_quotes_with_change
+
+        fetch_symbols = list(US_NASDAQ_HEATMAP_CANDIDATES[:US_HEATMAP_FETCH_COUNT])
+        eod_rows = await self._fetch_eod_rows(
+            fetch_symbols,
+            exchange=exchange,
+            chunk_size=US_HEATMAP_EOD_BATCH_SIZE,
+            lookback_days=US_HEATMAP_LOOKBACK_DAYS,
+        )
+        quotes = map_eod_quotes_with_change(eod_rows, category="stocks")
+        if not quotes:
+            fallback_symbols = list(FEATURED_US_TICKERS)[:US_HEATMAP_FETCH_COUNT]
+            eod_rows = await self._fetch_eod_rows(
+                fallback_symbols,
+                exchange=exchange,
+                chunk_size=len(fallback_symbols),
+                lookback_days=US_HEATMAP_LOOKBACK_DAYS,
+            )
+            quotes = map_eod_quotes_with_change(eod_rows, category="stocks")
+        if not quotes:
+            quotes = await self._us_heatmap_quotes_from_latest(
+                fetch_symbols,
+                exchange=exchange,
+            )
+
+        ranked = sorted(quotes, key=lambda quote: quote.volume or 0.0, reverse=True)
+        items = [
+            self._with_logo(quote.model_copy(update={"exchange": exchange}))
+            for quote in ranked
+            if (quote.volume or 0) >= MIN_US_STOCK_HEATMAP_VOLUME
+        ][:safe_limit]
+        if not items and ranked:
+            items = [
+                self._with_logo(quote.model_copy(update={"exchange": exchange}))
+                for quote in ranked[:safe_limit]
+            ]
+        return items
+
     async def get_us_heatmap(
         self,
         *,
@@ -205,49 +283,10 @@ class GlobalMarketService:
             return cached
 
         try:
-            from app.clients.marketstack.stock_mapper import map_eod_quotes_with_change
-
-            if normalized_exchange != US_PRIMARY_EXCHANGE_MIC:
-                rows, _pagination = await self._client.get_exchange_eod(
-                    normalized_exchange,
-                    limit=100,
-                    offset=0,
-                )
-                quotes = map_eod_quotes_with_change(rows, category="stocks")
-            else:
-                symbols = list(US_NASDAQ_HEATMAP_CANDIDATES)
-                eod_rows = await self._fetch_eod_rows(
-                    symbols,
-                    exchange=normalized_exchange,
-                    chunk_size=US_HEATMAP_EOD_BATCH_SIZE,
-                )
-                quotes = map_eod_quotes_with_change(eod_rows, category="stocks")
-                if not quotes:
-                    featured = await self._safe_upstream(self.list_featured_us(), default=None)
-                    if featured is not None:
-                        quotes = list(featured.items)
-
-            ranked = sorted(
-                quotes,
-                key=lambda quote: quote.volume or 0.0,
-                reverse=True,
+            items = await self._build_us_heatmap_items(
+                exchange=normalized_exchange,
+                safe_limit=safe_limit,
             )
-            items = [
-                self._with_logo(
-                    quote.model_copy(update={"exchange": normalized_exchange}),
-                )
-                for quote in ranked
-                if (quote.volume or 0) >= MIN_US_STOCK_HEATMAP_VOLUME
-            ][:safe_limit]
-
-            if not items and ranked:
-                items = [
-                    self._with_logo(
-                        quote.model_copy(update={"exchange": normalized_exchange}),
-                    )
-                    for quote in ranked[:safe_limit]
-                ]
-
             result = MarketQuoteBatchResponse(
                 items=items,
                 count=len(items),
@@ -256,11 +295,11 @@ class GlobalMarketService:
             if items:
                 self._heatmap_cache.set(cache_key, result)
             return result
-        except UpstreamError:
+        except Exception:
             stale = self._heatmap_cache.get_last_good(cache_key)
             if stale is not None:
                 return stale
-            raise
+            return MarketQuoteBatchResponse(items=[], count=0, provider="marketstack")
 
     async def explore(
         self,
@@ -626,6 +665,105 @@ class GlobalMarketService:
         self._fmp_negative.mark(cache_key)
         return None
 
+    async def _fetch_fmp_ratios_ttm(self, symbol: str) -> dict | None:
+        cache_key = symbol.upper().strip()
+        if not cache_key:
+            return None
+
+        cached = self._fmp_ratios_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        on_disk = self._fmp_ratios_disk.get(cache_key)
+        if on_disk is not None:
+            self._fmp_ratios_cache.set(cache_key, on_disk)
+            return on_disk
+
+        if self._fmp_negative.is_blocked(f"ratios:{cache_key}"):
+            return None
+        if not self._fmp.configured:
+            return None
+        if not self._fmp_budget.allow():
+            return None
+
+        try:
+            ratios = await self._fmp.get_ratios_ttm(symbol)
+        except Exception:
+            self._fmp_budget.record()
+            return None
+
+        self._fmp_budget.record()
+
+        if isinstance(ratios, dict) and ratios:
+            self._fmp_ratios_cache.set(cache_key, ratios)
+            self._fmp_ratios_disk.set(cache_key, ratios)
+            return ratios
+
+        self._fmp_negative.mark(f"ratios:{cache_key}")
+        return None
+
+    async def _fetch_fmp_key_metrics_ttm(self, symbol: str) -> dict | None:
+        cache_key = symbol.upper().strip()
+        if not cache_key:
+            return None
+
+        cached = self._fmp_metrics_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        on_disk = self._fmp_metrics_disk.get(cache_key)
+        if on_disk is not None:
+            self._fmp_metrics_cache.set(cache_key, on_disk)
+            return on_disk
+
+        if self._fmp_negative.is_blocked(f"metrics:{cache_key}"):
+            return None
+        if not self._fmp.configured:
+            return None
+        if not self._fmp_budget.allow():
+            return None
+
+        try:
+            metrics = await self._fmp.get_key_metrics_ttm(symbol)
+        except Exception:
+            self._fmp_budget.record()
+            return None
+
+        self._fmp_budget.record()
+
+        if isinstance(metrics, dict) and metrics:
+            self._fmp_metrics_cache.set(cache_key, metrics)
+            self._fmp_metrics_disk.set(cache_key, metrics)
+            return metrics
+
+        self._fmp_negative.mark(f"metrics:{cache_key}")
+        return None
+
+    async def _enrich_fundamentals_with_fmp(
+        self,
+        fundamentals,
+        *,
+        symbol: str,
+        fmp_profile: dict | None,
+        price: float | None,
+        marketstack_has_ratios: bool,
+    ):
+        if marketstack_has_ratios:
+            return fundamentals
+        if not self._fmp.configured:
+            return fundamentals
+        ratios, metrics = await asyncio.gather(
+            self._fetch_fmp_ratios_ttm(symbol),
+            self._fetch_fmp_key_metrics_ttm(symbol),
+        )
+        return map_fundamentals_from_fmp(
+            fundamentals,
+            profile=fmp_profile,
+            ratios_ttm=ratios,
+            key_metrics_ttm=metrics,
+            price=price,
+        )
+
     async def get_stock_detail(
         self,
         symbol: str,
@@ -798,6 +936,20 @@ class GlobalMarketService:
             fundamentals = merge_fundamentals(
                 tickerinfo=tickerinfo,
                 dividends_summary=dividends_summary,
+            )
+            ms_has_ratios = bool(
+                tickerinfo
+                and (
+                    fundamentals.price_earnings is not None
+                    or fundamentals.return_on_equity is not None
+                )
+            )
+            fundamentals = await self._enrich_fundamentals_with_fmp(
+                fundamentals,
+                symbol=normalized,
+                fmp_profile=fmp_profile if isinstance(fmp_profile, dict) else None,
+                price=quote.price,
+                marketstack_has_ratios=ms_has_ratios,
             )
             market_stats = build_market_stats_from_quote(
                 open=quote.open,
@@ -1160,17 +1312,27 @@ class GlobalMarketService:
     async def _fetch_compare_item(self, ticker: str) -> StockCompareItem:
         detail = await self.get_stock_detail(
             ticker,
-            candle_limit=90,
-            dividend_limit=24,
+            candle_limit=280,
+            dividend_limit=120,
             split_limit=12,
             include_extras=True,
         )
         profile = to_stock_profile(ticker=detail.ticker, company=detail.company)
+        from app.domain.quotes.compare_enrichment import (
+            dividends_snapshot_from_global,
+            return_periods_from_global,
+        )
+
         return StockCompareItem(
             quote=detail.quote,
             profile=profile.model_copy(update={"logo_url": detail.quote.logo_url}),
             fundamentals=detail.fundamentals,
             market_stats=detail.market_stats,
+            dividends=dividends_snapshot_from_global(
+                detail.dividends_summary,
+                provider="marketstack",
+            ),
+            returns=return_periods_from_global(detail.returns),
             provider="marketstack",
         )
 

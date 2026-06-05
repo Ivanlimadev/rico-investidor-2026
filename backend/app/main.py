@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -17,6 +18,9 @@ from app.core.rate_limit import RateLimitMiddleware
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     validate_production_settings()
+    from app.services.dividend_calendar_service import dividend_calendar_service
+
+    asyncio.create_task(dividend_calendar_service.warm_br_snapshot())
     yield
     await close_http_client()
 

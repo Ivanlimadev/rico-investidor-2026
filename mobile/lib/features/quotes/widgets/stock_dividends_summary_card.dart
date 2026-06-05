@@ -17,6 +17,8 @@ class StockDividendsSummaryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     if (dividends.payments.isEmpty) return const SizedBox.shrink();
 
+    final dy = dividendYield12m ?? dividends.dividendYieldTtm;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -29,10 +31,10 @@ class StockDividendsSummaryCard extends StatelessWidget {
               spacing: 10,
               runSpacing: 10,
               children: [
-                if (dividendYield12m != null)
+                if (dy != null)
                   _MetricChip(
                     label: 'DY 12m',
-                    value: '${dividendYield12m!.toStringAsFixed(2)}%',
+                    value: '${dy.toStringAsFixed(2)}%',
                     highlight: true,
                   ),
                 if (dividends.ttmPerShare != null)

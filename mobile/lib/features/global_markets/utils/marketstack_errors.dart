@@ -12,5 +12,6 @@ String marketstackErrorMessage(Object? error, {required String fallback}) {
     return 'Cota mensal da Marketstack esgotada. '
         'Aguarde a renovação do plano ou reduza o uso por enquanto.';
   }
+  // Nunca repassa mensagens brutas de rede/exceção para a UI.
   return fallback;
 }

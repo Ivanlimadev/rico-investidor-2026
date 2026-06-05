@@ -201,7 +201,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              'Os proventos serão calculados automaticamente com base no histórico da API.',
+              'Os proventos serão calculados com histórico Bolsai (B3), via API.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
                   ),

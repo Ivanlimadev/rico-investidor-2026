@@ -1,5 +1,6 @@
 import 'package:rico_investidor/features/global_markets/widgets/market_hub_section_grid.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
+import 'package:rico_investidor/features/quotes/models/stock_screener.dart';
 import 'package:rico_investidor/features/quotes/utils/stock_screener_presets.dart';
 
 /// Carrega as seções do hub brasileiro (Brapi): principais ativos, altas,
@@ -17,17 +18,17 @@ Future<List<MarketHubSectionData>> loadBrazilianHubSections(
     sortBy: 'volume',
   );
 
-  final results = await Future.wait([
+  final results = await Future.wait<Object?>([
     quoteRepository.screener(volumePreset.toQuery(limit: 35, page: 1)),
     quoteRepository.screener(gainersPreset.toQuery(limit: 8, page: 1)),
     quoteRepository.screener(losersPreset.toQuery(limit: 8, page: 1)),
     quoteRepository.screener(techPreset.toQuery(limit: 6, page: 1)),
-  ]);
+  ], eagerError: false);
 
-  final featured = results[0];
-  final gainers = results[1];
-  final losers = results[2];
-  final tech = results[3];
+  final featured = _screenerOrEmpty(results[0]);
+  final gainers = _screenerOrEmpty(results[1]);
+  final losers = _screenerOrEmpty(results[2]);
+  final tech = _screenerOrEmpty(results[3]);
 
   return [
     MarketHubSectionData(
@@ -52,4 +53,9 @@ Future<List<MarketHubSectionData>> loadBrazilianHubSections(
         assets: tech.items.map((e) => e.toAssetItem()).toList(),
       ),
   ].where((section) => section.assets.isNotEmpty).toList();
+}
+
+StockScreenerResponseDto _screenerOrEmpty(Object? value) {
+  if (value is StockScreenerResponseDto) return value;
+  return const StockScreenerResponseDto(items: [], count: 0, page: 1, totalPages: 1);
 }

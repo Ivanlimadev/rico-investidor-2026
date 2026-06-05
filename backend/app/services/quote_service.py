@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 from app.clients.brapi.client import BrapiClient
 from app.clients.brapi.stock_mapper import STOCK_DETAIL_MODULES, map_enriched_market_quote
 from app.clients.brapi.models import (
@@ -5,15 +7,19 @@ from app.clients.brapi.models import (
     MarketQuoteBatchResponse,
     MarketQuoteListResponse,
     StockDividendsResponse,
+    StockFundamentals,
+    StockMarketStats,
+    StockProfile,
     StockQuoteDetailResponse,
     StockScreenerResponse,
     StockFinancialsResponse,
     StockFundamentalHistoryResponse,
+    StockCompareItem,
     StockCompareResponse,
     StockPerformanceResponse,
     StockCatalogResponse,
 )
-from app.domain.fii.models import FiiCandlesResponse
+from app.domain.fii.models import FiiCandleBar, FiiCandlesResponse
 from app.config import settings
 from app.core.cache import TtlCache
 from app.core.exceptions import UpstreamError
@@ -30,7 +36,40 @@ from app.domain.market_heatmap.presets import (
     MAX_HEATMAP_LIMIT,
     MIN_BR_STOCK_HEATMAP_VOLUME,
 )
+from app.clients.bolsai.fundamentals_mapper import (
+    fundamentals_updates_from_bolsai,
+    merge_bolsai_market_stats,
+)
+from app.clients.bolsai.history_mapper import map_bolsai_fundamental_history, map_bolsai_stock_candles
+from app.domain.quotes.compare_enrichment import merge_bolsai_fundamentals_for_ticker
+import asyncio
+
+from app.domain.quotes.hybrid_br_sources import (
+    hybrid_provider_label,
+    prefer_bolsai_candles,
+    prefer_bolsai_screener,
+)
 from app.providers.registry import AssetClass, DataProvider, provider_for
+from app.services.br_proventos_service import br_proventos_service
+
+
+@dataclass(frozen=True)
+class _DetailFastBundle:
+    quote: MarketQuote
+    market_stats: StockMarketStats
+    profile: StockProfile
+    fundamentals: StockFundamentals
+    candles: tuple[FiiCandleBar, ...]
+
+
+@dataclass(frozen=True)
+class _DetailSlowBundle:
+    dividends: StockDividendsResponse
+    fundamentals: StockFundamentals
+    market_stats: StockMarketStats
+    profile: StockProfile
+    quote_name: str | None
+    provider: str
 
 
 class QuoteService:
@@ -44,6 +83,12 @@ class QuoteService:
         )
         self._detail_cache: TtlCache[StockQuoteDetailResponse] = TtlCache(
             settings.quote_cache_ttl_seconds
+        )
+        self._detail_fast_cache: TtlCache[_DetailFastBundle] = TtlCache(
+            settings.quote_cache_ttl_seconds,
+        )
+        self._detail_slow_cache: TtlCache[_DetailSlowBundle] = TtlCache(
+            settings.bolsai_ticker_cache_ttl_seconds,
         )
         self._candles_cache: TtlCache[FiiCandlesResponse] = TtlCache(
             settings.quote_cache_ttl_seconds
@@ -343,7 +388,8 @@ class QuoteService:
         return result.model_copy(update={"items": items})
 
     async def featured_stocks(self) -> MarketQuoteBatchResponse:
-        cached = self._featured_cache.get("featured:v2")
+        cache_tag = "featured:v3:bolsai" if br_proventos_service.uses_bolsai else "featured:v3"
+        cached = self._featured_cache.get(cache_tag)
         if cached:
             return cached
 
@@ -363,8 +409,9 @@ class QuoteService:
         by_symbol = {item.symbol: item for item in items}
         ordered = [by_symbol[ticker] for ticker in FEATURED_STOCK_TICKERS if ticker in by_symbol]
         ordered = await self._attach_brapi_sparklines(ordered)
+        ordered = await self._safe_attach_bolsai_dividend_yields(ordered)
         result = MarketQuoteBatchResponse(items=ordered, count=len(ordered))
-        self._featured_cache.set("featured:v2", result)
+        self._featured_cache.set(cache_tag, result)
         return result
 
     async def get_stock_detail(
@@ -375,7 +422,25 @@ class QuoteService:
         dividend_limit: int = 120,
     ) -> StockQuoteDetailResponse:
         normalized = ticker.upper().strip()
-        cache_key = f"detail:{normalized}:{candle_limit}:{dividend_limit}"
+        if br_proventos_service.uses_bolsai:
+            fast = await self._load_detail_fast_bundle(
+                normalized,
+                candle_limit=candle_limit,
+                dividend_limit=dividend_limit,
+            )
+            slow = await self._load_detail_slow_bundle(
+                normalized,
+                dividend_limit=dividend_limit,
+                fundamentals_base=fast.fundamentals,
+                market_stats_base=fast.market_stats,
+                profile_base=fast.profile,
+            )
+            result = self._merge_detail_bundles(fast, slow)
+            self._quote_cache.set(normalized, result.quote)
+            return result
+
+        div_source = "brapi"
+        cache_key = f"detail:{normalized}:{candle_limit}:{dividend_limit}:{div_source}"
         cached = self._detail_cache.get(cache_key)
         if cached:
             return cached
@@ -384,10 +449,148 @@ class QuoteService:
             normalized,
             candle_limit=candle_limit,
             dividend_limit=dividend_limit,
+            include_dividends=True,
+        )
+        dividends = await br_proventos_service.get_stock_dividends(
+            normalized,
+            limit=dividend_limit,
+        )
+        dividends = br_proventos_service.enrich_dividends_with_summary(
+            dividends,
+            price=result.quote.price,
+        )
+        fundamentals = br_proventos_service.merge_dividend_yield_into_fundamentals(
+            result.fundamentals,
+            dividends,
+        )
+        provider = hybrid_provider_label(
+            bolsai_used=False,
+            brapi_used=True,
+        )
+        result = result.model_copy(
+            update={
+                "dividends": dividends,
+                "fundamentals": fundamentals,
+                "provider": provider,
+            }
         )
         self._detail_cache.set(cache_key, result)
         self._quote_cache.set(normalized, result.quote)
         return result
+
+    async def _load_detail_fast_bundle(
+        self,
+        ticker: str,
+        *,
+        candle_limit: int,
+        dividend_limit: int,
+    ) -> _DetailFastBundle:
+        cache_key = f"detail_fast:{ticker}:{candle_limit}:{dividend_limit}"
+        cached = self._detail_fast_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        result = await self._client.get_stock_detail(
+            ticker,
+            candle_limit=candle_limit,
+            dividend_limit=dividend_limit,
+            include_dividends=False,
+        )
+        bundle = _DetailFastBundle(
+            quote=result.quote,
+            market_stats=result.market_stats,
+            profile=result.profile,
+            fundamentals=result.fundamentals,
+            candles=tuple(result.candles),
+        )
+        self._detail_fast_cache.set(cache_key, bundle)
+        return bundle
+
+    async def _load_detail_slow_bundle(
+        self,
+        ticker: str,
+        *,
+        dividend_limit: int,
+        fundamentals_base: StockFundamentals,
+        market_stats_base: StockMarketStats,
+        profile_base: StockProfile,
+    ) -> _DetailSlowBundle:
+        cache_key = f"detail_slow:{ticker}:{dividend_limit}:bolsai"
+        cached = self._detail_slow_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        dividends = await br_proventos_service.get_stock_dividends(ticker, limit=dividend_limit)
+        fundamentals = fundamentals_base
+        market_stats = market_stats_base
+        profile = profile_base
+        quote_name: str | None = None
+
+        fund_raw, quote_raw, company_raw = await asyncio.gather(
+            br_proventos_service.get_fundamentals_cached(ticker),
+            br_proventos_service._bolsai.get_stock_quote(ticker),
+            br_proventos_service.get_company_cached(ticker),
+            return_exceptions=True,
+        )
+        fund_payload = fund_raw if isinstance(fund_raw, dict) else None
+        quote_payload = quote_raw if isinstance(quote_raw, dict) else None
+        company_payload = company_raw if isinstance(company_raw, dict) else None
+        if fund_payload:
+            from app.clients.bolsai.fundamentals_mapper import merge_bolsai_fundamentals
+
+            fundamentals = merge_bolsai_fundamentals(fundamentals, fund_payload)
+        market_stats = merge_bolsai_market_stats(
+            market_stats,
+            fundamentals=fund_payload,
+            quote=quote_payload,
+        )
+        if company_payload:
+            from app.clients.bolsai.companies_mapper import (
+                company_display_name,
+                merge_company_into_profile,
+            )
+
+            quote_name = company_display_name(company_payload)
+            profile = merge_company_into_profile(profile, company_payload)
+
+        provider = hybrid_provider_label(bolsai_used=True, brapi_used=True)
+        bundle = _DetailSlowBundle(
+            dividends=dividends,
+            fundamentals=fundamentals,
+            market_stats=market_stats,
+            profile=profile,
+            quote_name=quote_name,
+            provider=provider,
+        )
+        self._detail_slow_cache.set(cache_key, bundle)
+        return bundle
+
+    def _merge_detail_bundles(
+        self,
+        fast: _DetailFastBundle,
+        slow: _DetailSlowBundle,
+    ) -> StockQuoteDetailResponse:
+        quote = fast.quote
+        if slow.quote_name:
+            quote = quote.model_copy(update={"name": slow.quote_name})
+
+        dividends = br_proventos_service.enrich_dividends_with_summary(
+            slow.dividends,
+            price=quote.price,
+        )
+        fundamentals = br_proventos_service.merge_dividend_yield_into_fundamentals(
+            slow.fundamentals,
+            dividends,
+        )
+        return StockQuoteDetailResponse(
+            quote=quote,
+            market_stats=slow.market_stats,
+            profile=slow.profile,
+            fundamentals=fundamentals,
+            candles=list(fast.candles),
+            dividends=dividends,
+            provider=slow.provider,
+        )
 
     async def get_stock_candles(
         self,
@@ -403,7 +606,7 @@ class QuoteService:
         if cached:
             return cached
 
-        result = await self._client.get_stock_candles(
+        result = await self._get_stock_candles_hybrid(
             normalized,
             limit=limit,
             range_=range_,
@@ -413,8 +616,8 @@ class QuoteService:
         return result
 
     async def get_stock_dividends(self, ticker: str, *, limit: int = 24) -> StockDividendsResponse:
-        detail = await self.get_stock_detail(ticker, candle_limit=30, dividend_limit=limit)
-        return detail.dividends
+        normalized = ticker.upper().strip()
+        return await br_proventos_service.get_stock_dividends(normalized, limit=limit)
 
     async def screener(
         self,
@@ -435,35 +638,70 @@ class QuoteService:
         min_price_to_book: float | None = None,
         max_price_to_book: float | None = None,
     ) -> StockScreenerResponse:
+        bolsai_tag = ":bolsai" if br_proventos_service.uses_bolsai else ""
         cache_key = (
             f"screener:{quote_type}:{sort_by}:{sort_order}:{limit}:{page}:"
             f"{sector or ''}:{search or ''}:"
             f"{min_dividend_yield}:{max_dividend_yield}:"
             f"{min_price_earnings}:{max_price_earnings}:"
             f"{min_return_on_equity}:{max_return_on_equity}:"
-            f"{min_price_to_book}:{max_price_to_book}"
+            f"{min_price_to_book}:{max_price_to_book}{bolsai_tag}"
         )
         cached = self._screener_cache.get(cache_key)
         if cached:
             return cached
 
-        result = await self._client.screener_quotes(
-            sector=sector,
-            quote_type=quote_type,
-            search=search,
-            sort_by=sort_by,
-            sort_order=sort_order,
-            limit=limit,
-            page=page,
-            min_dividend_yield=min_dividend_yield,
-            max_dividend_yield=max_dividend_yield,
-            min_price_earnings=min_price_earnings,
-            max_price_earnings=max_price_earnings,
-            min_return_on_equity=min_return_on_equity,
-            max_return_on_equity=max_return_on_equity,
-            min_price_to_book=min_price_to_book,
-            max_price_to_book=max_price_to_book,
+        use_bolsai = (
+            br_proventos_service.uses_bolsai
+            and prefer_bolsai_screener(
+                quote_type=quote_type,
+                sort_by=sort_by,
+                sector=sector,
+                min_dividend_yield=min_dividend_yield,
+                max_dividend_yield=max_dividend_yield,
+                min_price_earnings=min_price_earnings,
+                max_price_earnings=max_price_earnings,
+                min_return_on_equity=min_return_on_equity,
+                max_return_on_equity=max_return_on_equity,
+                min_price_to_book=min_price_to_book,
+                max_price_to_book=max_price_to_book,
+            )
         )
+        if use_bolsai:
+            result = await self._get_screener_bolsai_hybrid(
+                search=search,
+                sort_by=sort_by,
+                sort_order=sort_order,
+                limit=limit,
+                page=page,
+                min_dividend_yield=min_dividend_yield,
+                max_dividend_yield=max_dividend_yield,
+                min_price_earnings=min_price_earnings,
+                max_price_earnings=max_price_earnings,
+                min_return_on_equity=min_return_on_equity,
+                max_return_on_equity=max_return_on_equity,
+                min_price_to_book=min_price_to_book,
+                max_price_to_book=max_price_to_book,
+            )
+        else:
+            result = await self._client.screener_quotes(
+                sector=sector,
+                quote_type=quote_type,
+                search=search,
+                sort_by=sort_by,
+                sort_order=sort_order,
+                limit=limit,
+                page=page,
+                min_dividend_yield=min_dividend_yield,
+                max_dividend_yield=max_dividend_yield,
+                min_price_earnings=min_price_earnings,
+                max_price_earnings=max_price_earnings,
+                min_return_on_equity=min_return_on_equity,
+                max_return_on_equity=max_return_on_equity,
+                min_price_to_book=min_price_to_book,
+                max_price_to_book=max_price_to_book,
+            )
+            result = await self._safe_enrich_screener_with_bolsai_dy(result)
         result = await self._attach_screener_sparklines(result)
         self._screener_cache.set(cache_key, result)
         return result
@@ -480,7 +718,7 @@ class QuoteService:
         if cached:
             return cached
 
-        result = await self._client.get_stock_fundamental_history(normalized, limit=limit)
+        result = await self._get_fundamental_history_hybrid(normalized, limit=limit)
         self._fundamental_history_cache.set(cache_key, result)
         return result
 
@@ -492,12 +730,13 @@ class QuoteService:
         period: str = "quarterly",
     ) -> StockFinancialsResponse:
         normalized = ticker.upper().strip()
-        cache_key = f"financials:{normalized}:{period}:{limit}"
+        bolsai_tag = ":bolsai" if br_proventos_service.uses_bolsai else ""
+        cache_key = f"financials:{normalized}:{period}:{limit}{bolsai_tag}"
         cached = self._financials_cache.get(cache_key)
         if cached:
             return cached
 
-        result = await self._client.get_stock_financials(normalized, limit=limit, period=period)
+        result = await self._get_financials_hybrid(normalized, limit=limit, period=period)
         self._financials_cache.set(cache_key, result)
         return result
 
@@ -533,50 +772,374 @@ class QuoteService:
         if cached:
             return cached
 
-        screener = await self.screener(
-            quote_type="stock",
-            sort_by="volume",
-            sort_order="desc",
-            limit=min(safe_limit * 2, MAX_HEATMAP_LIMIT * 2),
-            page=1,
-        )
-        items: list[MarketQuote] = []
-        for row in screener.items:
-            if row.category != "acoes_br":
-                continue
-            if (row.volume or 0) < MIN_BR_STOCK_HEATMAP_VOLUME:
-                continue
-            items.append(
-                MarketQuote(
-                    symbol=row.symbol,
-                    name=row.name,
-                    price=row.price,
-                    change_percent=row.change_percent,
-                    category=row.category,
-                    provider=row.provider,
-                    volume=row.volume,
-                    logo_url=row.logo_url,
-                    dividend_yield_12m=row.dividend_yield_12m,
-                    price_to_book=row.price_to_book,
-                )
+        try:
+            screener = await self.screener(
+                quote_type="stock",
+                sort_by="volume",
+                sort_order="desc",
+                limit=min(safe_limit * 2, MAX_HEATMAP_LIMIT * 2),
+                page=1,
             )
-            if len(items) >= safe_limit:
-                break
+            items: list[MarketQuote] = []
+            for row in screener.items:
+                if row.category != "acoes_br":
+                    continue
+                if (row.volume or 0) < MIN_BR_STOCK_HEATMAP_VOLUME:
+                    continue
+                items.append(
+                    MarketQuote(
+                        symbol=row.symbol,
+                        name=row.name,
+                        price=row.price,
+                        change_percent=row.change_percent,
+                        category=row.category,
+                        provider=row.provider,
+                        volume=row.volume,
+                        logo_url=row.logo_url,
+                        dividend_yield_12m=row.dividend_yield_12m,
+                        price_to_book=row.price_to_book,
+                    )
+                )
+                if len(items) >= safe_limit:
+                    break
 
-        result = MarketQuoteBatchResponse(items=items, count=len(items), provider="brapi")
-        self._heatmap_cache.set(cache_key, result)
-        return result
+            result = MarketQuoteBatchResponse(items=items, count=len(items), provider="brapi")
+            if items:
+                self._heatmap_cache.set(cache_key, result)
+            return result
+        except Exception:
+            return MarketQuoteBatchResponse(items=[], count=0, provider="brapi")
+
+    async def _safe_attach_bolsai_dividend_yields(
+        self,
+        items: list[MarketQuote],
+    ) -> list[MarketQuote]:
+        try:
+            return await self._attach_bolsai_dividend_yields(items)
+        except Exception:
+            return items
+
+    async def _attach_bolsai_dividend_yields(
+        self,
+        items: list[MarketQuote],
+    ) -> list[MarketQuote]:
+        if not br_proventos_service.uses_bolsai or not items:
+            return items
+        fund_map = await br_proventos_service.fetch_fundamentals_batch(
+            [item.symbol for item in items],
+            max_concurrency=settings.bolsai_dy_enrich_concurrency,
+            max_symbols=settings.bolsai_dy_list_max_symbols,
+        )
+        if not fund_map:
+            return items
+        enriched: list[MarketQuote] = []
+        for item in items:
+            payload = fund_map.get(item.symbol)
+            if not payload:
+                enriched.append(item)
+                continue
+            mapped = fundamentals_updates_from_bolsai(payload)
+            updates = {
+                key: mapped[key]
+                for key in ("dividend_yield_12m", "price_to_book")
+                if key in mapped
+            }
+            enriched.append(item.model_copy(update=updates) if updates else item)
+        return enriched
+
+    async def _safe_enrich_screener_with_bolsai_dy(
+        self,
+        result: StockScreenerResponse,
+    ) -> StockScreenerResponse:
+        try:
+            return await self._enrich_screener_with_bolsai_dy(result)
+        except Exception:
+            return result
+
+    async def _enrich_screener_with_bolsai_dy(
+        self,
+        result: StockScreenerResponse,
+    ) -> StockScreenerResponse:
+        if not br_proventos_service.uses_bolsai or not result.items:
+            return result
+        page_symbols = [row.symbol for row in result.items]
+        fund_map = await br_proventos_service.fetch_fundamentals_batch(
+            page_symbols,
+            max_concurrency=settings.bolsai_dy_enrich_concurrency,
+            max_symbols=min(len(page_symbols), settings.bolsai_dy_list_max_symbols),
+        )
+        if not fund_map:
+            return result
+        items = []
+        for row in result.items:
+            payload = fund_map.get(row.symbol)
+            if not payload:
+                items.append(row)
+                continue
+            mapped = fundamentals_updates_from_bolsai(payload)
+            updates = {
+                key: mapped[key]
+                for key in (
+                    "dividend_yield_12m",
+                    "price_earnings",
+                    "return_on_equity",
+                    "price_to_book",
+                )
+                if key in mapped
+            }
+            items.append(row.model_copy(update=updates) if updates else row)
+        return result.model_copy(update={"items": items})
 
     async def compare_stocks(self, tickers: list[str]) -> StockCompareResponse:
         normalized = [t.upper().strip() for t in tickers if t.strip()]
-        cache_key = "compare:" + ",".join(sorted(normalized))
+        bolsai_tag = ":bolsai" if br_proventos_service.uses_bolsai else ""
+        cache_key = "compare:" + ",".join(sorted(normalized)) + bolsai_tag
         cached = self._compare_cache.get(cache_key)
         if cached:
             return cached
 
         result = await self._client.get_stock_compare(normalized)
+        enriched = await asyncio.gather(
+            *[self._enrich_br_compare_item(item) for item in result.items],
+            return_exceptions=True,
+        )
+        items: list[StockCompareItem] = []
+        for index, row in enumerate(enriched):
+            if isinstance(row, Exception):
+                items.append(result.items[index])
+            else:
+                items.append(row)
+        result = result.model_copy(update={"items": items})
         self._compare_cache.set(cache_key, result)
         return result
+
+    async def _enrich_br_compare_item(self, item: StockCompareItem) -> StockCompareItem:
+        ticker = item.quote.symbol
+        price = item.quote.price
+
+        dividends_task = br_proventos_service.get_stock_dividends(ticker, limit=80)
+        candles_task = self.get_stock_candles(ticker, limit=280, range_="1y")
+
+        dividends_raw, candles_raw = await asyncio.gather(
+            dividends_task,
+            candles_task,
+            return_exceptions=True,
+        )
+
+        fundamentals = item.fundamentals
+        if br_proventos_service.uses_bolsai:
+            from app.domain.quotes.compare_enrichment import merge_bolsai_fundamentals_for_ticker
+
+            fundamentals = await merge_bolsai_fundamentals_for_ticker(
+                fundamentals,
+                ticker=ticker,
+                bolsai=br_proventos_service._bolsai,
+            )
+
+        dividends_snapshot = item.dividends
+        if isinstance(dividends_raw, StockDividendsResponse):
+            div_enriched = br_proventos_service.enrich_dividends_with_summary(
+                dividends_raw,
+                price=price,
+            )
+            from app.domain.quotes.compare_enrichment import dividends_snapshot_from_stock
+
+            dividends_snapshot = dividends_snapshot_from_stock(div_enriched)
+            dy = dividends_snapshot.dividend_yield_display or dividends_snapshot.dividend_yield_ttm
+            if dy is not None:
+                fundamentals = fundamentals.model_copy(update={"dividend_yield_12m": dy})
+
+        from app.domain.quotes.compare_enrichment import return_periods_from_ticker_candles
+
+        candles = candles_raw.candles if hasattr(candles_raw, "candles") else []
+        returns = return_periods_from_ticker_candles(candles)
+
+        return item.model_copy(
+            update={
+                "fundamentals": fundamentals,
+                "dividends": dividends_snapshot,
+                "returns": returns,
+                "provider": hybrid_provider_label(
+                    bolsai_used=br_proventos_service.uses_bolsai,
+                    brapi_used=True,
+                ),
+            }
+        )
+
+    async def _get_stock_candles_hybrid(
+        self,
+        ticker: str,
+        *,
+        limit: int,
+        range_: str | None,
+        interval: str,
+    ) -> FiiCandlesResponse:
+        if interval != "1d":
+            return await self._client.get_stock_candles(
+                ticker,
+                limit=limit,
+                range_=range_,
+                interval=interval,
+            )
+
+        if br_proventos_service.uses_bolsai and prefer_bolsai_candles(range_=range_, limit=limit):
+            try:
+                payload = await br_proventos_service._bolsai.get_stock_history(
+                    ticker,
+                    limit=limit,
+                )
+                if payload:
+                    mapped = map_bolsai_stock_candles(ticker, payload, limit=limit)
+                    if mapped.candles:
+                        return mapped
+            except Exception:
+                pass
+
+        return await self._client.get_stock_candles(
+            ticker,
+            limit=limit,
+            range_=range_,
+            interval=interval,
+        )
+
+    async def _get_fundamental_history_hybrid(
+        self,
+        ticker: str,
+        *,
+        limit: int,
+    ) -> StockFundamentalHistoryResponse:
+        if br_proventos_service.uses_bolsai:
+            try:
+                payload = await br_proventos_service._bolsai.get_fundamentals_history(
+                    ticker,
+                    limit=limit,
+                )
+                if payload:
+                    mapped = map_bolsai_fundamental_history(ticker, payload, limit=limit)
+                    if mapped.periods:
+                        return mapped
+            except Exception:
+                pass
+
+        return await self._client.get_stock_fundamental_history(ticker, limit=limit)
+
+    async def _get_screener_bolsai_hybrid(
+        self,
+        *,
+        search: str | None,
+        sort_by: str,
+        sort_order: str,
+        limit: int,
+        page: int,
+        min_dividend_yield: float | None = None,
+        max_dividend_yield: float | None = None,
+        min_price_earnings: float | None = None,
+        max_price_earnings: float | None = None,
+        min_return_on_equity: float | None = None,
+        max_return_on_equity: float | None = None,
+        min_price_to_book: float | None = None,
+        max_price_to_book: float | None = None,
+    ) -> StockScreenerResponse:
+        from app.clients.bolsai.screener_mapper import (
+            build_bolsai_screener_params,
+            map_bolsai_screener,
+        )
+
+        params = build_bolsai_screener_params(
+            sort_by=sort_by,
+            sort_order=sort_order,
+            limit=limit,
+            page=page,
+            min_dividend_yield=min_dividend_yield,
+            max_dividend_yield=max_dividend_yield,
+            min_price_earnings=min_price_earnings,
+            max_price_earnings=max_price_earnings,
+            min_return_on_equity=min_return_on_equity,
+            max_return_on_equity=max_return_on_equity,
+            min_price_to_book=min_price_to_book,
+            max_price_to_book=max_price_to_book,
+        )
+        payload = await br_proventos_service._bolsai.get_screener(params=params)
+        if not payload:
+            return StockScreenerResponse(items=[], count=0, total=0, page=page, provider="hybrid")
+        result = map_bolsai_screener(payload, page=page, limit=limit, search=search)
+        return await self._enrich_screener_market_data_from_brapi(result)
+
+    async def _enrich_screener_market_data_from_brapi(
+        self,
+        result: StockScreenerResponse,
+    ) -> StockScreenerResponse:
+        from app.clients.brapi.stock_mapper import resolve_logo_url
+
+        symbols = [item.symbol for item in result.items]
+        if not symbols:
+            return result
+        try:
+            raw_items = await self._client.get_quotes_raw(symbols)
+        except UpstreamError:
+            return result
+        by_symbol: dict[str, dict] = {}
+        for raw in raw_items:
+            symbol = str(raw.get("symbol") or raw.get("stock") or "").upper().strip()
+            if symbol:
+                by_symbol[symbol] = raw
+        items = []
+        for item in result.items:
+            raw = by_symbol.get(item.symbol)
+            if not raw:
+                items.append(item)
+                continue
+            price_raw = raw.get("regularMarketPrice", raw.get("close"))
+            change_raw = raw.get("regularMarketChangePercent", raw.get("change"))
+            volume_raw = raw.get("regularMarketVolume", raw.get("volume"))
+            items.append(
+                item.model_copy(
+                    update={
+                        "price": float(price_raw) if price_raw is not None else item.price,
+                        "change_percent": float(change_raw) if change_raw is not None else item.change_percent,
+                        "volume": float(volume_raw) if volume_raw is not None else item.volume,
+                        "logo_url": resolve_logo_url(item.symbol, raw.get("logourl") or raw.get("logo")),
+                    }
+                )
+            )
+        return result.model_copy(update={"items": items})
+
+    async def _get_financials_hybrid(
+        self,
+        ticker: str,
+        *,
+        limit: int,
+        period: str,
+    ) -> StockFinancialsResponse:
+        if br_proventos_service.uses_bolsai:
+            try:
+                from app.clients.bolsai.financials_mapper import map_bolsai_financials
+
+                financials_payload, history_payload = await asyncio.gather(
+                    br_proventos_service._bolsai.get_financials(ticker, period=period),
+                    br_proventos_service._bolsai.get_fundamentals_history(ticker, limit=limit),
+                    return_exceptions=True,
+                )
+                if isinstance(financials_payload, Exception):
+                    financials_payload = None
+                if isinstance(history_payload, Exception):
+                    history_payload = None
+                if financials_payload:
+                    mapped = map_bolsai_financials(
+                        ticker,
+                        financials_payload,
+                        limit=limit,
+                        period=period,
+                        fundamentals_history=history_payload
+                        if isinstance(history_payload, dict)
+                        else None,
+                    )
+                    if not mapped.is_empty():
+                        return mapped
+            except Exception:
+                pass
+
+        return await self._client.get_stock_financials(ticker, limit=limit, period=period)
 
 
 quote_service = QuoteService()

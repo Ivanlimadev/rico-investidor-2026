@@ -2,10 +2,10 @@ from fastapi import APIRouter
 
 from app.services.macro_service import macro_service
 
-router = APIRouter(prefix="/macro", tags=["Macro (Brapi)"])
+router = APIRouter(prefix="/macro", tags=["Macro"])
 
 
 @router.get("/brazil")
 async def get_brazil_macro():
-    """Selic e IPCA 12m — contexto macro para renda variável."""
+    """Selic, IPCA 12m e CDI — BCB via Bolsai (híbrido com Brapi)."""
     return await macro_service.get_brazil_macro()

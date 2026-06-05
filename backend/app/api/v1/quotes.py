@@ -125,7 +125,7 @@ async def get_stock_detail(
     candle_limit: int = Query(default=252, ge=30, le=5000),
     dividend_limit: int = Query(default=120, ge=1, le=500),
 ):
-    """Detalhe completo: cotação, gráfico, indicadores e dividendos — Brapi."""
+    """Detalhe híbrido: cotação Brapi; proventos/fundamentos TTM Bolsai quando configurado."""
     return await quote_service.get_stock_detail(
         ticker,
         candle_limit=candle_limit,
@@ -193,7 +193,7 @@ async def get_stock_financials(
     limit: int = Query(default=8, ge=1, le=20),
     period: str = Query(default="quarterly", description="quarterly ou annual"),
 ):
-    """Demonstrações financeiras: DRE, balanço e fluxo de caixa — Brapi."""
+    """Demonstrações CVM: DRE, balanço, fluxo e DVA — Bolsai (fallback Brapi)."""
     return await quote_service.get_stock_financials(ticker, limit=limit, period=period)
 
 

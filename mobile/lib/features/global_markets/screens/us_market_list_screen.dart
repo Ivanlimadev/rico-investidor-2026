@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:rico_investidor/core/config/api_config.dart';
 import 'package:rico_investidor/core/search/asset_search_config.dart';
 import 'package:rico_investidor/core/search/unified_asset_search.dart';
 import 'package:rico_investidor/features/global_markets/widgets/us_market_quote_list_tile.dart';
@@ -237,12 +236,6 @@ class _UsMarketListScreenState extends State<UsMarketListScreen> {
                 fallback: 'Não foi possível carregar o mercado americano.',
               ),
               textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'API: ${ApiConfig.baseUrl}',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.labelSmall,
             ),
             const SizedBox(height: 12),
             FilledButton(

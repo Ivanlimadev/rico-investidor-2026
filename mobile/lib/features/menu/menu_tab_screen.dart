@@ -5,6 +5,8 @@ import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/menu/account_menu_items.dart';
 import 'package:rico_investidor/features/menu/widgets/profile_header.dart';
+import 'package:rico_investidor/features/dividends/screens/dividend_agenda_screen.dart';
+import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
 import 'package:rico_investidor/features/settings/settings_screen.dart';
 import 'package:rico_investidor/models/user_profile.dart';
 import 'package:rico_investidor/state/portfolio_state.dart';
@@ -18,6 +20,7 @@ class MenuTabScreen extends StatelessWidget {
     required this.onPortfolioChanged,
     required this.fiiRepository,
     required this.quoteRepository,
+    this.globalMarketRepository,
     required this.isDarkMode,
     required this.onToggleTheme,
     required this.onLogin,
@@ -31,6 +34,7 @@ class MenuTabScreen extends StatelessWidget {
   final VoidCallback onPortfolioChanged;
   final FiiRepository fiiRepository;
   final QuoteRepository quoteRepository;
+  final GlobalMarketRepository? globalMarketRepository;
   final bool isDarkMode;
   final VoidCallback onToggleTheme;
   final VoidCallback onLogin;
@@ -53,6 +57,17 @@ class MenuTabScreen extends StatelessWidget {
             leading: Icon(isDarkMode ? Icons.light_mode_outlined : Icons.dark_mode_outlined),
             title: Text(isDarkMode ? 'Tema claro' : 'Tema escuro'),
             onTap: onToggleTheme,
+          ),
+          ListTile(
+            leading: const Icon(Icons.calendar_month_outlined),
+            title: const Text('Agenda de dividendos'),
+            subtitle: const Text('Ações BR (B3) e EUA — data com, pagamento e valor'),
+            onTap: () => openDividendAgendaScreen(
+              context,
+              fiiRepository: fiiRepository,
+              quoteRepository: quoteRepository,
+              globalMarketRepository: globalMarketRepository,
+            ),
           ),
           ListTile(
             leading: const Icon(Icons.settings_outlined),

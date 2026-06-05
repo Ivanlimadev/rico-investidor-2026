@@ -88,6 +88,7 @@ class _PreferredMarketSectionState extends State<PreferredMarketSection> {
           builder: (_) => BrazilianMarketHubScreen(
             fiiRepository: widget.fiiRepository,
             quoteRepository: widget.quoteRepository,
+            globalMarketRepository: widget.globalMarketRepository,
           ),
         ),
       );

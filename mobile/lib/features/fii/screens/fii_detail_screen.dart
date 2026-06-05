@@ -1,8 +1,6 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
-import 'package:rico_investidor/core/config/api_config.dart';
+import 'package:rico_investidor/core/utils/data_provider_label.dart';
 import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/fii/utils/fii_data_freshness.dart';
 import 'package:rico_investidor/features/fii/utils/fii_format.dart';
@@ -21,7 +19,8 @@ import 'package:rico_investidor/features/fii/widgets/fii_returns_card.dart';
 import 'package:rico_investidor/features/fii/widgets/fii_properties_state_pie_card.dart';
 import 'package:rico_investidor/features/fii/utils/fii_property_state.dart';
 import 'package:rico_investidor/features/fii/widgets/fii_quote_hero_card.dart';
-import 'package:rico_investidor/features/fii/widgets/fii_simulator_card.dart';
+import 'package:rico_investidor/core/widgets/last_dividend_card.dart';
+import 'package:rico_investidor/core/widgets/what_if_investment_card.dart';
 import 'package:rico_investidor/core/widgets/asset_quick_actions.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/fii_models.dart';
@@ -91,9 +90,24 @@ class _FiiDetailScreenState extends State<FiiDetailScreen> {
 
   Future<void> _loadExtras() async {
     final results = await Future.wait<Object?>([
-      _safe(() => widget.repository.getDistributions(widget.ticker, years: 5)),
-      _safe(() => widget.repository.getHistory(widget.ticker, limit: 120)),
-      _safe(() => widget.repository.getCandles(widget.ticker, limit: 252)),
+      _safe(
+        () => widget.repository.getDistributions(
+          widget.ticker,
+          years: FiiRepository.extendedDistributionYears,
+        ),
+      ),
+      _safe(
+        () => widget.repository.getHistory(
+          widget.ticker,
+          limit: FiiRepository.extendedHistoryLimit,
+        ),
+      ),
+      _safe(
+        () => widget.repository.getCandles(
+          widget.ticker,
+          limit: FiiRepository.extendedCandleLimit,
+        ),
+      ),
     ]);
 
     if (!mounted) return;
@@ -102,22 +116,6 @@ class _FiiDetailScreenState extends State<FiiDetailScreen> {
       _history = results[1] as FiiHistoryResponse?;
       _candles = results[2] as FiiCandlesResponse?;
       _extrasLoading = false;
-    });
-    unawaited(_loadExtendedExtras());
-  }
-
-  Future<void> _loadExtendedExtras() async {
-    final results = await Future.wait<Object?>([
-      _safe(() => widget.repository.getDistributions(widget.ticker, years: 15)),
-      _safe(() => widget.repository.getCandles(widget.ticker, limit: 1260)),
-    ]);
-
-    if (!mounted) return;
-    setState(() {
-      final distributions = results[0] as FiiDistributions?;
-      final candles = results[1] as FiiCandlesResponse?;
-      if (distributions != null) _distributions = distributions;
-      if (candles != null) _candles = candles;
     });
   }
 
@@ -141,6 +139,23 @@ class _FiiDetailScreenState extends State<FiiDetailScreen> {
       _extrasLoading = false;
     });
     _bootstrap();
+  }
+
+  Future<void> _onRefresh() async {
+    widget.repository.invalidateDetail(widget.ticker);
+    setState(() => _extrasLoading = true);
+    try {
+      final detail = await widget.repository.getDetail(widget.ticker);
+      if (!mounted) return;
+      setState(() {
+        _detail = detail;
+        _detailError = null;
+      });
+      await _loadExtras();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _extrasLoading = false);
+    }
   }
 
   @override
@@ -185,23 +200,23 @@ class _FiiDetailScreenState extends State<FiiDetailScreen> {
     }
 
     if (_detailError != null || _detail == null) {
-      return _ErrorState(
-        message: _detailError?.toString() ?? 'Detalhe indisponível',
-        onRetry: _retry,
-      );
+      return _ErrorState(onRetry: _retry);
     }
 
     return Stack(
       children: [
-        _FiiDetailBody(
-          bundle: FiiDetailBundle(
-            detail: _detail!,
-            distributions: _distributions,
-            history: _history,
-            candles: _candles,
-            tenants: _tenants,
+        RefreshIndicator(
+          onRefresh: _onRefresh,
+          child: _FiiDetailBody(
+            bundle: FiiDetailBundle(
+              detail: _detail!,
+              distributions: _distributions,
+              history: _history,
+              candles: _candles,
+              tenants: _tenants,
+            ),
+            repository: widget.repository,
           ),
-          repository: widget.repository,
         ),
         if (_extrasLoading)
           const Positioned(
@@ -248,6 +263,7 @@ class _FiiDetailBody extends StatelessWidget {
     final detail = bundle.detail;
 
     return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
       children: [
         Text(
@@ -268,6 +284,16 @@ class _FiiDetailBody extends StatelessWidget {
           history: bundle.historyPoints,
           candles: bundle.candleBars,
         ),
+        if (bundle.distributions != null &&
+            lastPaidPayment(bundle.distributions!.payments) != null) ...[
+          const SizedBox(height: 12),
+          LastDividendCard(
+            payments: bundle.distributions!.payments,
+            dividendYield12m: detail.dividendYieldTtm ?? bundle.distributions!.dividendYieldTtm,
+            dateStyle: LastDividendDateStyle.fii,
+            perShareLabel: 'cota',
+          ),
+        ],
         if (bundle.hasReturnData) ...[
           const SizedBox(height: 12),
           FiiReturnsCard(
@@ -368,12 +394,14 @@ class _FiiDetailBody extends StatelessWidget {
         ],
         if (bundle.history != null && bundle.history!.history.isNotEmpty) ...[
           const SizedBox(height: 20),
-          const FiiSectionHeader('Simulador de investimento'),
+          const FiiSectionHeader('Quanto teria investido?'),
           const SizedBox(height: 8),
-          FiiSimulatorCard(
-            detail: detail,
+          WhatIfInvestmentCard(
+            currentPrice: detail.closePrice,
             history: bundle.history!.history,
+            candles: bundle.candleBars,
             payments: bundle.distributions?.payments ?? const [],
+            unitLabel: 'cota',
           ),
         ],
         if (bundle.distributions != null) ...[
@@ -383,7 +411,11 @@ class _FiiDetailBody extends StatelessWidget {
           FiiDistributionsSection(distributions: bundle.distributions!),
           if (bundle.distributions!.annualSummary.isNotEmpty) ...[
             const SizedBox(height: 12),
-            FiiDistributionsChart(annualSummary: bundle.distributions!.annualSummary),
+            FiiDistributionsChart(
+              annualSummary: bundle.distributions!.annualSummary,
+              payments: bundle.distributions!.payments,
+              perShareLabel: 'cota',
+            ),
           ],
         ],
         const SizedBox(height: 20),
@@ -415,7 +447,7 @@ class _FiiDetailBody extends StatelessWidget {
         FiiAboutCard(detail: detail, tenants: bundle.tenants),
         const SizedBox(height: 12),
         Text(
-          'Fonte: ${detail.provider.toUpperCase()}',
+          'Fonte: ${formatDataProvider(detail.provider)}',
           style: Theme.of(context).textTheme.bodySmall,
           textAlign: TextAlign.center,
         ),
@@ -425,9 +457,8 @@ class _FiiDetailBody extends StatelessWidget {
 }
 
 class _ErrorState extends StatelessWidget {
-  const _ErrorState({required this.message, required this.onRetry});
+  const _ErrorState({required this.onRetry});
 
-  final String message;
   final VoidCallback onRetry;
 
   @override
@@ -445,12 +476,10 @@ class _ErrorState extends StatelessWidget {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 8),
-          Text(message, textAlign: TextAlign.center),
-          const SizedBox(height: 8),
           Text(
-            'API: ${ApiConfig.baseUrl}',
-            style: Theme.of(context).textTheme.bodySmall,
+            'Verifique sua conexão e tente novamente.',
             textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: 16),
           FilledButton(onPressed: onRetry, child: const Text('Tentar novamente')),

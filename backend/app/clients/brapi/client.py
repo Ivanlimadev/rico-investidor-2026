@@ -245,6 +245,29 @@ class BrapiClient:
             rows.extend(parse_quote_response(data))
         return rows
 
+    async def get_quotes_with_dividends(self, tickers: list[str]) -> list[dict]:
+        """Cotação em lote com dividendsData (agenda de proventos)."""
+        if not tickers:
+            return []
+
+        unique: list[str] = []
+        seen: set[str] = set()
+        for ticker in tickers:
+            normalized = ticker.upper().strip()
+            if normalized and normalized not in seen:
+                seen.add(normalized)
+                unique.append(normalized)
+
+        rows: list[dict] = []
+        for offset in range(0, len(unique), self.MAX_BATCH):
+            batch = unique[offset : offset + self.MAX_BATCH]
+            data = await self._get(
+                f"/quote/{','.join(batch)}",
+                params={"dividends": "true"},
+            )
+            rows.extend(parse_quote_response(data))
+        return rows
+
     async def get_quotes_with_modules(self, tickers: list[str], *, modules: str) -> list[dict]:
         if not tickers:
             return []
@@ -617,12 +640,13 @@ class BrapiClient:
         *,
         candle_limit: int = 252,
         dividend_limit: int = 120,
+        include_dividends: bool = True,
     ) -> StockQuoteDetailResponse:
         normalized = ticker.upper().strip()
         item = await self._get_stock_quote_item(
             normalized,
             range_=limit_to_range(candle_limit),
-            dividends=True,
+            dividends=include_dividends,
             modules=STOCK_DETAIL_MODULES,
         )
         quote = map_market_quote(item)
@@ -631,10 +655,14 @@ class BrapiClient:
             price_points=item.get("historicalDataPrice") or [],
             limit=candle_limit,
         )
-        dividends = map_stock_dividends(
-            ticker=normalized,
-            dividends_data=item.get("dividendsData"),
-            limit=dividend_limit,
+        dividends = (
+            map_stock_dividends(
+                ticker=normalized,
+                dividends_data=item.get("dividendsData"),
+                limit=dividend_limit,
+            )
+            if include_dividends
+            else StockDividendsResponse(ticker=normalized, count=0)
         )
         fundamentals = map_stock_fundamentals(item)
         return StockQuoteDetailResponse(
