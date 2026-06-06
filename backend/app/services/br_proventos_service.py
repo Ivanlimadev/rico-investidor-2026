@@ -178,7 +178,7 @@ class BrProventosService:
         if quote_patch.price > 0:
             reconciled_price = quote_patch.price
 
-        if display_dy is None and reconciled_price != price:
+        if reconciled_price != price:
             display_dy = await self.display_dividend_yield_for_price(
                 quote.symbol,
                 price=reconciled_price,
@@ -295,18 +295,17 @@ class BrProventosService:
             return detail
 
         payload = await self._bolsai.get_fii_distributions(detail.ticker)
-        enriched = detail
         if payload is None:
-            return enriched
+            return detail
 
         updates: dict[str, object] = {}
         if payload.dividend_yield_ttm is not None:
             updates["dividend_yield_ttm"] = payload.dividend_yield_ttm
-        if payload.close_price is not None and enriched.close_price is None:
+        if payload.close_price is not None:
             updates["close_price"] = payload.close_price
         if not updates:
-            return enriched
-        return enriched.model_copy(update=updates)
+            return detail
+        return detail.model_copy(update=updates)
 
     @staticmethod
     def enrich_dividends_with_summary(

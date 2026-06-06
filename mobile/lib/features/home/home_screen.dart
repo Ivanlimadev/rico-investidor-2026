@@ -159,6 +159,7 @@ class HomeScreenState extends State<HomeScreen> {
             child: PortfolioSummaryRow(
               portfolio: widget.portfolio,
               preferredMarket: widget.preferredMarket,
+              countryCode: widget.profile.countryCode,
               onPortfolioTap: () => openPortfolioScreen(
                 context,
                 portfolio: widget.portfolio,

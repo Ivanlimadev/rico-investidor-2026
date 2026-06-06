@@ -15,12 +15,14 @@ class PortfolioBalanceHero extends StatelessWidget {
     super.key,
     required this.portfolio,
     required this.preferredMarket,
+    this.countryCode,
     this.layout = PortfolioBalanceHeroLayout.expanded,
     this.onTap,
   });
 
   final PortfolioState portfolio;
   final MarketPreference preferredMarket;
+  final String? countryCode;
   final PortfolioBalanceHeroLayout layout;
   final VoidCallback? onTap;
 
@@ -28,9 +30,18 @@ class PortfolioBalanceHero extends StatelessWidget {
   Widget build(BuildContext context) {
     final breakdown = portfolio.computeBalanceBreakdown();
     final isBrazil = preferredMarket.isBrazil;
-    final primaryCurrency = isBrazil ? HoldingCurrency.brl : HoldingCurrency.usd;
-    final primaryTotal = breakdown.primaryTotal(preferredMarket);
-    final profitPct = breakdown.primaryProfitPercent(preferredMarket);
+    final effectiveCountryCode = countryCode?.trim().toUpperCase();
+    final badgeCountryCode = effectiveCountryCode != null && effectiveCountryCode.isNotEmpty
+      ? effectiveCountryCode
+      : (isBrazil ? 'BR' : 'US');
+    final totalBrl = breakdown.totalBrl;
+    final investedBrl = breakdown.domesticInvestedBrl +
+      convertToBrl(
+        amount: breakdown.internationalInvestedUsd,
+        currency: HoldingCurrency.usd,
+        usdBrlRate: breakdown.usdBrlRate,
+      );
+    final profitPct = investedBrl <= 0 ? 0 : ((totalBrl - investedBrl) / investedBrl) * 100;
     final profitUp = profitPct >= 0;
     final profitColor = profitUp ? AppColors.positive : AppColors.negative;
 
@@ -39,7 +50,7 @@ class PortfolioBalanceHero extends StatelessWidget {
       children: [
         Row(
           children: [
-            _MarketBadge(isBrazil: isBrazil),
+            _MarketBadge(countryCode: badgeCountryCode),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -73,7 +84,7 @@ class PortfolioBalanceHero extends StatelessWidget {
           fit: BoxFit.scaleDown,
           alignment: Alignment.centerLeft,
           child: Text(
-            primaryCurrency.format(primaryTotal),
+            HoldingCurrency.brl.format(totalBrl),
             style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                   fontWeight: FontWeight.w800,
                   height: 1.1,
@@ -98,16 +109,17 @@ class PortfolioBalanceHero extends StatelessWidget {
             ),
           ],
         ),
-        if (layout == PortfolioBalanceHeroLayout.expanded && breakdown.isMixed) ...[
-          const SizedBox(height: 16),
-          _SplitBuckets(breakdown: breakdown, preferredMarket: preferredMarket),
-        ] else if (layout == PortfolioBalanceHeroLayout.expanded &&
-            breakdown.hasInternational &&
-            isBrazil) ...[
+        if (layout == PortfolioBalanceHeroLayout.expanded && breakdown.hasInternational) ...[
           const SizedBox(height: 16),
           _InternationalExposureCard(
             amountUsd: breakdown.internationalMarketValueUsd,
-            sharePercent: breakdown.internationalSharePercent(preferredMarket),
+            sharePercent: (breakdown.usdBrlRate != null && breakdown.usdBrlRate! > 0 && totalBrl > 0)
+                ? convertToBrl(
+                        amount: breakdown.internationalMarketValueUsd,
+                        currency: HoldingCurrency.usd,
+                        usdBrlRate: breakdown.usdBrlRate)
+                    / totalBrl * 100
+                : 0,
             profitPercent: breakdown.internationalProfitPercent,
           ),
         ] else if (layout == PortfolioBalanceHeroLayout.expanded &&
@@ -178,9 +190,9 @@ class PortfolioBalanceHero extends StatelessWidget {
 }
 
 class _MarketBadge extends StatelessWidget {
-  const _MarketBadge({required this.isBrazil});
+  const _MarketBadge({required this.countryCode});
 
-  final bool isBrazil;
+  final String countryCode;
 
   @override
   Widget build(BuildContext context) {
@@ -194,7 +206,7 @@ class _MarketBadge extends StatelessWidget {
       ),
       alignment: Alignment.center,
       child: CountryFlagImage(
-        countryCode: isBrazil ? 'BR' : 'US',
+        countryCode: countryCode,
         size: 22,
         borderRadius: 6,
       ),

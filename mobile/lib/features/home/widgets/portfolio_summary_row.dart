@@ -11,6 +11,7 @@ class PortfolioSummaryRow extends StatelessWidget {
     required this.preferredMarket,
     required this.onPortfolioTap,
     this.onDividendsTap,
+    this.countryCode,
     this.showDividendsCard = true,
   });
 
@@ -18,6 +19,7 @@ class PortfolioSummaryRow extends StatelessWidget {
   final MarketPreference preferredMarket;
   final VoidCallback onPortfolioTap;
   final VoidCallback? onDividendsTap;
+  final String? countryCode;
   final bool showDividendsCard;
 
   @override
@@ -28,6 +30,7 @@ class PortfolioSummaryRow extends StatelessWidget {
       return PortfolioBalanceHero(
         portfolio: portfolio,
         preferredMarket: preferredMarket,
+        countryCode: countryCode,
         layout: PortfolioBalanceHeroLayout.expanded,
         onTap: onPortfolioTap,
       );
@@ -51,6 +54,7 @@ class PortfolioSummaryRow extends StatelessWidget {
         PortfolioBalanceHero(
           portfolio: portfolio,
           preferredMarket: preferredMarket,
+          countryCode: countryCode,
           layout: PortfolioBalanceHeroLayout.compact,
           onTap: onPortfolioTap,
         ),

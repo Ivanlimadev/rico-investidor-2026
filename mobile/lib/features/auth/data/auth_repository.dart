@@ -22,6 +22,8 @@ class AuthRepository {
       plan: SubscriptionPlan.free,
       email: json['email'] as String?,
       userId: json['id'] as String?,
+      countryCode: (json['country_code'] as String?)?.trim().toUpperCase() ??
+          (json['country'] as String?)?.trim().toUpperCase(),
       isAnonymous: json['is_anonymous'] as bool? ?? true,
     );
   }
