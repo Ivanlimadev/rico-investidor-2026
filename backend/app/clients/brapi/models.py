@@ -195,6 +195,7 @@ class StockQuoteDetailResponse(BaseModel):
     fundamentals: StockFundamentals
     candles: list[FiiCandleBar] = Field(default_factory=list)
     dividends: StockDividendsResponse
+    returns: list[StockCompareReturnPeriod] = Field(default_factory=list)
     provider: str = "brapi"
 
 
@@ -274,6 +275,7 @@ class DictionaryResponse(BaseModel):
 
 class StockCompareReturnPeriod(BaseModel):
     label: str
+    months_back: int = 0
     return_pct: float | None = None
 
 

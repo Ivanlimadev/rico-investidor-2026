@@ -3,9 +3,10 @@ import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/widgets/simple_quote_line_chart.dart';
 import 'package:rico_investidor/features/fii/utils/fii_quote_chart.dart';
 import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
+import 'package:rico_investidor/features/global_markets/utils/global_stock_chart_prices.dart';
 import 'package:rico_investidor/models/fii_models.dart';
 
-enum GlobalStockChartPeriod { months3, months6, year1 }
+enum GlobalStockChartPeriod { months3, months6, year1, years5 }
 
 class GlobalStockQuoteChart extends StatefulWidget {
   const GlobalStockQuoteChart({
@@ -24,12 +25,18 @@ class GlobalStockQuoteChart extends StatefulWidget {
 class _GlobalStockQuoteChartState extends State<GlobalStockQuoteChart> {
   static const _lineBlue = Color(0xFF3B82F6);
 
-  GlobalStockChartPeriod _period = GlobalStockChartPeriod.year1;
+  GlobalStockChartPeriod _period = GlobalStockChartPeriod.years5;
   int? _selectedIndex;
-  bool _useAdjusted = false;
+  bool _useAdjusted = true;
 
-  bool get _hasAdjustedData => widget.candles.any(
-        (c) => c.adjClose != null && (c.adjClose! - c.close).abs() > 0.0001,
+  bool get _hasAdjustedData => hasGlobalStockAdjustedChartData(widget.candles);
+
+  bool get _hasSplitAdjustment =>
+      widget.candles.any(globalStockCandleHasSplitAdjustment);
+
+  bool get _effectiveUseAdjusted => effectiveGlobalStockChartAdjusted(
+        useAdjusted: _useAdjusted,
+        candles: widget.candles,
       );
 
   @override
@@ -45,16 +52,15 @@ class _GlobalStockQuoteChartState extends State<GlobalStockQuoteChart> {
 
   List<FiiCandleBar> get _allBars => dedupeQuoteBarsByDate(_toBars(widget.candles));
 
-  List<FiiCandleBar> get _bars {
-    final all = _allBars;
-    return barsForTrailingTradingDays(all, maxBars: _tradingDaysFor(_period));
-  }
+  List<FiiCandleBar> get _bars =>
+      barsForTrailingTradingDays(_allBars, maxBars: _tradingDaysFor(_period));
 
   static int _tradingDaysFor(GlobalStockChartPeriod period) {
     return switch (period) {
       GlobalStockChartPeriod.months3 => 66,
       GlobalStockChartPeriod.months6 => 132,
       GlobalStockChartPeriod.year1 => 252,
+      GlobalStockChartPeriod.years5 => 1260,
     };
   }
 
@@ -82,8 +88,23 @@ class _GlobalStockQuoteChartState extends State<GlobalStockQuoteChart> {
           children: [
             Row(
               children: [
-                Text('Histórico', style: Theme.of(context).textTheme.titleSmall),
-                const Spacer(),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Histórico', style: Theme.of(context).textTheme.titleSmall),
+                      if (bars.isNotEmpty)
+                        Text(
+                          _effectiveUseAdjusted
+                              ? 'Fechamento diário EOD · ${bars.length} pregões · preço ajustado'
+                              : 'Fechamento diário EOD · ${bars.length} pregões · preço nominal',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                              ),
+                        ),
+                    ],
+                  ),
+                ),
                 if (changePct != null)
                   Text(
                     '${changePct >= 0 ? '+' : ''}${changePct.toStringAsFixed(2)}%',
@@ -99,16 +120,21 @@ class _GlobalStockQuoteChartState extends State<GlobalStockQuoteChart> {
               spacing: 6,
               runSpacing: 6,
               children: [
-                if (_hasAdjustedData)
-                  FilterChip(
-                    label: const Text('Ajustado'),
-                    selected: _useAdjusted,
-                    onSelected: (selected) => setState(() {
-                      _useAdjusted = selected;
-                      _selectedIndex = null;
-                    }),
-                    visualDensity: VisualDensity.compact,
-                    showCheckmark: false,
+                if (_hasSplitAdjustment)
+                  Tooltip(
+                    message: _useAdjusted
+                        ? 'Exibindo preços ajustados por splits'
+                        : 'Exibir preços ajustados por splits',
+                    child: FilterChip(
+                      label: const Text('Ajustado'),
+                      selected: _useAdjusted,
+                      onSelected: (selected) => setState(() {
+                        _useAdjusted = selected;
+                        _selectedIndex = null;
+                      }),
+                      visualDensity: VisualDensity.compact,
+                      showCheckmark: false,
+                    ),
                   ),
                 ...GlobalStockChartPeriod.values.map((period) {
                   return FilterChip(
@@ -116,6 +142,9 @@ class _GlobalStockQuoteChartState extends State<GlobalStockQuoteChart> {
                     selected: _period == period,
                     onSelected: (_) => setState(() {
                       _period = period;
+                      if (period == GlobalStockChartPeriod.years5) {
+                        _useAdjusted = true;
+                      }
                       _selectedIndex = null;
                     }),
                     visualDensity: VisualDensity.compact,
@@ -144,11 +173,10 @@ class _GlobalStockQuoteChartState extends State<GlobalStockQuoteChart> {
   }
 
   List<FiiCandleBar> _toBars(List<GlobalStockCandleDto> candles) {
-    final useAdjusted = _useAdjusted && _hasAdjustedData;
     return candles
         .map(
           (c) {
-            final price = useAdjusted ? (c.adjClose ?? c.close) : c.close;
+            final price = _chartClose(c);
             if (price <= 0) return null;
             return FiiCandleBar(
               tradeDate: c.date,
@@ -164,11 +192,15 @@ class _GlobalStockQuoteChartState extends State<GlobalStockQuoteChart> {
         .toList();
   }
 
+  double _chartClose(GlobalStockCandleDto candle) =>
+      chartCloseForGlobalStockCandle(candle, useAdjusted: _effectiveUseAdjusted);
+
   static String _periodLabel(GlobalStockChartPeriod period) {
     return switch (period) {
       GlobalStockChartPeriod.months3 => '3M',
       GlobalStockChartPeriod.months6 => '6M',
       GlobalStockChartPeriod.year1 => '1A',
+      GlobalStockChartPeriod.years5 => '5A',
     };
   }
 

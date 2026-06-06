@@ -7,6 +7,8 @@ const kMaxSearchResults = 24;
 
 const kMaxSearchFavoritesDisplay = 12;
 
+const kMaxRecentSearchedAssets = 12;
+
 const kSearchFavoritesGridColumns = 3;
 
 /// Grid compacto da aba Buscar (favoritos + resultados).

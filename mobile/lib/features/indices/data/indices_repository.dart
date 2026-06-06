@@ -1,3 +1,4 @@
+import 'package:rico_investidor/core/cache/bounded_session_cache_map.dart';
 import 'package:rico_investidor/core/cache/session_cache.dart';
 import 'package:rico_investidor/features/indices/data/indices_api_client.dart';
 import 'package:rico_investidor/features/indices/models/indices_models.dart';
@@ -8,13 +9,11 @@ class IndicesRepository {
 
   final IndicesApiClient _api;
   final _listCache = SessionCache<List<IndexQuoteDto>>(ttl: const Duration(minutes: 5));
-  final Map<String, SessionCache<IndexDetailDto>> _detailCache = {};
+  final _detailCache = BoundedSessionCacheMap<IndexDetailDto>();
+  final Map<String, Future<IndexDetailDto>> _detailInFlight = {};
 
   SessionCache<IndexDetailDto> _cacheFor(String symbol) {
-    return _detailCache.putIfAbsent(
-      normalizeIndexSymbol(symbol),
-      () => SessionCache<IndexDetailDto>(ttl: const Duration(minutes: 10)),
-    );
+    return _detailCache.cacheFor(normalizeIndexSymbol(symbol));
   }
 
   Future<List<AssetItem>> listFeaturedAssets() async {
@@ -31,23 +30,36 @@ class IndicesRepository {
     return response.items;
   }
 
-  Future<IndexDetailDto> getDetail(String symbol, {int historyLimit = 252}) async {
+  Future<IndexDetailDto> getDetail(String symbol, {int historyLimit = 252}) {
     final normalized = normalizeIndexSymbol(symbol);
+    final key = '$normalized:$historyLimit';
     final cache = _cacheFor(normalized);
     final cached = cache.get();
-    if (cached != null) return cached;
+    if (cached != null) return Future.value(cached);
 
+    final inFlight = _detailInFlight[key];
+    if (inFlight != null) return inFlight;
+
+    final future = _loadDetail(normalized, historyLimit: historyLimit).then((detail) {
+      cache.set(detail);
+      _detailInFlight.remove(key);
+      return detail;
+    }).catchError((Object error, StackTrace stack) {
+      _detailInFlight.remove(key);
+      Error.throwWithStackTrace(error, stack);
+    });
+    _detailInFlight[key] = future;
+    return future;
+  }
+
+  Future<IndexDetailDto> _loadDetail(String normalized, {required int historyLimit}) async {
     final detail = await _api.getDetail(normalized);
     if (detail.history.length < historyLimit) {
       try {
         final history = await _api.getHistory(normalized, limit: historyLimit);
-        final enriched = IndexDetailDto(quote: detail.quote, history: history.history);
-        cache.set(enriched);
-        return enriched;
+        return IndexDetailDto(quote: detail.quote, history: history.history);
       } catch (_) {}
     }
-
-    cache.set(detail);
     return detail;
   }
 

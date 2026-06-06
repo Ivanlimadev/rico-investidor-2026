@@ -932,6 +932,7 @@ class GlobalMarketService:
             returns = compute_returns(
                 candles_resp.candles,
                 current_price=quote.price,
+                dividends=mapped_dividends,
             )
             fundamentals = merge_fundamentals(
                 tickerinfo=tickerinfo,

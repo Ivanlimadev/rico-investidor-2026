@@ -1,3 +1,4 @@
+import 'package:rico_investidor/core/widgets/asset_country_flag.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 
 /// Pontuação de relevância — maior = aparece primeiro.
@@ -37,7 +38,25 @@ String _normalizeSearchSymbol(String symbol) {
   return upper;
 }
 
-List<AssetItem> rankAndDedupeSearchResults(List<AssetItem> items, String query) {
+/// Bônus quando o ativo pertence ao mercado preferido do usuário (BR/US).
+const kMarketPreferenceSearchBonus = 250;
+
+int marketPreferenceSearchBonus(AssetItem asset, String? preferredCountryCode) {
+  if (preferredCountryCode == null || preferredCountryCode.trim().isEmpty) {
+    return 0;
+  }
+  final assetCountry = countryCodeForAsset(asset);
+  if (assetCountry == null) return 0;
+  return assetCountry.toUpperCase() == preferredCountryCode.trim().toUpperCase()
+      ? kMarketPreferenceSearchBonus
+      : 0;
+}
+
+List<AssetItem> rankAndDedupeSearchResults(
+  List<AssetItem> items,
+  String query, {
+  String? preferredCountryCode,
+}) {
   if (items.isEmpty) return const [];
 
   final bestBySymbol = <String, AssetItem>{};
@@ -45,7 +64,8 @@ List<AssetItem> rankAndDedupeSearchResults(List<AssetItem> items, String query) 
 
   for (final asset in items) {
     final key = asset.symbol.trim().toUpperCase();
-    final score = scoreAssetSearchMatch(asset, query);
+    final score = scoreAssetSearchMatch(asset, query) +
+        marketPreferenceSearchBonus(asset, preferredCountryCode);
     if (score <= 0) continue;
 
     final previous = bestScore[key];

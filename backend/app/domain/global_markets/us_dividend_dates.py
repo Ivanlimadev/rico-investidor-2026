@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
 _US_EASTERN = ZoneInfo("America/New_York")
@@ -40,12 +40,11 @@ def normalize_us_market_day(value: object) -> str | None:
 
 
 def investidor10_com_date(ex_date: str | None) -> str | None:
-    """Último pregão US antes da data ex — padrão Investidor10 para stocks."""
+    """Último pregão US (NYSE) antes da data ex — padrão Investidor10 para stocks."""
     if not ex_date or len(ex_date) < 10:
         return None
 
+    from app.domain.market_calendar.trading_calendar import previous_trading_day
+
     day = date.fromisoformat(ex_date[:10])
-    candidate = day - timedelta(days=1)
-    while candidate.weekday() >= 5:
-        candidate -= timedelta(days=1)
-    return candidate.isoformat()
+    return previous_trading_day(day, market="us").isoformat()

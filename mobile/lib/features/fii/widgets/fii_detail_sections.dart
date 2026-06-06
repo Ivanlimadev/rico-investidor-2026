@@ -137,9 +137,14 @@ class FiiInfoRow {
 }
 
 class FiiCompositionCard extends StatelessWidget {
-  const FiiCompositionCard({super.key, required this.composition});
+  const FiiCompositionCard({
+    super.key,
+    required this.composition,
+    this.fundType,
+  });
 
   final FiiAssetComposition composition;
+  final String? fundType;
 
   static const _colors = [
     Color(0xFF4CAF50),
@@ -157,12 +162,34 @@ class FiiCompositionCard extends StatelessWidget {
     final items = composition.nonZeroItems();
     if (items.isEmpty) return const SizedBox.shrink();
 
+    final cri = composition.criPct ?? 0;
+    final realEstate = composition.realEstateLeasedPct ?? 0;
+    final subtitle = fundType != null
+        ? 'Fundo $fundType'
+        : cri >= 50
+            ? 'Predominância em recebíveis (CRI/LCI/debêntures)'
+            : realEstate >= 40
+                ? 'Predominância em imóveis para renda'
+                : 'Divisão do patrimônio líquido';
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Text(
+              'Composição do patrimônio',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
+                  ),
+            ),
+            const SizedBox(height: 12),
             ClipRRect(
               borderRadius: BorderRadius.circular(6),
               child: SizedBox(
@@ -249,6 +276,13 @@ class _FiiPropertiesCardState extends State<FiiPropertiesCard> {
 
     final showPager = widget.properties.length > widget.pageSize;
 
+    final useRichLayout = widget.properties.any(
+      (p) =>
+          p.vacancyPct != null ||
+          p.leasedPct != null ||
+          (p.assetClass != null && p.assetClass!.isNotEmpty),
+    );
+
     return Card(
       clipBehavior: Clip.antiAlias,
       child: Padding(
@@ -256,18 +290,29 @@ class _FiiPropertiesCardState extends State<FiiPropertiesCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3,
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 8,
-                childAspectRatio: 0.72,
+            if (useRichLayout)
+              Column(
+                children: [
+                  for (var i = 0; i < _visibleProperties.length; i++) ...[
+                    if (i > 0) const SizedBox(height: 8),
+                    _PropertyAssetCard(property: _visibleProperties[i]),
+                  ],
+                ],
+              )
+            else
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                  childAspectRatio: 1.05,
+                ),
+                itemCount: _visibleProperties.length,
+                itemBuilder: (context, index) =>
+                    _PropertyTile(property: _visibleProperties[index]),
               ),
-              itemCount: _visibleProperties.length,
-              itemBuilder: (context, index) => _PropertyTile(property: _visibleProperties[index]),
-            ),
             if (showPager) ...[
               const SizedBox(height: 8),
               Row(
@@ -292,6 +337,153 @@ class _FiiPropertiesCardState extends State<FiiPropertiesCard> {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _PropertyAssetCard extends StatelessWidget {
+  const _PropertyAssetCard({required this.property});
+
+  final FiiProperty property;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = parsePropertyState(property.address);
+    final metrics = <({String label, String value, Color? color})>[
+      if (property.revenuePct != null)
+        (label: 'Receita', value: formatPct(property.revenuePct!), color: AppColors.positive),
+      if (property.areaSqm != null)
+        (label: 'Área', value: formatAreaSqm(property.areaSqm!), color: null),
+      if (property.vacancyPct != null)
+        (
+          label: 'Vacância',
+          value: formatPct(property.vacancyPct!),
+          color: property.vacancyPct! > 5 ? AppColors.negative : null,
+        ),
+      if (property.leasedPct != null)
+        (
+          label: 'Ocupação',
+          value: formatPct(property.leasedPct!),
+          color: AppColors.positive,
+        ),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.55)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (state != null)
+                Container(
+                  margin: const EdgeInsets.only(right: 8, top: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    state,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                  ),
+                ),
+              Expanded(
+                child: Text(
+                  property.name,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
+          ),
+          if (property.assetClass != null && property.assetClass!.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              property.assetClass!,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.62),
+                  ),
+            ),
+          ],
+          if (property.address != null && property.address!.trim().isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              property.address!,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55),
+                  ),
+            ),
+          ],
+          if (metrics.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final metric in metrics)
+                  _PropertyMetricChip(
+                    label: metric.label,
+                    value: metric.value,
+                    valueColor: metric.color,
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PropertyMetricChip extends StatelessWidget {
+  const _PropertyMetricChip({
+    required this.label,
+    required this.value,
+    this.valueColor,
+  });
+
+  final String label;
+  final String value;
+  final Color? valueColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+          ),
+          Text(
+            value,
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: valueColor,
+                ),
+          ),
+        ],
       ),
     );
   }

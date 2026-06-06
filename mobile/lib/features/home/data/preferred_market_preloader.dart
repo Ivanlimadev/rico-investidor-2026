@@ -1,4 +1,5 @@
 import 'package:rico_investidor/core/cache/session_cache.dart';
+import 'package:rico_investidor/core/network/repository_timeouts.dart';
 import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
 import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
 import 'package:rico_investidor/features/global_markets/widgets/market_hub_section_grid.dart';
@@ -53,7 +54,9 @@ class PreferredMarketPreloader {
       preference: preference,
       quoteRepository: quoteRepository,
       globalMarketRepository: globalMarketRepository,
-    ).whenComplete(() => _inFlight = null);
+    )
+        .timeout(kRepositoryFetchTimeout)
+        .whenComplete(() => _inFlight = null);
   }
 
   Future<List<MarketHubSectionData>> _fetch({

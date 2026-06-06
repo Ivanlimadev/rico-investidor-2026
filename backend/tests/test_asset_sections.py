@@ -63,7 +63,7 @@ def test_etf_sections_and_notes():
     notes = stock_notes(detail, AssetClass.ETF_BR)
 
     assert sections == ["quote", "chart", "profile"]
-    assert any("ETF" in note for note in notes)
+    assert any("Histórico parcial" in note for note in notes)
 
 
 def test_stock_sections_include_fundamentals():

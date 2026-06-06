@@ -70,6 +70,8 @@ class _DetailSlowBundle:
     profile: StockProfile
     quote_name: str | None
     provider: str
+    bolsai_quote: dict | None = None
+    bolsai_fundamentals: dict | None = None
 
 
 class QuoteService:
@@ -132,7 +134,7 @@ class QuoteService:
         if not items:
             raise UpstreamError(f"Cotação não encontrada: {normalized}", status_code=404)
 
-        quote = items[0]
+        quote = await br_proventos_service.reconcile_market_quote(items[0])
         self._quote_cache.set(normalized, quote)
         return quote
 
@@ -160,6 +162,9 @@ class QuoteService:
 
         by_symbol = {item.symbol: item for item in cached_items + fetched}
         ordered = [by_symbol[t] for t in normalized if t in by_symbol]
+        ordered = await br_proventos_service.reconcile_market_quotes_batch(ordered)
+        for item in ordered:
+            self._quote_cache.set(item.symbol, item)
         return MarketQuoteBatchResponse(items=ordered, count=len(ordered))
 
     async def search(self, query: str, *, limit: int = 20) -> MarketQuoteListResponse:
@@ -327,6 +332,7 @@ class QuoteService:
 
         trimmed = items[:limit]
         enriched = await self._attach_brapi_sparklines(trimmed)
+        enriched = await br_proventos_service.reconcile_market_quotes_batch(enriched)
         result = MarketQuoteListResponse(items=enriched, count=len(enriched))
         self._list_cache.set(cache_key, result)
         return result
@@ -409,7 +415,7 @@ class QuoteService:
         by_symbol = {item.symbol: item for item in items}
         ordered = [by_symbol[ticker] for ticker in FEATURED_STOCK_TICKERS if ticker in by_symbol]
         ordered = await self._attach_brapi_sparklines(ordered)
-        ordered = await self._safe_attach_bolsai_dividend_yields(ordered)
+        ordered = await br_proventos_service.reconcile_market_quotes_batch(ordered)
         result = MarketQuoteBatchResponse(items=ordered, count=len(ordered))
         self._featured_cache.set(cache_tag, result)
         return result
@@ -436,6 +442,11 @@ class QuoteService:
                 profile_base=fast.profile,
             )
             result = self._merge_detail_bundles(fast, slow)
+            result = await self._apply_detail_candle_enrichment(
+                normalized,
+                result,
+                candle_limit=candle_limit,
+            )
             self._quote_cache.set(normalized, result.quote)
             return result
 
@@ -474,9 +485,59 @@ class QuoteService:
                 "provider": provider,
             }
         )
+        result = await self._apply_detail_candle_enrichment(
+            normalized,
+            result,
+            candle_limit=candle_limit,
+        )
         self._detail_cache.set(cache_key, result)
         self._quote_cache.set(normalized, result.quote)
         return result
+
+    async def _apply_detail_candle_enrichment(
+        self,
+        ticker: str,
+        result: StockQuoteDetailResponse,
+        *,
+        candle_limit: int,
+    ) -> StockQuoteDetailResponse:
+        from app.domain.global_markets.candle_stats import enrich_market_stats_from_fii_candles
+
+        candles = list(result.candles)
+        if br_proventos_service.uses_bolsai and prefer_bolsai_candles(
+            range_=None,
+            limit=candle_limit,
+        ):
+            hybrid = await self._get_stock_candles_hybrid(
+                ticker,
+                limit=candle_limit,
+                range_=None,
+                interval="1d",
+            )
+            if hybrid.candles:
+                candles = hybrid.candles
+
+        if not candles:
+            return result
+
+        from app.domain.quotes.stock_returns import compute_stock_returns
+
+        returns = compute_stock_returns(
+            candles,
+            current_price=result.quote.price,
+            payments=result.dividends.payments,
+        )
+
+        return result.model_copy(
+            update={
+                "candles": candles,
+                "market_stats": enrich_market_stats_from_fii_candles(
+                    result.market_stats,
+                    candles,
+                ),
+                "returns": returns,
+            }
+        )
 
     async def _load_detail_fast_bundle(
         self,
@@ -561,6 +622,8 @@ class QuoteService:
             profile=profile,
             quote_name=quote_name,
             provider=provider,
+            bolsai_quote=quote_payload,
+            bolsai_fundamentals=fund_payload,
         )
         self._detail_slow_cache.set(cache_key, bundle)
         return bundle
@@ -570,9 +633,18 @@ class QuoteService:
         fast: _DetailFastBundle,
         slow: _DetailSlowBundle,
     ) -> StockQuoteDetailResponse:
+        from app.clients.bolsai.fundamentals_mapper import bolsai_quote_updates
+
         quote = fast.quote
         if slow.quote_name:
             quote = quote.model_copy(update={"name": slow.quote_name})
+
+        quote_patch = bolsai_quote_updates(
+            slow.bolsai_quote,
+            fundamentals=slow.bolsai_fundamentals,
+        )
+        if quote_patch:
+            quote = quote.model_copy(update=quote_patch)
 
         dividends = br_proventos_service.enrich_dividends_with_summary(
             slow.dividends,
@@ -823,29 +895,7 @@ class QuoteService:
         self,
         items: list[MarketQuote],
     ) -> list[MarketQuote]:
-        if not br_proventos_service.uses_bolsai or not items:
-            return items
-        fund_map = await br_proventos_service.fetch_fundamentals_batch(
-            [item.symbol for item in items],
-            max_concurrency=settings.bolsai_dy_enrich_concurrency,
-            max_symbols=settings.bolsai_dy_list_max_symbols,
-        )
-        if not fund_map:
-            return items
-        enriched: list[MarketQuote] = []
-        for item in items:
-            payload = fund_map.get(item.symbol)
-            if not payload:
-                enriched.append(item)
-                continue
-            mapped = fundamentals_updates_from_bolsai(payload)
-            updates = {
-                key: mapped[key]
-                for key in ("dividend_yield_12m", "price_to_book")
-                if key in mapped
-            }
-            enriched.append(item.model_copy(update=updates) if updates else item)
-        return enriched
+        return await br_proventos_service.reconcile_market_quotes_batch(items)
 
     async def _safe_enrich_screener_with_bolsai_dy(
         self,
@@ -918,7 +968,12 @@ class QuoteService:
         price = item.quote.price
 
         dividends_task = br_proventos_service.get_stock_dividends(ticker, limit=80)
-        candles_task = self.get_stock_candles(ticker, limit=280, range_="1y")
+        candle_limit = 1260 if br_proventos_service.uses_bolsai else 280
+        candles_task = self.get_stock_candles(
+            ticker,
+            limit=candle_limit,
+            range_=None if br_proventos_service.uses_bolsai else "1y",
+        )
 
         dividends_raw, candles_raw = await asyncio.gather(
             dividends_task,
@@ -945,14 +1000,28 @@ class QuoteService:
             from app.domain.quotes.compare_enrichment import dividends_snapshot_from_stock
 
             dividends_snapshot = dividends_snapshot_from_stock(div_enriched)
-            dy = dividends_snapshot.dividend_yield_display or dividends_snapshot.dividend_yield_ttm
+            from app.domain.dividends.br_dividend_analytics import resolve_display_dividend_yield
+
+            dy = resolve_display_dividend_yield(
+                dividend_yield_display=dividends_snapshot.dividend_yield_display,
+                dividend_yield_ttm=dividends_snapshot.dividend_yield_ttm,
+            )
             if dy is not None:
                 fundamentals = fundamentals.model_copy(update={"dividend_yield_12m": dy})
 
-        from app.domain.quotes.compare_enrichment import return_periods_from_ticker_candles
+        from app.domain.quotes.compare_enrichment import compare_return_periods_from_candles
 
         candles = candles_raw.candles if hasattr(candles_raw, "candles") else []
-        returns = return_periods_from_ticker_candles(candles)
+        payments = (
+            dividends_raw.payments
+            if isinstance(dividends_raw, StockDividendsResponse)
+            else []
+        )
+        returns = compare_return_periods_from_candles(
+            candles,
+            current_price=price,
+            payments=payments,
+        )
 
         return item.model_copy(
             update={

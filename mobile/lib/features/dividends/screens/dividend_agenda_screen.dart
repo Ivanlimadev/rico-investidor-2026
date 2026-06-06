@@ -171,8 +171,8 @@ class _DividendAgendaScreenState extends State<DividendAgendaScreen> {
             if (_market == 'br') ...[
               const SizedBox(height: 8),
               Text(
-                'Agenda B3: proventos Bolsai (ações, BDRs, FIIs). '
-                'Nomes via Brapi. Data com pode variar 1 dia útil vs outros sites.',
+                'Agenda de proventos da B3 (ações, BDRs e FIIs). '
+                'A data com pode variar um dia útil em relação a outros sites.',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
                 ),

@@ -4,23 +4,21 @@ import 'package:rico_investidor/core/utils/currency_format.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/quotes/models/stock_macro.dart';
 import 'package:rico_investidor/features/quotes/models/stock_quote_detail.dart';
+import 'package:rico_investidor/features/quotes/utils/fundamentals_metric_help.dart';
 
-const _dictionaryKeys = <String, String>{
-  'DY 12m': 'yield',
-  'P/VP': 'priceToBook',
-  'EV': 'enterpriseValue',
-  'VP/cota': 'bookValue',
-};
+enum FundamentalsDisplayCurrency { brl, usd }
 
 class StockFundamentalsCard extends StatefulWidget {
   const StockFundamentalsCard({
     super.key,
     required this.fundamentals,
     required this.repository,
+    this.currency = FundamentalsDisplayCurrency.brl,
   });
 
   final StockFundamentalsDto fundamentals;
   final QuoteRepository repository;
+  final FundamentalsDisplayCurrency currency;
 
   @override
   State<StockFundamentalsCard> createState() => _StockFundamentalsCardState();
@@ -70,20 +68,30 @@ class _StockFundamentalsCardState extends State<StockFundamentalsCard> {
                         ),
                   ),
                   const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      for (final item in section.items)
-                        _MetricTile(
-                          label: item.label,
-                          value: item.value!,
-                          highlight: item.highlight,
-                          dictionaryField: _dictionaryKeys[item.label] != null
-                              ? dictionary[_dictionaryKeys[item.label]]
-                              : null,
-                        ),
-                    ],
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      const columns = 3;
+                      const spacing = 8.0;
+                      final tileWidth =
+                          (constraints.maxWidth - spacing * (columns - 1)) / columns;
+
+                      return Wrap(
+                        spacing: spacing,
+                        runSpacing: spacing,
+                        children: [
+                          for (final item in section.items)
+                            SizedBox(
+                              width: tileWidth,
+                              child: _MetricTile(
+                                label: item.label,
+                                value: item.value!,
+                                highlight: item.highlight,
+                                help: resolveFundamentalsMetricHelp(item.label, dictionary),
+                              ),
+                            ),
+                        ],
+                      );
+                    },
                   ),
                 ],
               ],
@@ -94,17 +102,19 @@ class _StockFundamentalsCardState extends State<StockFundamentalsCard> {
     );
   }
 
+  bool get _isUsd => widget.currency == FundamentalsDisplayCurrency.usd;
+
   List<_FundSection> _buildSections(StockFundamentalsDto fundamentals) {
     return <_FundSection>[
       _FundSection(
         title: 'Valuation',
         items: [
           _FundItem('DY 12m', _pct(fundamentals.dividendYield12m), highlight: true),
-          _FundItem('P/L', _num(fundamentals.priceEarnings)),
-          _FundItem('P/VP', _num(fundamentals.priceToBook)),
-          _FundItem('P/L fwd.', _num(fundamentals.forwardPe)),
+          _FundItem('P/L', _num(fundamentals.priceEarnings, isMultiple: true)),
+          _FundItem('P/VP', _num(fundamentals.priceToBook, isMultiple: true)),
+          _FundItem('P/L fwd.', _num(fundamentals.forwardPe, isMultiple: true)),
           _FundItem('EV', _compact(fundamentals.enterpriseValue)),
-          _FundItem('EV/EBITDA', _num(fundamentals.enterpriseToEbitda)),
+          _FundItem('EV/EBITDA', _num(fundamentals.enterpriseToEbitda, isMultiple: true)),
         ],
       ),
       _FundSection(
@@ -113,7 +123,10 @@ class _StockFundamentalsCardState extends State<StockFundamentalsCard> {
           _FundItem('Receita', _compact(fundamentals.totalRevenue)),
           _FundItem('EBITDA', _compact(fundamentals.ebitda)),
           _FundItem('FCF', _compact(fundamentals.freeCashflow)),
-          _FundItem('LPA', _money(fundamentals.earningsPerShare)),
+          if (_isUsd)
+            _FundItem('EPS', _money(fundamentals.earningsPerShare))
+          else
+            _FundItem('LPA', _money(fundamentals.earningsPerShare)),
           _FundItem('VP/cota', _money(fundamentals.bookValuePerShare)),
         ],
       ),
@@ -161,22 +174,24 @@ class _StockFundamentalsCardState extends State<StockFundamentalsCard> {
 
   String? _pct(double? value) {
     if (value == null) return null;
+    if (value <= 0) return null;
     return '${value.toStringAsFixed(2)}%';
   }
 
-  String? _num(double? value) {
+  String? _num(double? value, {bool isMultiple = false}) {
     if (value == null) return null;
+    if (isMultiple && (value <= 0 || value > 500)) return null;
     return value.toStringAsFixed(2);
   }
 
   String? _money(double? value) {
     if (value == null) return null;
-    return formatBrl(value);
+    return _isUsd ? formatUsd(value) : formatBrl(value);
   }
 
   String? _compact(double? value) {
     if (value == null) return null;
-    return formatCompactBrl(value);
+    return _isUsd ? formatCompactUsd(value) : formatCompactBrl(value);
   }
 
   String? _count(int? value) {
@@ -218,22 +233,21 @@ class _MetricTile extends StatelessWidget {
     required this.label,
     required this.value,
     this.highlight = false,
-    this.dictionaryField,
+    this.help,
   });
 
   final String label;
   final String value;
   final bool highlight;
-  final DictionaryFieldDto? dictionaryField;
+  final FundamentalsMetricHelp? help;
 
   @override
   Widget build(BuildContext context) {
     final color = highlight ? AppColors.positive : null;
-    final hasTooltip = dictionaryField?.description?.isNotEmpty == true;
 
-    final tile = Container(
-      width: 104,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       decoration: BoxDecoration(
         color: highlight
             ? AppColors.positive.withValues(alpha: 0.1)
@@ -254,18 +268,17 @@ class _MetricTile extends StatelessWidget {
                       ),
                 ),
               ),
-              if (hasTooltip)
-                Icon(
-                  Icons.info_outline,
-                  size: 12,
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
+              if (help != null)
+                FundamentalsMetricHelpButton(
+                  tooltip: label,
+                  onTap: () => showFundamentalsMetricHelpDialog(context, help!),
                 ),
             ],
           ),
           const SizedBox(height: 2),
           Text(
             value,
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
                   fontWeight: FontWeight.w800,
                   color: color,
                 ),
@@ -274,14 +287,6 @@ class _MetricTile extends StatelessWidget {
           ),
         ],
       ),
-    );
-
-    if (!hasTooltip) return tile;
-
-    return Tooltip(
-      message: dictionaryField!.description!,
-      preferBelow: false,
-      child: tile,
     );
   }
 }

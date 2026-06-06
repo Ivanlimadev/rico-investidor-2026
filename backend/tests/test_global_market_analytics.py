@@ -79,6 +79,53 @@ def test_compute_returns_includes_ytd():
     assert ytd.return_pct == 5.26
 
 
+def test_compute_returns_uses_adjusted_prices_after_splits():
+    length = 1301
+    start_index = length - 1 - 1260
+    start = datetime(2020, 1, 1, tzinfo=UTC)
+    candles = [
+        GlobalStockCandle(
+            date=(start + timedelta(days=i)).strftime("%Y-%m-%d"),
+            close=600.0 if i == start_index else 120.0,
+            adj_close=15.0 if i == start_index else 120.0,
+        )
+        for i in range(length)
+    ]
+
+    rows = compute_returns(candles, current_price=120.0)
+    five_year = next(r for r in rows if r.label == "5A")
+
+    assert five_year.return_pct is not None
+    assert five_year.return_pct == 700.0
+
+
+def test_compute_returns_includes_dividends_in_total_return():
+    length = 300
+    start_index = length - 1 - 252
+    start = datetime(2024, 1, 1, tzinfo=UTC)
+    candles = [
+        GlobalStockCandle(
+            date=(start + timedelta(days=i)).strftime("%Y-%m-%d"),
+            close=100.0,
+            adj_close=100.0,
+        )
+        for i in range(length)
+    ]
+    dividends = [
+        GlobalStockDividend(
+            date="2025-06-01",
+            amount=2.0,
+            payment_date="2025-06-15",
+        ),
+    ]
+
+    rows = compute_returns(candles, current_price=120.0, dividends=dividends)
+    one_year = next(r for r in rows if r.label == "1A")
+
+    assert one_year.return_pct is not None
+    assert one_year.return_pct == 22.0
+
+
 def test_build_company_profile():
     ticker = GlobalStockTickerInfo(
         symbol="AAPL",

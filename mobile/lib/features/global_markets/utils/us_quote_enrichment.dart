@@ -1,4 +1,5 @@
 import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
+import 'package:rico_investidor/features/global_markets/utils/global_stock_chart_prices.dart';
 import 'package:rico_investidor/features/quotes/data/quote_api_client.dart';
 import 'package:rico_investidor/features/quotes/models/stock_quote_detail.dart';
 
@@ -121,18 +122,29 @@ class UsQuoteEnrichment {
   static List<GlobalStockReturnPeriodDto> returnsFrom(
     List<GlobalStockCandleDto> candles, {
     required double currentPrice,
+    List<GlobalStockDividendDto> dividends = const [],
   }) {
     if (candles.length < 2 || currentPrice <= 0) return const [];
 
     final sorted = _validCandles(candles);
     final rows = <GlobalStockReturnPeriodDto>[];
+    final endPrice = sorted.isEmpty
+        ? currentPrice
+        : returnCloseForGlobalStockCandle(sorted.last, sorted);
+    final now = DateTime.now().toUtc();
 
     for (final entry in _returnSessions.entries) {
       final back = entry.value;
       if (sorted.length <= back) continue;
-      final start = sorted[sorted.length - 1 - back].chartClose;
-      if (start <= 0) continue;
-      final pct = ((currentPrice - start) / start) * 100;
+      final startCandle = sorted[sorted.length - 1 - back];
+      final start = returnCloseForGlobalStockCandle(startCandle, sorted);
+      if (start <= 0 || endPrice <= 0) continue;
+      final pricePct = ((endPrice - start) / start) * 100;
+      final since = DateTime.tryParse(startCandle.date.substring(0, 10)) ?? now;
+      final divPct = dividends.isEmpty
+          ? 0.0
+          : (_dividendsPerShareSince(dividends, since, now) / start) * 100;
+      final pct = pricePct + divPct;
       rows.add(
         GlobalStockReturnPeriodDto(
           label: entry.key,
@@ -142,5 +154,23 @@ class UsQuoteEnrichment {
       );
     }
     return rows;
+  }
+
+  static double _dividendsPerShareSince(
+    List<GlobalStockDividendDto> dividends,
+    DateTime since,
+    DateTime asOf,
+  ) {
+    var total = 0.0;
+    for (final item in dividends) {
+      if (item.isProjected || item.amount <= 0) continue;
+      final eventRaw = item.effectivePaymentDate ?? item.effectiveComDate ?? item.effectiveExDate;
+      final event = DateTime.tryParse(eventRaw.substring(0, 10));
+      if (event == null) continue;
+      if (!event.isBefore(since) && !event.isAfter(asOf)) {
+        total += item.amount;
+      }
+    }
+    return total;
   }
 }

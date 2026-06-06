@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
-import 'package:rico_investidor/core/utils/data_provider_label.dart';
 import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/fii/utils/fii_data_freshness.dart';
 import 'package:rico_investidor/features/fii/utils/fii_format.dart';
@@ -16,6 +15,7 @@ import 'package:rico_investidor/features/fii/widgets/fii_magic_number_card.dart'
 import 'package:rico_investidor/features/fii/widgets/fii_recent_dividends_card.dart';
 import 'package:rico_investidor/features/fii/widgets/fii_related_card.dart';
 import 'package:rico_investidor/features/fii/widgets/fii_returns_card.dart';
+import 'package:rico_investidor/features/fii/utils/fii_assets_labels.dart';
 import 'package:rico_investidor/features/fii/widgets/fii_properties_state_pie_card.dart';
 import 'package:rico_investidor/features/fii/utils/fii_property_state.dart';
 import 'package:rico_investidor/features/fii/widgets/fii_quote_hero_card.dart';
@@ -327,9 +327,23 @@ class _FiiDetailBody extends StatelessWidget {
         ),
         const SizedBox(height: 20),
         const FiiSectionHeader('Operacional'),
+        if (fiiOperacionalHint(detail) != null) ...[
+          const SizedBox(height: 6),
+          Text(
+            fiiOperacionalHint(detail)!,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
+                ),
+          ),
+        ],
         const SizedBox(height: 8),
         FiiMetricsGrid(
           metrics: [
+            if (detail.assetComposition?.criPct != null && detail.assetComposition!.criPct! > 0)
+              FiiMetricItem(
+                label: 'CRI',
+                value: formatPct(detail.assetComposition!.criPct!),
+              ),
             FiiMetricItem(
               label: 'Vacância',
               value: detail.vacancyPct != null ? formatPct(detail.vacancyPct!) : null,
@@ -356,17 +370,17 @@ class _FiiDetailBody extends StatelessWidget {
         if (detail.assetComposition != null &&
             detail.assetComposition!.nonZeroItems().isNotEmpty) ...[
           const SizedBox(height: 20),
-          const FiiSectionHeader('Composição do patrimônio'),
           const SizedBox(height: 8),
-          FiiCompositionCard(composition: detail.assetComposition!),
+          FiiCompositionCard(
+            composition: detail.assetComposition!,
+            fundType: detail.fundType,
+          ),
         ],
         if (detail.topProperties.isNotEmpty) ...[
           const SizedBox(height: 20),
           FiiSectionHeader(
-            'Principais imóveis',
-            subtitle: detail.propertyReferenceDate != null
-                ? cvmReportReferenceLabel(detail.propertyReferenceDate)
-                : null,
+            fiiPatrimonySectionTitle(detail),
+            subtitle: fiiPatrimonySectionSubtitle(detail),
           ),
           const SizedBox(height: 8),
           FiiPropertiesCard(
@@ -445,12 +459,6 @@ class _FiiDetailBody extends StatelessWidget {
         const FiiSectionHeader('Sobre o fundo'),
         const SizedBox(height: 8),
         FiiAboutCard(detail: detail, tenants: bundle.tenants),
-        const SizedBox(height: 12),
-        Text(
-          'Fonte: ${formatDataProvider(detail.provider)}',
-          style: Theme.of(context).textTheme.bodySmall,
-          textAlign: TextAlign.center,
-        ),
       ],
     );
   }

@@ -9,8 +9,7 @@ bool isMarketstackQuotaError(Object? error) {
 
 String marketstackErrorMessage(Object? error, {required String fallback}) {
   if (isMarketstackQuotaError(error)) {
-    return 'Cota mensal da Marketstack esgotada. '
-        'Aguarde a renovação do plano ou reduza o uso por enquanto.';
+    return 'Limite de consultas atingido. Tente novamente mais tarde.';
   }
   // Nunca repassa mensagens brutas de rede/exceção para a UI.
   return fallback;

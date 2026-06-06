@@ -52,6 +52,21 @@ void main() {
     expect(shouldTryExactSymbolLookup('KLBN'), isTrue);
   });
 
+  test('preferred market country ranks before foreign match for PETR', () {
+    final items = [
+      _asset('PETR', name: 'Petra Capital', category: MarketCategory.stocks),
+      _asset('PETR4', name: 'Petrobras', category: MarketCategory.acoesBr),
+      _asset('PETR3', name: 'Petrobras PN', category: MarketCategory.acoesBr),
+    ];
+
+    final rankedBr = rankAndDedupeSearchResults(items, 'PETR', preferredCountryCode: 'BR');
+    expect(rankedBr.first.symbol, 'PETR3');
+    expect(rankedBr.map((a) => a.symbol), contains('PETR'));
+
+    final rankedUs = rankAndDedupeSearchResults(items, 'PETR', preferredCountryCode: 'US');
+    expect(rankedUs.first.symbol, 'PETR');
+  });
+
   test('same B3 root ranks related tickers for KLBN4', () {
     final items = [
       _asset('KLBN11', category: MarketCategory.fiis),

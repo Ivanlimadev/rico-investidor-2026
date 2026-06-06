@@ -119,6 +119,6 @@ List<String> buildFiiHighlights({
 }
 
 String fiiDataDisclaimer() {
-  return 'Resumo gerado automaticamente a partir dos dados oficiais (CVM/B3) '
-      'via Brapi. Não constitui recomendação de investimento.';
+  return 'Resumo gerado automaticamente a partir dos dados oficiais (CVM/B3). '
+      'Não constitui recomendação de investimento.';
 }

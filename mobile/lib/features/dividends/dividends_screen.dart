@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
+import 'package:rico_investidor/core/markets/supported_market_countries.dart';
 import 'package:rico_investidor/features/dividends/widgets/portfolio_dividends_section.dart';
 import 'package:rico_investidor/state/portfolio_state.dart';
 
@@ -30,6 +31,9 @@ class DividendsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final preferredMarket =
+        AppShellScope.maybeOf(context)?.preferredMarket ?? defaultMarketPreference;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Dividendos'),
@@ -40,6 +44,7 @@ class DividendsScreen extends StatelessWidget {
         children: [
           PortfolioDividendsSection(
             portfolio: portfolio,
+            preferredMarket: preferredMarket,
             onPortfolioChanged: onPortfolioChanged,
           ),
         ],

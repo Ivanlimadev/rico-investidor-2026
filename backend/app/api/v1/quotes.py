@@ -2,6 +2,7 @@ from fastapi import APIRouter, Query
 from fastapi.responses import Response
 
 from app.config import settings
+from app.core.cached_json import cached_json_response
 from app.core.exceptions import AppError
 from app.services.logo_service import logo_service
 from app.services.quote_service import quote_service
@@ -14,7 +15,8 @@ _MAX_BATCH_TICKERS = 60
 @router.get("/featured")
 async def featured_quotes():
     """Principais ações para a home — fonte: Brapi."""
-    return await quote_service.featured_stocks()
+    data = await quote_service.featured_stocks()
+    return cached_json_response(data, max_age_seconds=settings.quote_cache_ttl_seconds)
 
 
 @router.get("/heatmap")
@@ -22,7 +24,8 @@ async def stock_heatmap(
     limit: int = Query(default=18, ge=1, le=24),
 ):
     """Mapa de calor — top ações B3 por volume do pregão."""
-    return await quote_service.get_stock_heatmap(limit=limit)
+    data = await quote_service.get_stock_heatmap(limit=limit)
+    return cached_json_response(data, max_age_seconds=settings.quote_cache_ttl_seconds)
 
 
 @router.get("/search")
@@ -66,7 +69,8 @@ async def get_stock_catalog(
     category: str = Query(default="acoes_br", pattern="^(acoes_br|bdr|etf|etf_intl)$"),
 ):
     """Catálogo B3 cacheado — símbolos, nomes e setores para busca offline."""
-    return await quote_service.get_stock_catalog(category)
+    data = await quote_service.get_stock_catalog(category)
+    return cached_json_response(data, max_age_seconds=settings.quote_cache_ttl_seconds)
 
 
 @router.get("/screener")

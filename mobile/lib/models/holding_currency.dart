@@ -1,6 +1,7 @@
 import 'package:rico_investidor/core/utils/currency_format.dart';
 import 'package:rico_investidor/features/fii/utils/fii_ticker.dart';
 import 'package:rico_investidor/models/market_category.dart';
+import 'package:rico_investidor/models/portfolio_holding.dart';
 
 enum HoldingCurrency {
   brl,
@@ -61,4 +62,34 @@ double convertToUsd({
   if (currency == HoldingCurrency.usd) return amount;
   if (usdBrlRate == null || usdBrlRate <= 0) return 0;
   return amount / usdBrlRate;
+}
+
+double convertToBrl({
+  required double amount,
+  required HoldingCurrency currency,
+  required double? usdBrlRate,
+}) {
+  if (currency == HoldingCurrency.brl) return amount;
+  if (usdBrlRate == null || usdBrlRate <= 0) return 0;
+  return amount * usdBrlRate;
+}
+
+/// BDRs negociados na B3 (ex.: NVDA34) — patrimônio em reais, não entram na dolarização.
+bool isBdrSymbol(String symbol, {MarketCategory? category}) {
+  if (category == MarketCategory.bdr) return true;
+  final normalized = symbol.trim().toUpperCase();
+  if (normalized.length >= 2) {
+    final suffix = normalized.substring(normalized.length - 2);
+    if ({'34', '35', '39'}.contains(suffix)) return true;
+  }
+  return false;
+}
+
+/// Ativos comprados em dólar em corretoras internacionais (AAPL, MSFT…), não BDRs.
+bool isInternationalUsdHolding(
+  PortfolioHolding holding, {
+  MarketCategory? category,
+}) {
+  if (isBdrSymbol(holding.symbol, category: category)) return false;
+  return holding.currency == HoldingCurrency.usd;
 }

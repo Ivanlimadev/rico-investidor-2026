@@ -5,6 +5,7 @@ import 'package:rico_investidor/core/auth/auth_session.dart';
 import 'package:rico_investidor/core/auth/session_expired_exception.dart';
 import 'package:rico_investidor/core/config/api_config.dart';
 import 'package:rico_investidor/core/network/api_exception.dart';
+import 'package:rico_investidor/core/network/shared_http_client.dart';
 
 typedef AuthHeaderProvider = String? Function();
 typedef UnauthorizedHandler = Future<void> Function();
@@ -14,7 +15,7 @@ class ApiClient {
     http.Client? client,
     AuthHeaderProvider? authHeaderProvider,
     UnauthorizedHandler? onUnauthorized,
-  })  : _client = client ?? http.Client(),
+  })  : _client = client ?? sharedHttpClient,
         _authHeaderProvider = authHeaderProvider ?? (() => authSession.accessToken),
         _onUnauthorized = onUnauthorized ?? authSession.refreshAfterUnauthorized;
 

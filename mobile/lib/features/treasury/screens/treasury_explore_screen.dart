@@ -111,11 +111,15 @@ class _TreasuryExploreScreenState extends State<TreasuryExploreScreen> {
   }
 
   void _onSearchChanged(String value) {
-    _unifiedSearch.search(value, (snapshot) {
-      if (!mounted) return;
-      setState(() => _searchSnapshot = snapshot);
-      if (!snapshot.active) _load(reset: true);
-    });
+    _unifiedSearch.search(
+      value,
+      (snapshot) {
+        if (!mounted) return;
+        setState(() => _searchSnapshot = snapshot);
+        if (!snapshot.active) _load(reset: true);
+      },
+      preferredMarket: AppShellScope.maybeOf(context)?.preferredMarket,
+    );
   }
 
   void _clearSearch() {
@@ -171,7 +175,7 @@ class _TreasuryExploreScreenState extends State<TreasuryExploreScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: Text(
-              '$_total títulos · página $_page/$_totalPages · Brapi',
+              '$_total títulos · página $_page/$_totalPages',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),

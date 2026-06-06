@@ -1,23 +1,27 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
-import 'package:rico_investidor/core/utils/currency_format.dart';
+import 'package:rico_investidor/models/holding_currency.dart';
 import 'package:rico_investidor/models/portfolio_allocation_slice.dart';
+import 'package:rico_investidor/services/market_preference_storage.dart';
 import 'package:rico_investidor/state/portfolio_state.dart';
 
 class PortfolioAllocationCard extends StatelessWidget {
   const PortfolioAllocationCard({
     super.key,
     required this.portfolio,
+    required this.preferredMarket,
     this.onTap,
   });
 
   final PortfolioState portfolio;
+  final MarketPreference preferredMarket;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final slices = portfolio.computeAllocation();
-    final total = portfolio.totalBalance;
+    final slices = portfolio.computeAllocation(preferredMarket);
+    final total = portfolio.totalBalanceFor(preferredMarket);
+    final currency = preferredMarket.isBrazil ? HoldingCurrency.brl : HoldingCurrency.usd;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
@@ -40,7 +44,7 @@ class PortfolioAllocationCard extends StatelessWidget {
                 Text(
                   slices.isEmpty
                       ? 'Adicione ativos para ver o gráfico'
-                      : formatUsd(total),
+                      : currency.format(total),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                   ),

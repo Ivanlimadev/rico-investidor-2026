@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 
 from app.clients.brapi.models import (
     StockCompareDividendsSnapshot,
@@ -10,10 +10,16 @@ from app.clients.brapi.models import (
 )
 from app.clients.bolsai.client import BolsaiClient
 from app.clients.bolsai.fundamentals_mapper import merge_bolsai_fundamentals
-from app.domain.fii.models import FiiCandleBar
+from app.domain.fii.models import FiiCandleBar, FiiDistributionPayment
 from app.domain.global_markets.models import GlobalStockDividendsSummary, GlobalStockReturnPeriod
+from app.domain.dividends.br_dividend_analytics import (
+    resolve_display_dividend_yield,
+    resolve_display_ttm_per_share,
+)
+from app.domain.quotes.stock_returns import compute_stock_returns
 
 _COMPARE_1M_SESSIONS = 21
+_COMPARE_RETURN_LABELS = frozenset({"1M", "YTD", "1A"})
 
 
 def dividends_snapshot_from_stock(
@@ -22,9 +28,15 @@ def dividends_snapshot_from_stock(
     summary = dividends.summary
     next_ev = summary.next_dividend
     return StockCompareDividendsSnapshot(
-        dividend_yield_display=summary.dividend_yield_display or dividends.dividend_yield_ttm,
+        dividend_yield_display=resolve_display_dividend_yield(
+            dividend_yield_display=summary.dividend_yield_display,
+            dividend_yield_ttm=dividends.dividend_yield_ttm,
+        ),
         dividend_yield_ttm=dividends.dividend_yield_ttm,
-        ttm_per_share=summary.ttm_per_share_display or dividends.ttm_per_share,
+        ttm_per_share=resolve_display_ttm_per_share(
+            ttm_per_share_display=summary.ttm_per_share_display,
+            ttm_per_share=dividends.ttm_per_share,
+        ),
         frequency_label=summary.frequency_label,
         payments_12m=summary.payments_12m,
         next_com_date=next_ev.com_date if next_ev else None,
@@ -83,6 +95,34 @@ def _ytd_start_price(candles: list[FiiCandleBar], *, as_of: date) -> float | Non
         if bar.trade_date.startswith(year_prefix):
             return bar.close if bar.close > 0 else None
     return None
+
+
+def compare_return_periods_from_candles(
+    candles: list[FiiCandleBar],
+    *,
+    current_price: float | None = None,
+    payments: list[FiiDistributionPayment] | None = None,
+    as_of: date | None = None,
+) -> list[StockCompareReturnPeriod]:
+    """Rentabilidade para comparador — pregões + dividendos quando há histórico longo."""
+    if not candles:
+        return []
+
+    ref_day = as_of or date.today()
+    full = compute_stock_returns(
+        candles,
+        current_price=current_price,
+        payments=payments or [],
+        as_of=datetime(ref_day.year, ref_day.month, ref_day.day, tzinfo=UTC),
+    )
+    if full:
+        return [
+            StockCompareReturnPeriod(label=row.label, return_pct=row.return_pct)
+            for row in full
+            if row.label in _COMPARE_RETURN_LABELS and row.return_pct is not None
+        ]
+
+    return return_periods_from_ticker_candles(candles, as_of=as_of)
 
 
 def return_periods_from_ticker_candles(

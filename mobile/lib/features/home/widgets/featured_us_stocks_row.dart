@@ -110,7 +110,7 @@ class _FeaturedUsStocksRowState extends State<FeaturedUsStocksRow> {
 
     if (items.isEmpty) {
       return const DataUnavailableBanner(
-        message: 'Configure MARKETSTACK_API_KEY no backend para ver ações dos EUA.',
+        message: 'Destaques do mercado americano indisponíveis no momento.',
       );
     }
 

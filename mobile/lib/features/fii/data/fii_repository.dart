@@ -1,3 +1,4 @@
+import 'package:rico_investidor/core/cache/bounded_session_cache_map.dart';
 import 'package:rico_investidor/core/cache/session_cache.dart';
 import 'package:rico_investidor/core/utils/asset_logo_url.dart';
 import 'package:rico_investidor/features/fii/data/fii_api_client.dart';
@@ -22,18 +23,20 @@ class FiiRepository {
   final FiiApiClient _api;
 
   List<FiiSummary>? _catalog;
+  Future<List<FiiSummary>>? _catalogFuture;
   int? _totalCount;
   Future<int>? _totalCountFuture;
   final _featuredCache = SessionCache<List<FiiScreenerItem>>(ttl: const Duration(minutes: 5));
   Future<List<FiiScreenerItem>>? _featuredFuture;
-  final Map<String, SessionCache<FiiDetail>> _detailCache = {};
-  final Map<String, SessionCache<FiiDistributions>> _distributionsCache = {};
-  final Map<String, SessionCache<FiiHistoryResponse>> _historyCache = {};
-  final Map<String, SessionCache<FiiCandlesResponse>> _candlesCache = {};
-  final Map<String, SessionCache<List<FiiScreenerItem>>> _relatedCache = {};
+  final _detailCache = BoundedSessionCacheMap<FiiDetail>();
+  final _distributionsCache = BoundedSessionCacheMap<FiiDistributions>();
+  final _historyCache = BoundedSessionCacheMap<FiiHistoryResponse>();
+  final _candlesCache = BoundedSessionCacheMap<FiiCandlesResponse>();
+  final _relatedCache = BoundedSessionCacheMap<List<FiiScreenerItem>>();
+  final Map<String, Future<FiiDetail>> _detailInFlight = {};
 
-  SessionCache<T> _cacheFor<T>(Map<String, SessionCache<T>> store, String key) {
-    return store.putIfAbsent(key, () => SessionCache<T>(ttl: const Duration(minutes: 10)));
+  SessionCache<T> _cacheFor<T>(BoundedSessionCacheMap<T> store, String key) {
+    return store.cacheFor(key);
   }
 
   Future<int> totalCount() {
@@ -53,9 +56,12 @@ class FiiRepository {
     }
   }
 
-  Future<List<FiiSummary>> loadCatalog() async {
-    if (_catalog != null) return _catalog!;
+  Future<List<FiiSummary>> loadCatalog() {
+    if (_catalog != null) return Future.value(_catalog!);
+    return _catalogFuture ??= _fetchCatalog().whenComplete(() => _catalogFuture = null);
+  }
 
+  Future<List<FiiSummary>> _fetchCatalog() async {
     final items = <FiiSummary>[];
     var offset = 0;
     const pageSize = 500;
@@ -132,22 +138,25 @@ class FiiRepository {
     );
   }
 
-  SessionCache<FiiDetail> _detailCacheFor(String ticker) {
+  Future<FiiDetail> getDetail(String ticker) {
     final normalized = normalizeFiiTicker(ticker);
-    return _detailCache.putIfAbsent(
-      normalized,
-      () => SessionCache<FiiDetail>(ttl: const Duration(minutes: 10)),
-    );
-  }
-
-  Future<FiiDetail> getDetail(String ticker) async {
-    final cache = _detailCacheFor(ticker);
+    final cache = _detailCache.cacheFor(normalized);
     final cached = cache.get();
-    if (cached != null) return cached;
+    if (cached != null) return Future.value(cached);
 
-    final detail = await _api.getFii(normalizeFiiTicker(ticker));
-    cache.set(detail);
-    return detail;
+    final inFlight = _detailInFlight[normalized];
+    if (inFlight != null) return inFlight;
+
+    final future = _api.getFii(normalized).then((detail) {
+      cache.set(detail);
+      _detailInFlight.remove(normalized);
+      return detail;
+    }).catchError((Object error, StackTrace stack) {
+      _detailInFlight.remove(normalized);
+      Error.throwWithStackTrace(error, stack);
+    });
+    _detailInFlight[normalized] = future;
+    return future;
   }
 
   Future<FiiDistributions> getDistributions(String ticker, {int years = 5}) async {
@@ -218,9 +227,9 @@ class FiiRepository {
 
   Future<List<FiiScreenerItem>> relatedFiis(FiiDetail detail, {int limit = relatedFiisLimit}) async {
     final cacheKey = '${detail.ticker}:${detail.segment ?? ''}:${detail.fundType ?? ''}:$limit';
-    final cache = _relatedCache.putIfAbsent(
+    final cache = _relatedCache.cacheFor(
       cacheKey,
-      () => SessionCache<List<FiiScreenerItem>>(ttl: const Duration(minutes: 15)),
+      ttl: const Duration(minutes: 15),
     );
     final cached = cache.get();
     if (cached != null) return cached;
@@ -325,15 +334,19 @@ class FiiRepository {
   }
 
   void invalidateDetail(String ticker) {
-    _detailCache.remove(normalizeFiiTicker(ticker));
+    final normalized = normalizeFiiTicker(ticker);
+    _detailCache.remove(normalized);
+    _detailInFlight.remove(normalized);
   }
 
   void invalidate() {
     _catalog = null;
+    _catalogFuture = null;
     _totalCount = null;
     _totalCountFuture = null;
     invalidateFeatured();
     _detailCache.clear();
+    _detailInFlight.clear();
   }
 }
 

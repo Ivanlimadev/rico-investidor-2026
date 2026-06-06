@@ -206,13 +206,6 @@ class _CryptoDetailScreenState extends State<CryptoDetailScreen> {
                 ticker: quote.symbol,
                 market: relatedMarketSlug(MarketCategory.cripto),
               ),
-              const SizedBox(height: 12),
-              Text(
-                'Binance · CoinGecko',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
-                    ),
-              ),
             ],
           );
         },

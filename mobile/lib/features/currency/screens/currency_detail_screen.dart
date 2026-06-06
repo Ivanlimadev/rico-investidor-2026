@@ -132,7 +132,7 @@ class _CurrencyDetailScreenState extends State<CurrencyDetailScreen> {
               CurrencyHistoryChart(pair: quote.pair, history: history),
               const SizedBox(height: 12),
               Text(
-                'Cotações PTAX via Brapi (${quote.fromCurrency} → ${quote.toCurrency}).',
+                'Cotações PTAX (${quote.fromCurrency} → ${quote.toCurrency}).',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
                     ),

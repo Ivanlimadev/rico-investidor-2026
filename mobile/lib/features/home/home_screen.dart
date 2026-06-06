@@ -57,12 +57,29 @@ class HomeScreen extends StatefulWidget {
   final LogoutCallback onLogout;
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<HomeScreen> createState() => HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class HomeScreenState extends State<HomeScreen> {
+  final ScrollController scrollController = ScrollController();
+
   GlobalMarketRepository get _globalMarketRepository =>
       widget.globalMarketRepository ?? globalMarketRepository;
+
+  void scrollToTop() {
+    if (!scrollController.hasClients) return;
+    scrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  @override
+  void dispose() {
+    scrollController.dispose();
+    super.dispose();
+  }
 
   void _openWorldExchanges(BuildContext context) {
     Navigator.of(context).push(
@@ -136,10 +153,12 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       body: CustomScrollView(
+        controller: scrollController,
         slivers: [
           SliverToBoxAdapter(
             child: PortfolioSummaryRow(
-              summary: widget.portfolio.buildSummary(),
+              portfolio: widget.portfolio,
+              preferredMarket: widget.preferredMarket,
               onPortfolioTap: () => openPortfolioScreen(
                 context,
                 portfolio: widget.portfolio,
@@ -152,13 +171,20 @@ class _HomeScreenState extends State<HomeScreen> {
           SliverToBoxAdapter(
             child: PortfolioAllocationCard(
               portfolio: widget.portfolio,
-              onTap: () => openPortfolioScreen(
-                context,
-                portfolio: widget.portfolio,
-                onPortfolioChanged: widget.onPortfolioChanged,
-                fiiRepository: widget.fiiRepository,
-                quoteRepository: widget.quoteRepository,
-              ),
+              preferredMarket: widget.preferredMarket,
+              onTap: widget.portfolio.holdings.isEmpty
+                  ? () => openAddAssetScreen(
+                        context,
+                        portfolio: widget.portfolio,
+                        onPortfolioChanged: widget.onPortfolioChanged,
+                      )
+                  : () => openPortfolioScreen(
+                        context,
+                        portfolio: widget.portfolio,
+                        onPortfolioChanged: widget.onPortfolioChanged,
+                        fiiRepository: widget.fiiRepository,
+                        quoteRepository: widget.quoteRepository,
+                      ),
             ),
           ),
           SliverToBoxAdapter(

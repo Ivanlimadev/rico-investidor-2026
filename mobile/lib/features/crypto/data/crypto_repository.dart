@@ -1,3 +1,4 @@
+import 'package:rico_investidor/core/cache/bounded_session_cache_map.dart';
 import 'package:rico_investidor/core/cache/session_cache.dart';
 import 'package:rico_investidor/core/auth/auth_session.dart';
 import 'package:rico_investidor/features/crypto/data/crypto_api_client.dart';
@@ -12,14 +13,12 @@ class CryptoRepository {
   final _moversCache = SessionCache<CryptoMoversResponseDto>(ttl: const Duration(minutes: 5));
   final _heatmapCache = SessionCache<CryptoListResponseDto>(ttl: const Duration(minutes: 5));
   final _macroCache = SessionCache<CryptoMacroSnapshotDto>(ttl: const Duration(minutes: 30));
-  final Map<String, SessionCache<CryptoInvestorProfileDto>> _profileCache = {};
-  final Map<String, SessionCache<CryptoDetailDto>> _detailCache = {};
+  final _profileCache = BoundedSessionCacheMap<CryptoInvestorProfileDto>();
+  final _detailCache = BoundedSessionCacheMap<CryptoDetailDto>(defaultTtl: const Duration(minutes: 2));
+  final Map<String, Future<CryptoDetailDto>> _detailInFlight = {};
 
   SessionCache<CryptoDetailDto> _cacheFor(String symbol) {
-    return _detailCache.putIfAbsent(
-      normalizeCryptoSymbol(symbol),
-      () => SessionCache<CryptoDetailDto>(ttl: const Duration(minutes: 2)),
-    );
+    return _detailCache.cacheFor(normalizeCryptoSymbol(symbol));
   }
 
   Future<List<AssetItem>> listFeaturedAssets() async {
@@ -37,10 +36,7 @@ class CryptoRepository {
   }
 
   SessionCache<CryptoInvestorProfileDto> _profileCacheFor(String symbol) {
-    return _profileCache.putIfAbsent(
-      normalizeCryptoSymbol(symbol),
-      () => SessionCache<CryptoInvestorProfileDto>(ttl: const Duration(minutes: 10)),
-    );
+    return _profileCache.cacheFor(normalizeCryptoSymbol(symbol));
   }
 
   Future<CryptoInvestorProfileDto> getProfile(String symbol) async {
@@ -55,12 +51,29 @@ class CryptoRepository {
     return profile;
   }
 
-  Future<CryptoDetailDto> getDetail(String symbol, {String chartPreset = '1m'}) async {
+  Future<CryptoDetailDto> getDetail(String symbol, {String chartPreset = '1m'}) {
     final normalized = normalizeCryptoSymbol(symbol);
+    final key = '$normalized:$chartPreset';
     final cache = _cacheFor(normalized);
     final cached = cache.get();
-    if (cached != null) return cached;
+    if (cached != null) return Future.value(cached);
 
+    final inFlight = _detailInFlight[key];
+    if (inFlight != null) return inFlight;
+
+    final future = _loadDetail(normalized, chartPreset: chartPreset).then((detail) {
+      cache.set(detail);
+      _detailInFlight.remove(key);
+      return detail;
+    }).catchError((Object error, StackTrace stack) {
+      _detailInFlight.remove(key);
+      Error.throwWithStackTrace(error, stack);
+    });
+    _detailInFlight[key] = future;
+    return future;
+  }
+
+  Future<CryptoDetailDto> _loadDetail(String normalized, {required String chartPreset}) async {
     await authSession.ensureAuthenticated();
     final profileFuture = getProfile(normalized);
     final candlesFuture = _api.getCandles(normalized, preset: chartPreset);
@@ -68,7 +81,7 @@ class CryptoRepository {
 
     final profile = results[0] as CryptoInvestorProfileDto;
     final candles = results[1] as CryptoCandlesResponseDto;
-    final detail = CryptoDetailDto(
+    return CryptoDetailDto(
       quote: profile.quote,
       profile: profile,
       candles: candles.candles,
@@ -76,8 +89,6 @@ class CryptoRepository {
           .map((candle) => CryptoHistoryPointDto(date: candle.date, value: candle.close))
           .toList(),
     );
-    cache.set(detail);
-    return detail;
   }
 
   Future<CryptoCandlesResponseDto> getCandles(String symbol, {String preset = '1m'}) {

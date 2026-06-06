@@ -1,4 +1,6 @@
+import 'package:rico_investidor/core/cache/bounded_session_cache_map.dart';
 import 'package:rico_investidor/core/cache/session_cache.dart';
+import 'package:rico_investidor/core/network/repository_timeouts.dart';
 import 'package:rico_investidor/features/fii/utils/fii_quote_chart.dart';
 import 'package:rico_investidor/features/fii/utils/fii_ticker.dart';
 import 'package:rico_investidor/features/quotes/data/quote_api_client.dart';
@@ -23,7 +25,7 @@ class QuoteRepository {
   final _featuredCache = SessionCache<List<AssetItem>>(ttl: const Duration(minutes: 5));
   final _heatmapCache = SessionCache<QuoteListResponse>(ttl: const Duration(minutes: 5));
   final _macroCache = SessionCache<BrazilMacroDto>(ttl: const Duration(minutes: 30));
-  final Map<String, SessionCache<StockQuoteDetailDto>> _detailCache = {};
+  final _detailCache = BoundedSessionCacheMap<StockQuoteDetailDto>();
   final Map<String, Future<StockQuoteDetailDto>> _detailInFlight = {};
   Future<QuoteListResponse>? _heatmapFuture;
   Future<List<AssetItem>>? _featuredFuture;
@@ -32,10 +34,7 @@ class QuoteRepository {
       '${symbol.toUpperCase()}:$candleLimit:$dividendLimit';
 
   SessionCache<StockQuoteDetailDto> _detailCacheFor(String key) {
-    return _detailCache.putIfAbsent(
-      key,
-      () => SessionCache<StockQuoteDetailDto>(ttl: const Duration(minutes: 10)),
-    );
+    return _detailCache.cacheFor(key);
   }
 
   bool supportsCategory(MarketCategory category) {
@@ -206,11 +205,13 @@ class QuoteRepository {
     int limit = 8,
     String period = 'quarterly',
   }) {
-    return _api.getFinancials(symbol, limit: limit, period: period);
+    return _api
+        .getFinancials(symbol, limit: limit, period: period)
+        .timeout(kRepositoryFetchTimeout);
   }
 
   Future<StockFundamentalHistoryDto> getFundamentalHistory(String symbol, {int limit = 12}) {
-    return _api.getFundamentalHistory(symbol, limit: limit);
+    return _api.getFundamentalHistory(symbol, limit: limit).timeout(kRepositoryFetchTimeout);
   }
 
   Future<StockPerformanceDto> getStockPerformance(

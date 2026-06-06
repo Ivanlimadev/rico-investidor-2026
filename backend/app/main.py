@@ -13,6 +13,7 @@ from app.core.http_client import close_http_client
 from app.core.cors_config import build_cors_origin_regex
 from app.core.production_guard import validate_production_settings
 from app.core.rate_limit import RateLimitMiddleware
+from app.core.security_headers import SecurityHeadersMiddleware
 
 
 @asynccontextmanager
@@ -42,6 +43,7 @@ def create_app(*, docs_enabled: bool | None = None) -> FastAPI:
         openapi_url=openapi_url,
     )
 
+    application.add_middleware(SecurityHeadersMiddleware)
     application.add_middleware(
         RateLimitMiddleware,
         max_requests=settings.rate_limit_per_minute,
@@ -67,7 +69,16 @@ def create_app(*, docs_enabled: bool | None = None) -> FastAPI:
 
     @application.get("/health")
     async def health():
-        return {"status": "ok", "quote_provider": "brapi", "fii_provider": "brapi"}
+        from app.services.br_proventos_service import br_proventos_service
+
+        bolsai = br_proventos_service.uses_bolsai
+        return {
+            "status": "ok",
+            "br_data_mode": "hybrid_bolsai_brapi" if bolsai else "brapi_only",
+            "bolsai_configured": bolsai,
+            "quote_provider": "hybrid" if bolsai else "brapi",
+            "fii_provider": "hybrid" if bolsai else "brapi",
+        }
 
     return application
 

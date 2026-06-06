@@ -1,3 +1,4 @@
+import 'package:rico_investidor/core/cache/bounded_session_cache_map.dart';
 import 'package:rico_investidor/core/cache/session_cache.dart';
 import 'package:rico_investidor/core/network/api_exception.dart';
 import 'package:rico_investidor/features/global_markets/data/global_market_api_client.dart';
@@ -17,7 +18,7 @@ class GlobalMarketRepository {
   final _featuredCache = SessionCache<List<AssetItem>>(ttl: const Duration(minutes: 5));
   final _heatmapCache = SessionCache<QuoteListResponse>(ttl: const Duration(minutes: 5));
   final _exchangesCache = SessionCache<WorldExchangesResponseDto>(ttl: const Duration(hours: 6));
-  final Map<String, SessionCache<GlobalStockDetailDto>> _detailCache = {};
+  final _detailCache = BoundedSessionCacheMap<GlobalStockDetailDto>();
   final Map<String, Future<GlobalStockDetailDto>> _detailInFlight = {};
   Future<List<AssetItem>>? _featuredFuture;
   Future<QuoteListResponse>? _heatmapFuture;
@@ -32,10 +33,7 @@ class GlobalMarketRepository {
       '${symbol.toUpperCase()}:${exchange ?? ''}:$candleLimit:$dividendLimit:$splitLimit';
 
   SessionCache<GlobalStockDetailDto> _detailCacheFor(String key) {
-    return _detailCache.putIfAbsent(
-      key,
-      () => SessionCache<GlobalStockDetailDto>(ttl: const Duration(minutes: 10)),
-    );
+    return _detailCache.cacheFor(key);
   }
 
   Future<List<AssetItem>> listFeaturedUsAssets() {

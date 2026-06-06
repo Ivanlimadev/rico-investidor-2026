@@ -38,31 +38,38 @@ def stock_sections(stock: StockQuoteDetailResponse, asset_class: AssetClass) -> 
 
 def stock_notes(stock: StockQuoteDetailResponse, asset_class: AssetClass) -> list[str]:
     notes: list[str] = []
-    dividends = stock.dividends
 
-    if dividends.provider == "bolsai":
-        notes.append(
-            "Proventos, DY 12m e gráfico anual de dividendos: fonte Bolsai (CVM/B3)."
-        )
-    if stock.provider == "hybrid":
-        notes.append(
-            "Cotação e perfil: Brapi. Proventos, fundamentos TTM e histórico longo: Bolsai."
-        )
-    if asset_class == AssetClass.ETF_BR:
-        notes.append(
-            "ETF: cotação e histórico via Brapi; proventos via Bolsai quando disponíveis."
-        )
-    elif asset_class == AssetClass.BDR and not _has_fundamentals(stock.fundamentals):
+    if asset_class == AssetClass.BDR and not _has_fundamentals(stock.fundamentals):
         notes.append(
             "BDR: indicadores fundamentalistas podem estar indisponíveis para este ticker."
         )
     elif asset_class == AssetClass.STOCK_BR and not _has_fundamentals(stock.fundamentals):
         notes.append(
-            "Fundamentos indisponíveis no provedor para este ticker no momento."
+            "Fundamentos indisponíveis para este ticker no momento."
         )
 
     if not stock.candles:
         notes.append("Histórico de pregão indisponível no momento.")
+    elif len(stock.candles) < 252:
+        notes.append(
+            f"Histórico parcial: {len(stock.candles)} pregões carregados (menos de 1 ano)."
+        )
+    elif stock.provider in {"hybrid", "bolsai"}:
+        notes.append(
+            "Histórico longo ajustado por splits e proventos."
+        )
+
+    if stock.returns and not any(row.return_pct is not None for row in stock.returns):
+        notes.append("Rentabilidade indisponível para os períodos solicitados.")
+
+    if asset_class == AssetClass.STOCK_BR and stock.provider == "brapi":
+        notes.append(
+            "Indicadores e proventos podem divergir do Investidor10 — configure BOLSAI_API_KEY no servidor."
+        )
+    elif asset_class == AssetClass.STOCK_BR and stock.provider in {"hybrid", "bolsai"}:
+        notes.append(
+            "Cotação, proventos e fundamentos alinhados à Bolsai (metodologia Investidor10)."
+        )
 
     return notes
 

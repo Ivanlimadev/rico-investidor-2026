@@ -14,6 +14,7 @@ import 'package:rico_investidor/features/fii/utils/fii_ticker.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/market_category.dart';
+import 'package:rico_investidor/services/market_preference_storage.dart';
 
 class AssetSearchService {
   AssetSearchService({
@@ -29,16 +30,23 @@ class AssetSearchService {
   final QuoteRepository quoteRepository;
   final global_markets.GlobalMarketRepository globalMarketRepository;
 
-  Future<List<AssetItem>> searchAsync(String query) async {
+  Future<List<AssetItem>> searchAsync(
+    String query, {
+    MarketPreference? preferredMarket,
+  }) async {
     final q = query.trim();
     if (q.length < kMinAssetSearchLength) return const [];
 
     final normalized = q.toUpperCase();
+    final preferredCountryCode = preferredMarket?.code;
     final seen = <String>{};
     final results = <AssetItem>[];
 
     if (shouldTryExactSymbolLookup(normalized)) {
-      final exact = await findBySymbolAsync(normalized);
+      final exact = await findBySymbolAsync(
+        normalized,
+        preferredMarket: preferredMarket,
+      );
       if (exact != null && seen.add(exact.symbol)) {
         results.add(exact);
       }
@@ -81,7 +89,11 @@ class AssetSearchService {
 
     await Future.wait(tasks);
 
-    final ranked = rankAndDedupeSearchResults(results, q);
+    final ranked = rankAndDedupeSearchResults(
+      results,
+      q,
+      preferredCountryCode: preferredCountryCode,
+    );
     return ranked.take(kMaxSearchResults).toList();
   }
 
@@ -175,7 +187,10 @@ class AssetSearchService {
     } catch (_) {}
   }
 
-  Future<AssetItem?> findBySymbolAsync(String symbol) async {
+  Future<AssetItem?> findBySymbolAsync(
+    String symbol, {
+    MarketPreference? preferredMarket,
+  }) async {
     final normalizedCurrency = symbol.trim().toUpperCase().replaceAll('/', '-');
     if (normalizedCurrency.contains('-BRL')) {
       try {
@@ -220,14 +235,42 @@ class AssetSearchService {
       return fiiRepository.resolveAsset(symbol);
     }
 
-    if (_looksLikeUsTicker(symbol)) {
+    final normalizedUpper = symbol.trim().toUpperCase();
+    final isB3FourLetter = looksLikeB3FourLetterPrefix(normalizedUpper);
+    final preferBrazil = preferredMarket?.isBrazil ?? true;
+
+    if (isB3FourLetter && preferBrazil) {
+      final b3 = await _resolveB3RootSymbol(normalizedUpper);
+      if (b3 != null) return b3;
+    }
+
+    if (_looksLikeUsTicker(symbol) && (!isB3FourLetter || !preferBrazil)) {
       try {
         final quote = await globalMarketRepository.getDetail(symbol.trim());
         return quote.quote;
       } catch (_) {}
     }
 
+    if (isB3FourLetter) {
+      final b3 = await _resolveB3RootSymbol(normalizedUpper);
+      if (b3 != null) return b3;
+    }
+
     return quoteRepository.resolveAsset(symbol);
+  }
+
+  Future<AssetItem?> _resolveB3RootSymbol(String root) async {
+    try {
+      final stocks = await quoteRepository.search(root, limit: 8);
+      final matches = stocks
+          .where((asset) => asset.symbol.toUpperCase().startsWith(root))
+          .toList();
+      if (matches.isEmpty) return null;
+      matches.sort((a, b) => a.symbol.compareTo(b.symbol));
+      return matches.first;
+    } catch (_) {
+      return null;
+    }
   }
 
   MarketCategory? categoryForSymbol(String symbol) {

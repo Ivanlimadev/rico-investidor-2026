@@ -1,65 +1,64 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
-import 'package:rico_investidor/core/utils/currency_format.dart';
-import 'package:rico_investidor/models/portfolio_summary.dart';
+import 'package:rico_investidor/features/portfolio/widgets/portfolio_balance_hero.dart';
+import 'package:rico_investidor/services/market_preference_storage.dart';
+import 'package:rico_investidor/state/portfolio_state.dart';
 
 class PortfolioSummaryRow extends StatelessWidget {
   const PortfolioSummaryRow({
     super.key,
-    required this.summary,
+    required this.portfolio,
+    required this.preferredMarket,
     required this.onPortfolioTap,
     this.onDividendsTap,
     this.showDividendsCard = true,
   });
 
-  final PortfolioSummary summary;
+  final PortfolioState portfolio;
+  final MarketPreference preferredMarket;
   final VoidCallback onPortfolioTap;
   final VoidCallback? onDividendsTap;
   final bool showDividendsCard;
 
   @override
   Widget build(BuildContext context) {
-    final portfolioCard = _SummaryCard(
-      onTap: onPortfolioTap,
-      icon: Icons.account_balance_wallet_outlined,
-      label: 'Saldo da carteira (US\$)',
-      amount: formatUsd(summary.totalBalance),
-      changeLabel: '${summary.isPortfolioUp ? '+' : ''}'
-          '${summary.portfolioChangePercent.toStringAsFixed(2)}% '
-          'no mês',
-      isPositive: summary.isPortfolioUp,
-    );
+    final summary = portfolio.buildSummary(preferredMarket);
 
     if (!showDividendsCard) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
-        child: portfolioCard,
+      return PortfolioBalanceHero(
+        portfolio: portfolio,
+        preferredMarket: preferredMarket,
+        layout: PortfolioBalanceHeroLayout.expanded,
+        onTap: onPortfolioTap,
       );
     }
 
     final dividendsCard = _SummaryCard(
       onTap: onDividendsTap,
       icon: Icons.payments_outlined,
-      label: 'Dividendos no mês (US\$)',
-      amount: formatUsd(summary.monthlyDividends),
+      label: preferredMarket.isBrazil
+          ? 'Dividendos no mês (R\$)'
+          : 'Dividends this month (US\$)',
+      amount: summary.displayCurrency.format(summary.monthlyDividends),
       changeLabel: '${summary.isDividendsUp ? '+' : ''}'
           '${summary.dividendsVsLastMonthPercent.toStringAsFixed(1)}% '
           'vs mês anterior',
       isPositive: summary.isDividendsUp,
     );
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(child: portfolioCard),
-            const SizedBox(width: 12),
-            Expanded(child: dividendsCard),
-          ],
+    return Column(
+      children: [
+        PortfolioBalanceHero(
+          portfolio: portfolio,
+          preferredMarket: preferredMarket,
+          layout: PortfolioBalanceHeroLayout.compact,
+          onTap: onPortfolioTap,
         ),
-      ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+          child: dividendsCard,
+        ),
+      ],
     );
   }
 }

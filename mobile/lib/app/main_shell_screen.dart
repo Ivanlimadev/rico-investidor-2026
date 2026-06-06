@@ -84,14 +84,18 @@ class _MainShellScreenState extends State<MainShellScreen> {
     AppTab.values.length,
     (_) => GlobalKey<NavigatorState>(),
   );
+  final _homeScreenKey = GlobalKey<HomeScreenState>();
 
   int get _index => _tab.index;
 
+  void _resetHomeTab() {
+    _navigatorKeys[AppTab.home.index].currentState?.popUntil((route) => route.isFirst);
+    _homeScreenKey.currentState?.scrollToTop();
+  }
+
   void _goToHome() {
-    if (_tab == AppTab.home) {
-      _navigatorKeys[AppTab.home.index].currentState?.popUntil((route) => route.isFirst);
-      return;
-    }
+    _resetHomeTab();
+    if (_tab == AppTab.home) return;
     setState(() {
       _loadedTabs.add(AppTab.home);
       _tab = AppTab.home;
@@ -101,6 +105,9 @@ class _MainShellScreenState extends State<MainShellScreen> {
   void _selectTab(AppTab tab) {
     if (_tab == tab) {
       _navigatorKeys[tab.index].currentState?.popUntil((route) => route.isFirst);
+      if (tab == AppTab.home) {
+        _homeScreenKey.currentState?.scrollToTop();
+      }
       return;
     }
     setState(() {
@@ -148,6 +155,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
             _tabRoot(
               AppTab.home,
               HomeScreen(
+                key: _homeScreenKey,
                 profile: widget.profile,
                 onProfileChanged: widget.onProfileChanged,
                 portfolio: widget.portfolio,
@@ -171,6 +179,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
                 onPortfolioChanged: widget.onPortfolioChanged,
                 fiiRepository: widget.fiiRepository,
                 quoteRepository: widget.quoteRepository,
+                preferredMarket: widget.preferredMarket,
               ),
             ),
             _tabRoot(

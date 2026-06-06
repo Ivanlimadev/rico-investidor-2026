@@ -20,6 +20,7 @@ import 'package:rico_investidor/core/widgets/asset_logo.dart';
 import 'package:rico_investidor/features/search/widgets/search_asset_grid.dart';
 import 'package:rico_investidor/services/asset_search_service.dart';
 import 'package:rico_investidor/services/favorites_storage.dart';
+import 'package:rico_investidor/services/recent_searched_assets_storage.dart';
 import 'package:rico_investidor/services/search_history_storage.dart';
 import 'package:rico_investidor/state/portfolio_state.dart';
 
@@ -134,13 +135,17 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
   }
 
   void _search(String query) {
-    _unifiedSearch.search(query, (snapshot) {
-      if (!mounted) return;
-      setState(() => _snapshot = snapshot);
-      if (!snapshot.loading && snapshot.results.isNotEmpty) {
-        unawaited(warmAssetLogoSymbols(snapshot.results.map((item) => item.symbol)));
-      }
-    });
+    _unifiedSearch.search(
+      query,
+      (snapshot) {
+        if (!mounted) return;
+        setState(() => _snapshot = snapshot);
+        if (!snapshot.loading && snapshot.results.isNotEmpty) {
+          unawaited(warmAssetLogoSymbols(snapshot.results.map((item) => item.symbol)));
+        }
+      },
+      preferredMarket: AppShellScope.maybeOf(context)?.preferredMarket,
+    );
   }
 
   Future<void> _recordSearch(String query) async {
@@ -153,6 +158,7 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
     if (q.isNotEmpty) {
       unawaited(_recordSearch(q));
     }
+    unawaited(recentSearchedAssetsStorage.record(asset));
     openAssetDetail(
       context,
       asset: asset,

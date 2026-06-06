@@ -63,6 +63,39 @@ def merge_bolsai_fundamentals(
     return fundamentals.model_copy(update=updates)
 
 
+def bolsai_quote_updates(quote: dict | None, *, fundamentals: dict | None = None) -> dict[str, object]:
+    """Cotação B3/Bolsai para alinhar preço com fundamentos (estilo Investidor10)."""
+    updates: dict[str, object] = {}
+
+    price = None
+    if quote:
+        price = _float(quote, "close", "close_price", "price", "last_price")
+        change = _float(quote, "change_percent", "change_pct", "variation_percent")
+        previous_close = _float(
+            quote,
+            "previous_close",
+            "prev_close",
+            "previous_close_price",
+            "yesterday_close",
+            "fechamento_anterior",
+        )
+        if price is not None and price > 0:
+            updates["price"] = price
+        if previous_close is not None:
+            updates["previous_close"] = previous_close
+        if change is not None:
+            updates["change_percent"] = change
+        elif price is not None and previous_close is not None and previous_close > 0:
+            updates["change_percent"] = round(((price / previous_close) - 1) * 100, 2)
+
+    if "price" not in updates and fundamentals:
+        close = _float(fundamentals, "close_price", "close", "price")
+        if close is not None and close > 0:
+            updates["price"] = close
+
+    return updates
+
+
 def merge_bolsai_market_stats(
     market_stats: StockMarketStats,
     *,
@@ -85,16 +118,27 @@ def merge_bolsai_market_stats(
             updates["earnings_per_share"] = lpa
 
     if quote:
-        for target, source in (
-            ("open", "open"),
-            ("day_high", "high"),
-            ("day_low", "low"),
-            ("previous_close", "close"),
-            ("volume", "volume"),
+        for target, sources in (
+            ("open", ("open",)),
+            ("day_high", ("high",)),
+            ("day_low", ("low",)),
+            ("volume", ("volume",)),
         ):
-            value = _float(quote, source)
-            if value is not None:
-                updates[target] = value
+            for source in sources:
+                value = _float(quote, source)
+                if value is not None:
+                    updates[target] = value
+                    break
+        previous_close = _float(
+            quote,
+            "previous_close",
+            "prev_close",
+            "previous_close_price",
+            "yesterday_close",
+            "fechamento_anterior",
+        )
+        if previous_close is not None:
+            updates["previous_close"] = previous_close
     if not updates:
         return market_stats
     return market_stats.model_copy(update=updates)

@@ -1,3 +1,4 @@
+import 'package:rico_investidor/features/fii/utils/fii_quote_chart.dart';
 import 'package:rico_investidor/features/fii/utils/fii_simulation.dart';
 import 'package:rico_investidor/models/fii_models.dart';
 
@@ -19,25 +20,28 @@ class AssetReturnItem {
   bool get hasData => returnPct != null;
 }
 
-const assetReturnPeriods = [
-  ('1M', 1),
-  ('3M', 3),
-  ('1A', 12),
-  ('2A', 24),
-  ('3A', 36),
-  ('5A', 60),
-  ('10A', 120),
+/// Períodos por pregões (~21/mês) — alinhado ao backend e ao Investidor10.
+const assetReturnSessions = [
+  ('1M', 21),
+  ('3M', 63),
+  ('1A', 252),
+  ('2A', 504),
+  ('3A', 756),
+  ('5A', 1260),
 ];
+
+@Deprecated('Use assetReturnSessions')
+const assetReturnPeriods = assetReturnSessions;
 
 String assetReturnPeriodDisplayLabel(String code) {
   return switch (code) {
     '1M' => '1 mês',
     '3M' => '3 meses',
+    'YTD' => 'No ano',
     '1A' => '1 ano',
     '2A' => '2 anos',
     '3A' => '3 anos',
     '5A' => '5 anos',
-    '10A' => '10 anos',
     _ => code,
   };
 }
@@ -54,11 +58,88 @@ DateTime subtractMonths(DateTime date, int months) {
   return DateTime(year, month, day);
 }
 
+/// Série de preços ordenada — evita re-sort a cada consulta na simulação.
+class AssetPriceTimeline {
+  AssetPriceTimeline._(this._points);
+
+  final List<({DateTime date, double price})> _points;
+
+  factory AssetPriceTimeline.from({
+    List<FiiCandleBar> candles = const [],
+    List<FiiHistoryPoint> history = const [],
+  }) {
+    final byDay = <String, ({DateTime date, double price, bool fromCandle})>{};
+
+    void add(DateTime date, double price, {required bool fromCandle}) {
+      final key = '${date.year}-${date.month}-${date.day}';
+      final existing = byDay[key];
+      if (existing == null) {
+        byDay[key] = (date: date, price: price, fromCandle: fromCandle);
+        return;
+      }
+      if (fromCandle) {
+        byDay[key] = (date: date, price: price, fromCandle: true);
+      }
+    }
+
+    for (final bar in candles) {
+      if (bar.close <= 0) continue;
+      final date = parseFiiDate(bar.tradeDate);
+      if (date == null) continue;
+      add(date, bar.close, fromCandle: true);
+    }
+
+    for (final point in history) {
+      final date = parseFiiDate(point.referenceDate);
+      final price = point.closePrice;
+      if (date == null || price == null || price <= 0) continue;
+      add(date, price, fromCandle: false);
+    }
+
+    final points = byDay.values
+        .map((entry) => (date: entry.date, price: entry.price))
+        .toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+
+    return AssetPriceTimeline._(points);
+  }
+
+  bool get isEmpty => _points.isEmpty;
+
+  ({DateTime date, double price})? get earliest =>
+      _points.isEmpty ? null : _points.first;
+
+  ({DateTime date, double price})? atOrBefore(DateTime target) {
+    if (_points.isEmpty) return null;
+
+    var lo = 0;
+    var hi = _points.length - 1;
+    var best = -1;
+    while (lo <= hi) {
+      final mid = (lo + hi) >> 1;
+      if (!_points[mid].date.isAfter(target)) {
+        best = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    if (best < 0) return null;
+    final point = _points[best];
+    return (date: point.date, price: point.price);
+  }
+}
+
 ({DateTime date, double price})? pricePointAtDate({
   required DateTime target,
   List<FiiHistoryPoint> history = const [],
   List<FiiCandleBar> candles = const [],
+  AssetPriceTimeline? timeline,
 }) {
+  if (timeline != null) {
+    return timeline.atOrBefore(target);
+  }
+
   final fromCandles = _pricePointFromCandles(candles, target);
   final fromHistory = _pricePointFromHistory(history, target);
 
@@ -132,18 +213,38 @@ List<AssetReturnItem> computeAssetReturns({
   List<FiiCandleBar> candles = const [],
   List<FiiDistributionPayment> payments = const [],
 }) {
-  return assetReturnPeriods.map((entry) {
-    final (label, months) = entry;
-    final result = _returnForMonths(
-      currentPrice: currentPrice,
-      history: history,
-      candles: candles,
+  final sorted = dedupeQuoteBarsByDate([
+    ...candles,
+    if (history.isNotEmpty)
+      for (final point in history)
+        if (point.referenceDate != null && (point.closePrice ?? 0) > 0)
+          FiiCandleBar(
+            tradeDate: point.referenceDate!,
+            open: point.closePrice!,
+            high: point.closePrice!,
+            low: point.closePrice!,
+            close: point.closePrice!,
+          ),
+  ]);
+
+  if (currentPrice == null || currentPrice <= 0 || sorted.isEmpty) {
+    return const [];
+  }
+
+  final latest = sorted.last.close > 0 ? sorted.last.close : currentPrice;
+  final endPrice = currentPrice > 0 ? currentPrice : latest;
+
+  return assetReturnSessions.map((entry) {
+    final (label, sessions) = entry;
+    final result = _returnForSessions(
+      endPrice: endPrice,
+      sorted: sorted,
       payments: payments,
-      monthsBack: months,
+      sessionsBack: sessions,
     );
     return AssetReturnItem(
       label: label,
-      monthsBack: months,
+      monthsBack: (sessions / 21).round().clamp(1, 60),
       returnPct: result?.totalPct,
       priceReturnPct: result?.pricePct,
       dividendReturnPct: result?.dividendPct,
@@ -151,38 +252,25 @@ List<AssetReturnItem> computeAssetReturns({
   }).toList();
 }
 
-({double totalPct, double pricePct, double dividendPct})? _returnForMonths({
-  required double? currentPrice,
-  required List<FiiHistoryPoint> history,
-  required List<FiiCandleBar> candles,
+({double totalPct, double pricePct, double dividendPct})? _returnForSessions({
+  required double endPrice,
+  required List<FiiCandleBar> sorted,
   required List<FiiDistributionPayment> payments,
-  required int monthsBack,
+  required int sessionsBack,
 }) {
-  if (currentPrice == null || currentPrice <= 0) return null;
-  if (history.isEmpty && candles.isEmpty) return null;
+  if (sorted.length <= sessionsBack) return null;
 
-  final now = DateTime.now();
-  final targetDate = subtractMonths(now, monthsBack);
-  final point = pricePointAtDate(
-    target: targetDate,
-    history: history,
-    candles: candles,
-  );
-  if (point == null) return null;
+  final startBar = sorted[sorted.length - 1 - sessionsBack];
+  final startPrice = startBar.close;
+  if (startPrice <= 0) return null;
 
-  final spanMonths = _monthsBetween(point.date, now);
-  if (spanMonths + 1 < monthsBack) return null;
+  final startDate = parseTradeDate(startBar.tradeDate);
+  if (startDate == null) return null;
 
-  final pastPrice = point.price;
-  final dividendsPerShare = dividendsPerShareSince(payments, point.date);
-
-  final pricePct = ((currentPrice - pastPrice) / pastPrice) * 100;
-  final dividendPct = (dividendsPerShare / pastPrice) * 100;
+  final dividendsPerShare = dividendsPerShareSince(payments, startDate);
+  final pricePct = ((endPrice - startPrice) / startPrice) * 100;
+  final dividendPct = (dividendsPerShare / startPrice) * 100;
   final totalPct = pricePct + dividendPct;
 
   return (totalPct: totalPct, pricePct: pricePct, dividendPct: dividendPct);
-}
-
-int _monthsBetween(DateTime start, DateTime end) {
-  return (end.year - start.year) * 12 + (end.month - start.month);
 }

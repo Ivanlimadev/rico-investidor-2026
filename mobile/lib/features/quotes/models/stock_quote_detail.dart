@@ -1,3 +1,4 @@
+import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
 import 'package:rico_investidor/features/quotes/data/quote_api_client.dart';
 import 'package:rico_investidor/models/fii_models.dart';
 
@@ -304,8 +305,12 @@ class StockDividendsDto {
   final List<StockCorporateActionDto> corporateActions;
   final StockDividendsSummaryDto summary;
 
-  double? get displayDividendYield =>
-      summary.dividendYieldDisplay ?? dividendYieldTtm;
+  double? get displayDividendYield {
+    if (summary.dividendYieldDisplay != null) {
+      return summary.dividendYieldDisplay;
+    }
+    return dividendYieldTtm;
+  }
 
   factory StockDividendsDto.fromJson(Map<String, dynamic> json) {
     final rawPayments = json['payments'] as List<dynamic>? ?? const [];
@@ -341,6 +346,7 @@ class StockQuoteDetailDto {
     required this.fundamentals,
     required this.candles,
     required this.dividends,
+    this.returns = const [],
     this.provider = 'brapi',
   });
 
@@ -350,12 +356,14 @@ class StockQuoteDetailDto {
   final StockFundamentalsDto fundamentals;
   final List<FiiCandleBar> candles;
   final StockDividendsDto dividends;
+  final List<GlobalStockReturnPeriodDto> returns;
   final String provider;
 
   List<FiiDistributionPayment> get payments => dividends.payments;
 
   factory StockQuoteDetailDto.fromJson(Map<String, dynamic> json) {
     final rawCandles = json['candles'] as List<dynamic>? ?? const [];
+    final rawReturns = json['returns'] as List<dynamic>? ?? const [];
 
     return StockQuoteDetailDto(
       quote: MarketQuoteDto.fromJson(json['quote'] as Map<String, dynamic>),
@@ -370,6 +378,9 @@ class StockQuoteDetailDto {
           .map((item) => FiiCandleBar.fromJson(item as Map<String, dynamic>))
           .toList(),
       dividends: StockDividendsDto.fromJson(json['dividends'] as Map<String, dynamic>? ?? const {}),
+      returns: rawReturns
+          .map((e) => GlobalStockReturnPeriodDto.fromJson(e as Map<String, dynamic>))
+          .toList(),
       provider: json['provider'] as String? ?? 'brapi',
     );
   }

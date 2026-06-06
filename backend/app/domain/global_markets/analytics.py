@@ -61,6 +61,80 @@ def build_company_profile(ticker: GlobalStockTickerInfo) -> GlobalStockCompanyPr
     )
 
 
+def _dividend_event_day(item: GlobalStockDividend, *, prefer_payment: bool) -> datetime | None:
+    if prefer_payment:
+        return _parse_day(item.payment_date)
+    return _parse_day(item.date) or _parse_day(item.ex_date)
+
+
+def _investidor10_ttm_totals(
+    dividends: list[GlobalStockDividend],
+    *,
+    cutoff: datetime,
+    now: datetime,
+) -> tuple[float, int]:
+    """TTM estilo Investidor10: janela de 12 meses por data de pagamento."""
+    paid_total = 0.0
+    paid_count = 0
+    for item in dividends:
+        pay_day = _dividend_event_day(item, prefer_payment=True)
+        amount = item.amount
+        if amount is None or amount <= 0 or pay_day is None:
+            continue
+        if cutoff <= pay_day <= now:
+            paid_total += float(amount)
+            paid_count += 1
+
+    if paid_total > 0:
+        return paid_total, paid_count
+
+    com_total = 0.0
+    com_count = 0
+    for item in dividends:
+        com_day = _parse_day(item.com_date) or _parse_day(item.date)
+        amount = item.amount
+        if amount is None or amount <= 0 or com_day is None:
+            continue
+        if cutoff <= com_day <= now:
+            com_total += float(amount)
+            com_count += 1
+
+    if com_total > 0:
+        return com_total, com_count
+
+    ex_total = 0.0
+    ex_count = 0
+    for item in dividends:
+        ex_day = _parse_day(item.date) or _parse_day(item.ex_date)
+        amount = item.amount
+        if amount is None or amount <= 0 or ex_day is None:
+            continue
+        if cutoff <= ex_day <= now:
+            ex_total += float(amount)
+            ex_count += 1
+
+    return ex_total, ex_count
+
+
+def _dividends_per_share_since(
+    dividends: list[GlobalStockDividend],
+    since: datetime,
+    *,
+    as_of: datetime,
+) -> float:
+    total = 0.0
+    for item in dividends:
+        event_day = _dividend_event_day(item, prefer_payment=True)
+        if event_day is None:
+            event_day = _parse_day(item.com_date) or _parse_day(item.date)
+        amount = item.amount
+        if amount is None or amount <= 0 or event_day is None:
+            continue
+        if since <= event_day <= as_of:
+            total += float(amount)
+    return total
+
+
 def summarize_dividends(
     dividends: list[GlobalStockDividend],
     *,
@@ -72,13 +146,11 @@ def summarize_dividends(
 
     parsed: list[tuple[datetime, GlobalStockDividend]] = []
     for item in dividends:
-        day = _parse_day(item.date)
+        day = _parse_day(item.date) or _parse_day(item.ex_date)
         if day is not None:
             parsed.append((day, item))
 
-    recent_12m = [(day, item) for day, item in parsed if day >= cutoff_12m]
-    ttm_total = sum(item.amount for _, item in recent_12m)
-    payments_12m = len(recent_12m)
+    ttm_total, payments_12m = _investidor10_ttm_totals(dividends, cutoff=cutoff_12m, now=now)
     avg_amount_12m = round(ttm_total / payments_12m, 4) if payments_12m > 0 else None
 
     annual: dict[int, float] = defaultdict(float)
@@ -122,38 +194,99 @@ def summarize_dividends(
     )
 
 
-def _price_sessions_back(candles: list[GlobalStockCandle], sessions_back: int) -> float | None:
+def _series_has_split_adjustment(candles: list[GlobalStockCandle]) -> bool:
+    for candle in candles:
+        adj = candle.adj_close
+        close = candle.close
+        if adj is None or adj <= 0 or close is None or close <= 0:
+            continue
+        if abs(adj - close) > 0.001:
+            return True
+    return False
+
+
+def _return_close(candle: GlobalStockCandle, *, use_adjusted: bool) -> float | None:
+    if use_adjusted and candle.adj_close is not None and candle.adj_close > 0:
+        return candle.adj_close
+    if candle.close is not None and candle.close > 0:
+        return candle.close
+    if candle.adj_close is not None and candle.adj_close > 0:
+        return candle.adj_close
+    return None
+
+
+def _price_sessions_back(
+    candles: list[GlobalStockCandle],
+    sessions_back: int,
+    *,
+    use_adjusted: bool,
+) -> float | None:
     if not candles or sessions_back < 1:
         return None
     index = max(0, len(candles) - 1 - sessions_back)
-    price = candles[index].close
-    return price if price is not None and price > 0 else None
+    return _return_close(candles[index], use_adjusted=use_adjusted)
+
+
+def _total_return_pct(
+    *,
+    latest_price: float,
+    start_price: float,
+    dividends: list[GlobalStockDividend],
+    since: datetime,
+    as_of: datetime,
+) -> float:
+    price_pct = ((latest_price - start_price) / start_price) * 100
+    div_per_share = _dividends_per_share_since(dividends, since, as_of=as_of)
+    div_pct = (div_per_share / start_price) * 100 if start_price > 0 else 0.0
+    return round(price_pct + div_pct, 2)
 
 
 def compute_returns(
     candles: list[GlobalStockCandle],
     *,
     current_price: float | None = None,
+    dividends: list[GlobalStockDividend] | None = None,
     as_of: datetime | None = None,
 ) -> list[GlobalStockReturnPeriod]:
     if not candles:
         return []
 
     sorted_candles = sorted(candles, key=lambda candle: candle.date)
+    use_adjusted = _series_has_split_adjustment(sorted_candles)
     latest_price = current_price
-    if latest_price is None and sorted_candles:
-        latest_price = sorted_candles[-1].close
+    if sorted_candles:
+        adjusted_latest = _return_close(sorted_candles[-1], use_adjusted=use_adjusted)
+        if use_adjusted and adjusted_latest is not None:
+            latest_price = adjusted_latest
+        elif latest_price is None:
+            latest_price = adjusted_latest
     if latest_price is None or latest_price <= 0:
         return []
+
+    ref = as_of or datetime.now(UTC)
+    div_rows = dividends or []
 
     rows: list[GlobalStockReturnPeriod] = []
     for label, sessions_back in RETURN_PERIODS:
         if len(sorted_candles) <= sessions_back:
             continue
-        start_price = _price_sessions_back(sorted_candles, sessions_back)
+        start_index = max(0, len(sorted_candles) - 1 - sessions_back)
+        start_candle = sorted_candles[start_index]
+        start_price = _return_close(start_candle, use_adjusted=use_adjusted)
         if start_price is None or start_price <= 0:
             continue
-        return_pct = round(((latest_price - start_price) / start_price) * 100, 2)
+        since = _parse_day(start_candle.date) or ref
+        return_pct = (
+            _total_return_pct(
+                latest_price=latest_price,
+                start_price=start_price,
+                dividends=div_rows,
+                since=since,
+                as_of=ref,
+            )
+            if div_rows
+            else round(((latest_price - start_price) / start_price) * 100, 2)
+        )
         months_back = max(1, round(sessions_back / 21))
         rows.append(
             GlobalStockReturnPeriod(
@@ -163,7 +296,13 @@ def compute_returns(
             )
         )
 
-    ytd_pct = _ytd_return_pct(sorted_candles, latest_price=latest_price, as_of=as_of)
+    ytd_pct = _ytd_return_pct(
+        sorted_candles,
+        latest_price=latest_price,
+        as_of=as_of,
+        use_adjusted=use_adjusted,
+        dividends=div_rows,
+    )
     if ytd_pct is not None and not any(row.label == "YTD" for row in rows):
         rows.insert(
             min(2, len(rows)),
@@ -178,19 +317,30 @@ def _ytd_return_pct(
     *,
     latest_price: float,
     as_of: datetime | None,
+    use_adjusted: bool = False,
+    dividends: list[GlobalStockDividend] | None = None,
 ) -> float | None:
     """Rentabilidade no ano corrente (primeiro pregão do ano → última cotação)."""
     ref = as_of or datetime.now(UTC)
     year = ref.year
     start_price: float | None = None
+    start_day: datetime | None = None
     for candle in sorted_candles:
         day = _parse_day(candle.date)
         if day is None or day.year < year:
             continue
-        close = candle.close
-        if close is not None and close > 0:
-            start_price = close
+        start_price = _return_close(candle, use_adjusted=use_adjusted)
+        if start_price is not None and start_price > 0:
+            start_day = day
             break
-    if start_price is None or start_price <= 0:
+    if start_price is None or start_price <= 0 or start_day is None:
         return None
+    if dividends:
+        return _total_return_pct(
+            latest_price=latest_price,
+            start_price=start_price,
+            dividends=dividends,
+            since=start_day,
+            as_of=ref,
+        )
     return round(((latest_price - start_price) / start_price) * 100, 2)

@@ -7,8 +7,12 @@ import 'package:rico_investidor/core/widgets/asset_logo.dart';
 import 'package:rico_investidor/core/widgets/asset_quick_actions.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/core/widgets/asset_returns_card.dart';
+import 'package:rico_investidor/features/global_markets/widgets/global_stock_returns_card.dart';
+import 'package:rico_investidor/core/utils/asset_magic_number.dart';
+import 'package:rico_investidor/core/widgets/asset_magic_number_card.dart';
 import 'package:rico_investidor/core/widgets/last_dividend_card.dart';
 import 'package:rico_investidor/core/widgets/what_if_investment_card.dart';
+import 'package:rico_investidor/models/holding_currency.dart';
 import 'package:rico_investidor/features/quotes/widgets/stock_corporate_actions_card.dart';
 import 'package:rico_investidor/features/quotes/widgets/br_stock_dividends_section.dart';
 import 'package:rico_investidor/features/quotes/widgets/stock_recent_dividends_card.dart';
@@ -24,7 +28,6 @@ import 'package:rico_investidor/features/quotes/widgets/stock_macro_card.dart';
 import 'package:rico_investidor/features/quotes/widgets/stock_market_stats_card.dart';
 import 'package:rico_investidor/features/quotes/screens/stock_compare_screen.dart';
 import 'package:rico_investidor/features/quotes/widgets/stock_quote_chart_card.dart';
-import 'package:rico_investidor/core/utils/data_provider_label.dart';
 import 'package:rico_investidor/models/market_category.dart';
 
 class StockDetailScreen extends StatefulWidget {
@@ -109,10 +112,8 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
     super.initState();
     if (widget.initialDetail != null) {
       _actionAsset = _actionAssetFrom(widget.initialDetail!);
-      _loadFuture = Future.value(widget.initialDetail!);
-    } else {
-      _loadFuture = _fetchDetail();
     }
+    _loadFuture = _fetchDetail();
   }
 
   @override
@@ -326,7 +327,10 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                   dividendYield12m: dy,
                 ),
               ],
-              if (candles.isNotEmpty) ...[
+              if (detail.returns.any((item) => item.returnPct != null)) ...[
+                const SizedBox(height: 16),
+                GlobalStockReturnsCard(returns: detail.returns),
+              ] else if (candles.isNotEmpty) ...[
                 const SizedBox(height: 16),
                 AssetReturnsCard(
                   currentPrice: quote.price,
@@ -340,6 +344,19 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                   currentPrice: quote.price,
                   candles: candles,
                   payments: dividendPayments,
+                ),
+              ],
+              if (magicNumberFromStock(
+                    price: quote.price,
+                    dividends: dividendsDto,
+                    dividendYieldPercent: dy,
+                  ) case final magic?) ...[
+                const SizedBox(height: 12),
+                AssetMagicNumberCard(
+                  result: magic,
+                  unitLabel: 'ação',
+                  unitPlural: 'ações',
+                  currency: holdingCurrencyForCategory(widget.category),
                 ),
               ],
               const SizedBox(height: 16),
@@ -400,14 +417,6 @@ class _StockDetailScreenState extends State<StockDetailScreen> {
                 market: relatedMarketSlug(widget.category),
                 sector: detail.profile.sector,
                 industry: detail.profile.industry,
-              ),
-              const SizedBox(height: 16),
-              Card(
-                child: ListTile(
-                  leading: const Icon(Icons.cloud_outlined),
-                  title: const Text('Fonte de dados'),
-                  subtitle: Text(formatDataProvider(detail.provider)),
-                ),
               ),
             ],
             ),

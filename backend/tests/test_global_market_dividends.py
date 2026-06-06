@@ -63,6 +63,36 @@ def test_summarize_dividends_includes_frequency_and_next():
     assert summary.next_dividend.is_projected is True
 
 
+def test_summarize_dividends_uses_payment_window_for_ttm():
+    now = datetime(2026, 5, 25, tzinfo=UTC)
+    dividends = [
+        GlobalStockDividend(
+            date="2024-06-01",
+            amount=1.0,
+            ex_date="2024-06-01",
+            payment_date="2024-06-15",
+        ),
+        GlobalStockDividend(
+            date="2026-05-11",
+            amount=0.27,
+            ex_date="2026-05-11",
+            payment_date="2026-05-14",
+        ),
+        GlobalStockDividend(
+            date="2026-02-09",
+            amount=0.26,
+            ex_date="2026-02-09",
+            payment_date="2026-02-12",
+        ),
+    ]
+
+    summary = summarize_dividends(dividends, price=100.0, as_of=now)
+
+    assert summary.ttm_per_share == 0.53
+    assert summary.payments_12m == 2
+    assert summary.dividend_yield_ttm == 0.53
+
+
 def test_pick_next_dividend_prefers_announced_upcoming():
     now = datetime(2026, 5, 25, tzinfo=UTC)
     announced = GlobalStockDividend(

@@ -24,7 +24,10 @@ class StockCompareDividendsDto {
   final double? nextAmount;
   final String? provider;
 
-  double? get displayDy => dividendYieldDisplay ?? dividendYieldTtm;
+  double? get displayDy {
+    if (dividendYieldDisplay != null) return dividendYieldDisplay;
+    return dividendYieldTtm;
+  }
 
   factory StockCompareDividendsDto.fromJson(Map<String, dynamic> json) {
     double? numVal(String key) {

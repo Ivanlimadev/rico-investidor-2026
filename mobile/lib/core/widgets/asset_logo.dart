@@ -47,9 +47,39 @@ Future<String?> loadAssetLogoSvg(String url) {
   }).whenComplete(() => _inFlightSvg.remove(url));
 }
 
+bool _isValidRasterBytes(Uint8List bytes) {
+  if (bytes.length < 12) return false;
+  // PNG
+  if (bytes[0] == 0x89 &&
+      bytes[1] == 0x50 &&
+      bytes[2] == 0x4E &&
+      bytes[3] == 0x47) {
+    return true;
+  }
+  // JPEG
+  if (bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) {
+    return true;
+  }
+  // WEBP (RIFF....WEBP)
+  if (bytes[0] == 0x52 &&
+      bytes[1] == 0x49 &&
+      bytes[2] == 0x46 &&
+      bytes[3] == 0x46 &&
+      bytes[8] == 0x57 &&
+      bytes[9] == 0x45 &&
+      bytes[10] == 0x42 &&
+      bytes[11] == 0x50) {
+    return true;
+  }
+  return false;
+}
+
 Future<Uint8List?> loadAssetLogoRaster(String url, {Map<String, String>? headers}) async {
   final cached = _rasterCache[url];
-  if (cached != null) return Future.value(cached);
+  if (cached != null) {
+    if (_isValidRasterBytes(cached)) return Future.value(cached);
+    _rasterCache.remove(url);
+  }
 
   return _inFlightRaster.putIfAbsent(url, () async {
     try {
@@ -57,7 +87,7 @@ Future<Uint8List?> loadAssetLogoRaster(String url, {Map<String, String>? headers
           .get(Uri.parse(url), headers: headers ?? const {})
           .timeout(_networkTimeout);
       final bytes = response.bodyBytes;
-      if (response.statusCode == 200 && bytes.length > 64) {
+      if (response.statusCode == 200 && bytes.length > 64 && _isValidRasterBytes(bytes)) {
         _rasterCache[url] = bytes;
         _trimLogoCache(_rasterCache);
         return bytes;
@@ -526,6 +556,10 @@ class _LogoImageShell extends StatelessWidget {
           height: innerSize,
           gaplessPlayback: true,
           filterQuality: FilterQuality.medium,
+          frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+            if (wasSynchronouslyLoaded || frame != null) return child;
+            return _fallback();
+          },
           errorBuilder: (context, error, stackTrace) => _fallback(),
         );
 

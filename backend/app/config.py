@@ -82,7 +82,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     cors_origins: str = "http://127.0.0.1:*,http://localhost:*"
     rate_limit_per_minute: int = 480
-    auth_rate_limit_per_minute: int = 20
+    auth_rate_limit_per_minute: int = 10
     logo_rate_limit_per_minute: int = 120
     trust_proxy_headers: bool = False
     cache_max_entries: int = 512

@@ -1,8 +1,19 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/core/search/asset_search_config.dart';
 import 'package:rico_investidor/core/search/unified_asset_search.dart';
 import 'package:rico_investidor/core/widgets/asset_country_flag.dart';
+import 'package:rico_investidor/core/utils/asset_magic_number.dart';
 import 'package:rico_investidor/core/utils/parse_decimal.dart';
+import 'package:rico_investidor/core/widgets/asset_magic_number_card.dart';
+import 'package:rico_investidor/features/fii/data/fii_repository.dart';
+import 'package:rico_investidor/features/portfolio/widgets/add_asset_circle_card.dart';
+import 'package:rico_investidor/features/portfolio/widgets/add_asset_suggestions.dart';
+import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
+import 'package:rico_investidor/navigation/open_asset_detail.dart';
+import 'package:rico_investidor/services/recent_searched_assets_storage.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/holding_currency.dart';
 import 'package:rico_investidor/state/portfolio_state.dart';
@@ -51,17 +62,21 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
   }
 
   void _onSearchChanged(String value) {
-    _unifiedSearch.search(value, (snapshot) {
-      if (!mounted) return;
-      setState(() {
-        _searchSnapshot = snapshot;
-        if (_selected != null &&
-            !value.toUpperCase().contains(_selected!.symbol) &&
-            !value.toLowerCase().contains(_selected!.name.toLowerCase())) {
-          _selected = null;
-        }
-      });
-    });
+    _unifiedSearch.search(
+      value,
+      (snapshot) {
+        if (!mounted) return;
+        setState(() {
+          _searchSnapshot = snapshot;
+          if (_selected != null &&
+              !value.toUpperCase().contains(_selected!.symbol) &&
+              !value.toLowerCase().contains(_selected!.name.toLowerCase())) {
+            _selected = null;
+          }
+        });
+      },
+      preferredMarket: AppShellScope.maybeOf(context)?.preferredMarket,
+    );
   }
 
   Future<void> _selectAsset(AssetItem asset) async {
@@ -75,6 +90,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
     }
 
     if (!mounted) return;
+    unawaited(recentSearchedAssetsStorage.record(resolved));
     setState(() {
       _selected = resolved;
       _searchController.text = '${resolved.symbol} — ${resolved.name}';
@@ -121,6 +137,18 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
     Navigator.pop(context, true);
   }
 
+  void _openAssetProfile() {
+    final asset = _selected;
+    if (asset == null) return;
+
+    openAssetDetail(
+      context,
+      asset: asset,
+      fiiRepository: fiiRepository,
+      quoteRepository: quoteRepository,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -149,6 +177,10 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
             ),
             onChanged: _onSearchChanged,
           ),
+          if (!_searchSnapshot.active && _selected == null) ...[
+            const SizedBox(height: 20),
+            AddAssetSuggestions(onAssetTap: _selectAsset),
+          ],
           if (_searchSnapshot.active && _searchSnapshot.results.isNotEmpty) ...[
             const SizedBox(height: 8),
             Card(
@@ -177,7 +209,31 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
           ],
           if (_selected != null) ...[
             const SizedBox(height: 24),
-            Text('Posição', style: Theme.of(context).textTheme.titleMedium),
+            Center(
+              child: AddAssetCircleAssetCard(
+                asset: _selected!,
+                logoSize: 64,
+                onTap: null,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _selected!.name,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                  ),
+            ),
+            if (magicNumberFromAssetItem(_selected!) case final magic?) ...[
+              const SizedBox(height: 12),
+              AssetMagicNumberCompact(
+                result: magic,
+                unitPlural: magicNumberUnitPlural(_selected!.category),
+                currency: holdingCurrencyForCategory(_selected!.category),
+              ),
+            ],
+            const SizedBox(height: 20),
+            Text('Posição na carteira', style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 12),
             TextField(
               controller: _quantityController,
@@ -201,13 +257,22 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              'Os proventos serão calculados com histórico Bolsai (B3), via API.',
+              'Os proventos serão estimados com base no histórico de pagamentos do ativo.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
                   ),
             ),
             const SizedBox(height: 28),
-            FilledButton(onPressed: _save, child: const Text('Salvar na carteira')),
+            FilledButton(
+              onPressed: _save,
+              child: const Text('Salvar na carteira'),
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: _openAssetProfile,
+              icon: const Icon(Icons.open_in_new_rounded, size: 18),
+              label: const Text('Ver perfil completo do ativo'),
+            ),
           ],
         ],
       ),

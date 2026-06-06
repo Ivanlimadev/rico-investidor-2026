@@ -166,7 +166,6 @@ class StockCompareEnhancedView extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        _SourcesFooter(isBr: _isBr, items: items),
       ],
     );
   }
@@ -972,8 +971,7 @@ class _FundamentalsIndexBars extends StatelessWidget {
           Text('Índice relativo', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
           Text(
-            'P/L, ROE e margens ainda não estão disponíveis para todos os ativos. '
-            'No plano Marketstack Basic, configure FMP_API_KEY (ratios TTM) ou use Marketstack Business.',
+            'P/L, ROE e margens ainda não estão disponíveis para todos os ativos comparados.',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -1170,26 +1168,6 @@ class _WinnersBoard extends StatelessWidget {
       }
     }
     return idx;
-  }
-}
-
-class _SourcesFooter extends StatelessWidget {
-  const _SourcesFooter({required this.isBr, required this.items});
-
-  final bool isBr;
-  final List<StockCompareItemDto> items;
-
-  @override
-  Widget build(BuildContext context) {
-    final text = isBr
-        ? 'Fontes: Brapi (cotação e fundamentos) · Bolsai (proventos e DY quando disponível).'
-        : 'Fontes: Marketstack (cotações, dividendos e histórico) · FMP (perfil, quando disponível).';
-    return Text(
-      text,
-      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
-          ),
-    );
   }
 }
 

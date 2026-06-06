@@ -5,8 +5,11 @@ import 'package:rico_investidor/core/utils/currency_format.dart';
 import 'package:rico_investidor/core/widgets/asset_card_header.dart';
 import 'package:rico_investidor/core/widgets/asset_logo.dart';
 import 'package:rico_investidor/core/widgets/asset_quick_actions.dart';
+import 'package:rico_investidor/core/utils/asset_magic_number.dart';
 import 'package:rico_investidor/core/utils/dividend_payment_mappers.dart';
+import 'package:rico_investidor/core/widgets/asset_magic_number_card.dart';
 import 'package:rico_investidor/core/widgets/last_dividend_card.dart';
+import 'package:rico_investidor/models/holding_currency.dart';
 import 'package:rico_investidor/core/widgets/what_if_investment_card.dart';
 import 'package:rico_investidor/features/fii/utils/fii_format.dart';
 import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
@@ -17,13 +20,14 @@ import 'package:rico_investidor/features/assets/models/related_assets.dart';
 import 'package:rico_investidor/features/assets/widgets/related_assets_card.dart';
 import 'package:rico_investidor/features/global_markets/widgets/global_stock_about_card.dart';
 import 'package:rico_investidor/features/global_markets/widgets/global_stock_dividends_section.dart';
-import 'package:rico_investidor/features/global_markets/widgets/global_stock_fifty_two_week_card.dart';
 import 'package:rico_investidor/features/global_markets/widgets/global_stock_quote_chart.dart';
 import 'package:rico_investidor/features/quotes/widgets/stock_market_stats_card.dart';
 import 'package:rico_investidor/features/global_markets/widgets/global_stock_returns_card.dart';
 import 'package:rico_investidor/features/global_markets/widgets/global_stock_splits_card.dart';
-import 'package:rico_investidor/features/global_markets/widgets/global_stock_fundamentals_card.dart';
 import 'package:rico_investidor/features/quotes/data/quote_api_client.dart';
+import 'package:rico_investidor/features/quotes/models/stock_quote_detail.dart';
+import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
+import 'package:rico_investidor/features/quotes/widgets/stock_fundamentals_card.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 
 class GlobalStockDetailScreen extends StatefulWidget {
@@ -144,34 +148,16 @@ class _GlobalStockDetailScreenState extends State<GlobalStockDetailScreen> {
                 dy: dy,
                 onSurface: onSurface,
               ),
-              const SizedBox(height: 12),
-              StockMarketStatsCard(
-                stats: detail.marketStats,
-                useUsd: true,
-                title: 'Pregão e indicadores',
-                hideValuationMetrics: true,
-                quotePrice: meta.price,
-                quoteAdjClose: meta.adjClose,
-              ),
-              if (detail.marketStats.fiftyTwoWeekLow != null &&
-                  detail.marketStats.fiftyTwoWeekHigh != null) ...[
-                const SizedBox(height: 12),
-                GlobalStockFiftyTwoWeekCard(
-                  stats: detail.marketStats,
-                  currentPrice: quote.price,
-                  title: detail.marketStats.priceRangeLabel ?? 'Faixa de preços',
-                ),
-              ],
-              if (detail.returns.any((r) => r.returnPct != null)) ...[
-                const SizedBox(height: 12),
-                GlobalStockReturnsCard(returns: detail.returns),
-              ],
               if (detail.dividends.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 LastDividendCard.global(
                   dividends: detail.dividends,
                   dividendYield12m: dy,
                 ),
+              ],
+              if (detail.returns.any((r) => r.returnPct != null)) ...[
+                const SizedBox(height: 12),
+                GlobalStockReturnsCard(returns: detail.returns),
               ],
               if (quote.price > 0) ...[
                 const SizedBox(height: 12),
@@ -182,19 +168,46 @@ class _GlobalStockDetailScreenState extends State<GlobalStockDetailScreen> {
                   currency: WhatIfInvestmentCurrency.usd,
                 ),
               ],
-              const SizedBox(height: 12),
-              GlobalStockFundamentalsCard(fundamentals: detail.fundamentals),
-              if (detail.historyLimited) ...[
+              if (magicNumberFromGlobalStock(
+                    price: quote.price,
+                    dividends: detail.dividends,
+                    summary: detail.dividendsSummary,
+                    dividendYieldPercent: dy,
+                  ) case final magic?) ...[
                 const SizedBox(height: 12),
-                Text(
-                  'Histórico limitado a ${detail.maxHistoryDays} dias no plano Marketstack atual.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: onSurface.withValues(alpha: 0.65),
-                      ),
+                AssetMagicNumberCard(
+                  result: magic,
+                  unitLabel: 'ação',
+                  unitPlural: 'ações',
+                  currency: HoldingCurrency.usd,
+                  dividendLabel: 'Dividendo médio/mês',
+                ),
+              ],
+              const SizedBox(height: 16),
+              StockFundamentalsCard(
+                fundamentals: detail.fundamentals,
+                repository: quoteRepository,
+                currency: FundamentalsDisplayCurrency.usd,
+              ),
+              if (_isFundamentalsSparse(detail.fundamentals)) ...[
+                const SizedBox(height: 12),
+                _DetailNoticeCard(
+                  message: 'Alguns indicadores podem estar indisponíveis para este ativo.',
                 ),
               ],
               const SizedBox(height: 16),
               GlobalStockQuoteChart(candles: detail.candles),
+              const SizedBox(height: 16),
+              GlobalStockAboutCard(company: detail.company),
+              const SizedBox(height: 16),
+              StockMarketStatsCard(
+                stats: detail.marketStats,
+                useUsd: true,
+                title: 'Pregão e indicadores',
+                hideValuationMetrics: true,
+                quotePrice: meta.price,
+                quoteAdjClose: meta.adjClose,
+              ),
               if (detail.dividends.isNotEmpty ||
                   detail.dividendsSummary.ttmPerShare != null ||
                   detail.dividendsSummary.nextDividend != null) ...[
@@ -206,28 +219,15 @@ class _GlobalStockDetailScreenState extends State<GlobalStockDetailScreen> {
                 ),
               ],
               if (detail.splits.isNotEmpty) ...[
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
                 GlobalStockSplitsCard(splits: detail.splits, total: detail.splitsTotal),
               ],
-              const SizedBox(height: 12),
-              GlobalStockAboutCard(company: detail.company),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
               RelatedAssetsCard(
                 ticker: widget.symbol,
                 market: relatedMarketSlug(detail.quote.category),
                 sector: detail.company.sector,
                 industry: detail.company.industry,
-              ),
-              const SizedBox(height: 12),
-              Card(
-                child: ListTile(
-                  leading: const Icon(Icons.cloud_outlined),
-                  title: const Text('Fonte de dados'),
-                  subtitle: Text(
-                    'Cotações via backend · Marketstack ${detail.plan.toUpperCase()} · '
-                    '${detail.dataMode.toUpperCase()}',
-                  ),
-                ),
               ),
             ],
           );
@@ -239,6 +239,48 @@ class _GlobalStockDetailScreenState extends State<GlobalStockDetailScreen> {
 }
 
 bool _isValidRatio(double? value) => value != null && value > 0 && value <= 500;
+
+bool _isFundamentalsSparse(StockFundamentalsDto fundamentals) {
+  final metrics = [
+    fundamentals.priceEarnings,
+    fundamentals.priceToBook,
+    fundamentals.returnOnEquity,
+    fundamentals.totalRevenue,
+    fundamentals.ebitda,
+    fundamentals.beta,
+  ];
+  return metrics.every((value) => value == null);
+}
+
+class _DetailNoticeCard extends StatelessWidget {
+  const _DetailNoticeCard({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.info_outline,
+              size: 18,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(message, style: Theme.of(context).textTheme.bodySmall),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 double? _returnPctForLabel(List<GlobalStockReturnPeriodDto> returns, String label) {
   for (final item in returns) {

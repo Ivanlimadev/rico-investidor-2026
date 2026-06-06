@@ -2,20 +2,14 @@ import 'package:rico_investidor/core/utils/asset_returns.dart';
 import 'package:rico_investidor/features/fii/utils/fii_simulation.dart';
 import 'package:rico_investidor/models/fii_models.dart';
 
-/// Períodos anuais (legado / grid).
-const whatIfInvestmentPeriodYears = [1, 2, 3, 5, 10, 15];
+/// Períodos anuais do card "Se você tivesse investido".
+const whatIfInvestmentPeriodYears = [1, 2, 5, 10];
 
-/// Períodos do card — inclui meses para histórico curto (ex.: Marketstack 365d).
 const whatIfInvestmentPeriodOptions = <WhatIfInvestmentPeriod>[
-  WhatIfInvestmentPeriod.months(1),
-  WhatIfInvestmentPeriod.months(3),
-  WhatIfInvestmentPeriod.months(6),
   WhatIfInvestmentPeriod.years(1),
   WhatIfInvestmentPeriod.years(2),
-  WhatIfInvestmentPeriod.years(3),
   WhatIfInvestmentPeriod.years(5),
   WhatIfInvestmentPeriod.years(10),
-  WhatIfInvestmentPeriod.years(15),
 ];
 
 class WhatIfInvestmentPeriod {
@@ -97,31 +91,32 @@ class AssetInvestmentSimulationResult {
     }
     return requestedYears == 1 ? '1 ano' : '$requestedYears anos';
   }
+
+  /// Rótulo para o hero — deixa claro quando o histórico é menor que o período pedido.
+  String get heroPeriodLabel {
+    if (!usedPartialHistory) return periodDisplayLabel;
+    final since =
+        '${startDate.day.toString().padLeft(2, '0')}/${startDate.month.toString().padLeft(2, '0')}/${startDate.year}';
+    if (effectiveYears < 1.05) {
+      final months = (effectiveYears * 12).round().clamp(1, 11);
+      return months == 1 ? '1 mês (desde $since)' : '$months meses (desde $since)';
+    }
+    final yearsLabel = effectiveYears.round() == 1
+        ? '1 ano'
+        : '${effectiveYears.toStringAsFixed(1)} anos';
+    return '$yearsLabel (desde $since)';
+  }
 }
 
 int maxSimulatableYearsFromSeries({
   List<FiiCandleBar> candles = const [],
   List<FiiHistoryPoint> history = const [],
 }) {
-  DateTime? earliest;
-
-  for (final bar in candles) {
-    if (bar.close <= 0) continue;
-    final date = parseFiiDate(bar.tradeDate);
-    if (date == null) continue;
-    if (earliest == null || date.isBefore(earliest)) earliest = date;
-  }
-
-  for (final point in history) {
-    final date = parseFiiDate(point.referenceDate);
-    final price = point.closePrice;
-    if (date == null || price == null || price <= 0) continue;
-    if (earliest == null || date.isBefore(earliest)) earliest = date;
-  }
-
+  final timeline = AssetPriceTimeline.from(candles: candles, history: history);
+  final earliest = timeline.earliest;
   if (earliest == null) return 0;
-  final months = _monthsBetween(earliest, DateTime.now());
-  return (months / 12).floor().clamp(0, 15);
+  final months = _monthsBetween(earliest.date, DateTime.now());
+  return (months / 12).floor().clamp(0, 10);
 }
 
 bool hasDividendPayments(List<FiiDistributionPayment> payments) {
@@ -137,27 +132,27 @@ AssetInvestmentSimulationResult? simulateAssetInvestment({
   List<FiiHistoryPoint> history = const [],
   List<FiiDistributionPayment> payments = const [],
   bool reinvestDividends = false,
+  AssetPriceTimeline? timeline,
 }) {
   if (initialAmount <= 0 || currentPrice <= 0) return null;
   if (years <= 0 && months <= 0) return null;
   if (candles.isEmpty && history.isEmpty) return null;
 
+  final series = timeline ?? AssetPriceTimeline.from(candles: candles, history: history);
+  if (series.isEmpty) return null;
+
   final now = DateTime.now();
   final requestedStart = months > 0
       ? DateTime(now.year, now.month - months, now.day)
       : DateTime(now.year - years, now.month, now.day);
-  final earliestPoint = _earliestPricePoint(candles: candles, history: history);
+  final earliestPoint = series.earliest;
   if (earliestPoint == null) return null;
 
   final startDate =
       requestedStart.isBefore(earliestPoint.date) ? earliestPoint.date : requestedStart;
   final usedPartialHistory = startDate.isAfter(requestedStart);
 
-  final entryPoint = pricePointAtDate(
-    target: startDate,
-    candles: candles,
-    history: history,
-  );
+  final entryPoint = series.atOrBefore(startDate);
   if (entryPoint == null || entryPoint.price <= 0) return null;
 
   final entryPrice = entryPoint.price;
@@ -188,11 +183,7 @@ AssetInvestmentSimulationResult? simulateAssetInvestment({
     paymentCount++;
 
     if (reinvestDividends) {
-      final buyPoint = pricePointAtDate(
-        target: date,
-        candles: candles,
-        history: history,
-      );
+      final buyPoint = series.atOrBefore(date);
       final buyPrice = buyPoint?.price ?? currentPrice;
       if (buyPrice > 0) {
         shares += dividend / buyPrice;
@@ -243,6 +234,7 @@ AssetInvestmentSimulationResult? simulateAssetInvestmentForPeriod({
   List<FiiHistoryPoint> history = const [],
   List<FiiDistributionPayment> payments = const [],
   bool reinvestDividends = false,
+  AssetPriceTimeline? timeline,
 }) {
   return simulateAssetInvestment(
     initialAmount: initialAmount,
@@ -253,10 +245,11 @@ AssetInvestmentSimulationResult? simulateAssetInvestmentForPeriod({
     history: history,
     payments: payments,
     reinvestDividends: reinvestDividends,
+    timeline: timeline,
   );
 }
 
-/// Períodos com histórico completo (sem recorte no início da série).
+/// Períodos simuláveis — omite opções que dariam o mesmo ponto de compra.
 List<WhatIfInvestmentPeriod> simulatableWhatIfPeriods({
   required double initialAmount,
   required double currentPrice,
@@ -266,7 +259,11 @@ List<WhatIfInvestmentPeriod> simulatableWhatIfPeriods({
   bool reinvestDividends = false,
   List<WhatIfInvestmentPeriod> candidates = whatIfInvestmentPeriodOptions,
 }) {
+  final timeline = AssetPriceTimeline.from(candles: candles, history: history);
+  if (timeline.isEmpty) return const [];
+
   final periods = <WhatIfInvestmentPeriod>[];
+  final seenStartDates = <int>{};
   for (final period in candidates) {
     final result = simulateAssetInvestmentForPeriod(
       period: period,
@@ -276,10 +273,12 @@ List<WhatIfInvestmentPeriod> simulatableWhatIfPeriods({
       history: history,
       payments: payments,
       reinvestDividends: reinvestDividends,
+      timeline: timeline,
     );
-    if (result != null && !result.usedPartialHistory) {
-      periods.add(period);
-    }
+    if (result == null) continue;
+    final startKey = result.startDate.millisecondsSinceEpoch;
+    if (!seenStartDates.add(startKey)) continue;
+    periods.add(period);
   }
   return periods;
 }
@@ -309,8 +308,8 @@ WhatIfInvestmentPeriod defaultWhatIfPeriodOption(List<WhatIfInvestmentPeriod> pe
   for (final preferred in [
     WhatIfInvestmentPeriod.years(5),
     WhatIfInvestmentPeriod.years(1),
-    WhatIfInvestmentPeriod.months(6),
-    WhatIfInvestmentPeriod.months(3),
+    WhatIfInvestmentPeriod.years(10),
+    WhatIfInvestmentPeriod.years(2),
   ]) {
     if (periods.contains(preferred)) return preferred;
   }
@@ -345,36 +344,6 @@ Map<int, AssetInvestmentSimulationResult?> simulateWhatIfGrid({
     );
   }
   return results;
-}
-
-({DateTime date, double price})? _earliestPricePoint({
-  required List<FiiCandleBar> candles,
-  required List<FiiHistoryPoint> history,
-}) {
-  ({DateTime date, double price})? earliest;
-
-  void consider(({DateTime date, double price})? point) {
-    if (point == null) return;
-    if (earliest == null || point.date.isBefore(earliest!.date)) {
-      earliest = point;
-    }
-  }
-
-  for (final bar in candles) {
-    if (bar.close <= 0) continue;
-    final date = parseFiiDate(bar.tradeDate);
-    if (date == null) continue;
-    consider((date: date, price: bar.close));
-  }
-
-  for (final point in history) {
-    final date = parseFiiDate(point.referenceDate);
-    final price = point.closePrice;
-    if (date == null || price == null || price <= 0) continue;
-    consider((date: date, price: price));
-  }
-
-  return earliest;
 }
 
 int _monthsBetween(DateTime start, DateTime end) {

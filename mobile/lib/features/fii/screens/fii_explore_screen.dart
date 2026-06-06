@@ -77,11 +77,15 @@ class _FiiExploreScreenState extends State<FiiExploreScreen> {
   }
 
   void _onSearchChanged(String value) {
-    _unifiedSearch.search(value, (snapshot) {
-      if (!mounted) return;
-      setState(() => _searchSnapshot = snapshot);
-      if (!snapshot.active) _load();
-    });
+    _unifiedSearch.search(
+      value,
+      (snapshot) {
+        if (!mounted) return;
+        setState(() => _searchSnapshot = snapshot);
+        if (!snapshot.active) _load();
+      },
+      preferredMarket: AppShellScope.maybeOf(context)?.preferredMarket,
+    );
   }
 
   void _clearSearch() {

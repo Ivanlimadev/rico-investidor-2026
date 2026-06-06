@@ -128,10 +128,12 @@ def investidor10_dy_atual(
         if com_day >= cutoff:
             com_total += float(amount)
 
-    if com_total <= 0:
-        return None, None
-    ttm = round(com_total, 4)
-    return round((com_total / price) * 100, 2), ttm
+    if com_total > 0:
+        ttm = round(com_total, 4)
+        return round((com_total / price) * 100, 2), ttm
+
+    # Histórico existe, mas nada nos últimos 12m — DY 0% (estilo Investidor10).
+    return 0.0, 0.0
 
 
 def average_dy_over_years(
@@ -157,6 +159,27 @@ def average_dy_over_years(
         return None
     yearly_dy = [(float(row.total_per_share) / price) * 100 for row in slice_]
     return round(mean(yearly_dy), 2)
+
+
+def resolve_display_dividend_yield(
+    *,
+    dividend_yield_display: float | None,
+    dividend_yield_ttm: float | None,
+) -> float | None:
+    """DY exibido — preserva 0% (evita fallback indevido com `or`)."""
+    if dividend_yield_display is not None:
+        return dividend_yield_display
+    return dividend_yield_ttm
+
+
+def resolve_display_ttm_per_share(
+    *,
+    ttm_per_share_display: float | None,
+    ttm_per_share: float | None,
+) -> float | None:
+    if ttm_per_share_display is not None:
+        return ttm_per_share_display
+    return ttm_per_share
 
 
 def build_br_dividends_summary(

@@ -53,7 +53,7 @@ void main() {
     expect(result.usedPartialHistory, isFalse);
   });
 
-  test('simulatableWhatIfPeriodYears excludes partial history periods', () {
+  test('simulatableWhatIfPeriodYears offers 1 2 5 10 when history allows', () {
     final candles = [
       FiiCandleBar(tradeDate: '2021-06-10', open: 50, high: 52, low: 49, close: 50, volume: 1000),
       FiiCandleBar(tradeDate: '2026-01-10', open: 80, high: 82, low: 79, close: 80, volume: 1000),
@@ -66,9 +66,10 @@ void main() {
       reinvestDividends: false,
     );
 
+    expect(periods, containsAll([1, 2, 5]));
     expect(periods, isNot(contains(10)));
+    expect(periods, isNot(contains(3)));
     expect(periods, isNot(contains(15)));
-    expect(periods, isNotEmpty);
   });
 
   test('simulateWhatIfGrid returns entries per period', () {
@@ -88,7 +89,7 @@ void main() {
     expect(grid[1]!.totalValue, greaterThan(1000));
   });
 
-  test('simulatableWhatIfPeriods includes months when year periods are partial', () {
+  test('simulatableWhatIfPeriods dedupes periods with same start date', () {
     final history = <FiiHistoryPoint>[];
     final now = DateTime.now();
     for (var i = 300; i >= 0; i -= 7) {
@@ -105,7 +106,43 @@ void main() {
       reinvestDividends: false,
     );
 
+    expect(periods, isNot(contains(const WhatIfInvestmentPeriod.months(6))));
+    expect(periods, contains(const WhatIfInvestmentPeriod.years(1)));
     expect(periods, isNot(contains(const WhatIfInvestmentPeriod.years(5))));
-    expect(periods, contains(const WhatIfInvestmentPeriod.months(6)));
+  });
+
+  test('different year periods produce different totals with enough history', () {
+    final candles = <FiiCandleBar>[];
+    for (var y = 2016; y <= 2026; y++) {
+      candles.add(
+        FiiCandleBar(
+          tradeDate: '$y-06-15',
+          open: 50 + (y - 2016) * 5.0,
+          high: 55 + (y - 2016) * 5.0,
+          low: 45 + (y - 2016) * 5.0,
+          close: 50 + (y - 2016) * 5.0,
+          volume: 1000,
+        ),
+      );
+    }
+
+    final oneYear = simulateAssetInvestment(
+      initialAmount: 1000,
+      years: 1,
+      currentPrice: 100,
+      candles: candles,
+      reinvestDividends: false,
+    );
+    final fiveYears = simulateAssetInvestment(
+      initialAmount: 1000,
+      years: 5,
+      currentPrice: 100,
+      candles: candles,
+      reinvestDividends: false,
+    );
+
+    expect(oneYear, isNotNull);
+    expect(fiveYears, isNotNull);
+    expect(oneYear!.totalValue, isNot(closeTo(fiveYears!.totalValue, 0.01)));
   });
 }

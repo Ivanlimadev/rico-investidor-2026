@@ -1,10 +1,11 @@
 import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
+import 'package:rico_investidor/features/global_markets/utils/global_stock_chart_prices.dart';
 import 'package:rico_investidor/models/fii_models.dart';
 
 List<FiiCandleBar> candleBarsFromGlobal(List<GlobalStockCandleDto> candles) {
   return candles
       .map((candle) {
-        final close = candle.chartClose;
+        final close = returnCloseForGlobalStockCandle(candle, candles);
         if (close <= 0) return null;
         return FiiCandleBar(
           tradeDate: candle.date,

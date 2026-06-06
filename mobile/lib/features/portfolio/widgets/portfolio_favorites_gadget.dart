@@ -59,7 +59,9 @@ class PortfolioFavoritesGadgetState extends State<PortfolioFavoritesGadget> {
 
     for (final item in stored) {
       try {
-        final live = await widget.searchService.findBySymbolAsync(item.symbol);
+        final live = await widget.searchService
+            .findBySymbolAsync(item.symbol)
+            .timeout(const Duration(seconds: 12), onTimeout: () => null);
         refreshed.add(live ?? item);
       } catch (_) {
         refreshed.add(item);

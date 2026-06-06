@@ -226,6 +226,7 @@ class _RelatedMiniCard extends StatelessWidget {
                         symbol: item.ticker,
                         size: kAssetLogoSizeCompact,
                         borderRadius: kAssetLogoBorderRadius,
+                        style: AssetLogoStyle.standard,
                       ),
                       const SizedBox(height: 8),
                       Row(

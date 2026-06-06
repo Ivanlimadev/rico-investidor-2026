@@ -9,6 +9,7 @@ import 'package:rico_investidor/core/auth/secure_storage_config.dart';
 import 'package:rico_investidor/core/auth/session_expired_exception.dart';
 import 'package:rico_investidor/core/config/api_config.dart';
 import 'package:rico_investidor/core/network/api_exception.dart';
+import 'package:rico_investidor/core/network/shared_http_client.dart';
 
 const _tokenKey = 'auth_access_token';
 const _deviceIdKey = 'auth_device_id';
@@ -23,7 +24,7 @@ class AuthSession {
     FlutterSecureStorage? storage,
     http.Client? client,
   })  : _storage = storage ?? secureStorage,
-        _client = client ?? http.Client();
+        _client = client ?? sharedHttpClient;
 
   final FlutterSecureStorage _storage;
   final http.Client _client;

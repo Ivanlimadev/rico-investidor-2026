@@ -28,6 +28,20 @@ void openPortfolioScreen(
   );
 }
 
+/// Abre o formulário de busca + posição (sem passar pela tela intermediária vazia).
+Future<void> openAddAssetScreen(
+  BuildContext context, {
+  required PortfolioState portfolio,
+  required VoidCallback onPortfolioChanged,
+}) async {
+  final added = await Navigator.of(context).push<bool>(
+    MaterialPageRoute<bool>(
+      builder: (_) => AddAssetScreen(portfolio: portfolio),
+    ),
+  );
+  if (added == true) onPortfolioChanged();
+}
+
 class PortfolioScreen extends StatefulWidget {
   const PortfolioScreen({
     super.key,
@@ -65,16 +79,11 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
     widget.onPortfolioChanged();
   }
 
-  Future<void> _openAddAsset() async {
-    final added = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(
-        builder: (_) => AddAssetScreen(portfolio: widget.portfolio),
-      ),
-    );
-    if (added == true) {
-      widget.onPortfolioChanged();
-    }
-  }
+  Future<void> _openAddAsset() => openAddAssetScreen(
+        context,
+        portfolio: widget.portfolio,
+        onPortfolioChanged: widget.onPortfolioChanged,
+      );
 
   Future<void> _confirmRemoveHolding(PortfolioHolding holding) async {
     final confirmed = await confirmRemovePortfolioHolding(context, holding);

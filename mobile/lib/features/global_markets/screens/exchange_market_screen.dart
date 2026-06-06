@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/core/search/asset_search_config.dart';
 import 'package:rico_investidor/core/search/unified_asset_search.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
@@ -125,11 +126,15 @@ class _ExchangeMarketScreenState extends State<ExchangeMarketScreen> {
   }
 
   void _onSearchChanged(String value) {
-    _unifiedSearch.search(value, (snapshot) {
-      if (!mounted) return;
-      setState(() => _searchSnapshot = snapshot);
-      if (!snapshot.active) _loadInitial();
-    });
+    _unifiedSearch.search(
+      value,
+      (snapshot) {
+        if (!mounted) return;
+        setState(() => _searchSnapshot = snapshot);
+        if (!snapshot.active) _loadInitial();
+      },
+      preferredMarket: AppShellScope.maybeOf(context)?.preferredMarket,
+    );
   }
 
   void _clearSearch() {

@@ -5,10 +5,9 @@ import 'package:rico_investidor/features/dividends/widgets/portfolio_dividends_s
 import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/home/widgets/portfolio_allocation_card.dart';
 import 'package:rico_investidor/features/home/widgets/portfolio_summary_row.dart';
-import 'package:rico_investidor/features/open_finance/widgets/connect_investments_card.dart';
 import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/fii/utils/fii_ticker.dart';
-import 'package:rico_investidor/features/portfolio/add_asset_screen.dart';
+import 'package:rico_investidor/features/portfolio/portfolio_screen.dart';
 import 'package:rico_investidor/features/portfolio/widgets/portfolio_favorites_gadget.dart';
 import 'package:rico_investidor/features/portfolio/widgets/confirm_remove_holding_dialog.dart';
 import 'package:rico_investidor/features/portfolio/widgets/portfolio_holding_card.dart';
@@ -16,6 +15,7 @@ import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/market_category.dart';
 import 'package:rico_investidor/models/portfolio_holding.dart';
 import 'package:rico_investidor/navigation/open_asset_detail.dart';
+import 'package:rico_investidor/services/market_preference_storage.dart';
 import 'package:rico_investidor/services/portfolio_fx_service.dart';
 import 'package:rico_investidor/services/portfolio_price_service.dart';
 import 'package:rico_investidor/state/portfolio_state.dart';
@@ -27,12 +27,14 @@ class PortfolioTabScreen extends StatefulWidget {
     required this.onPortfolioChanged,
     required this.fiiRepository,
     required this.quoteRepository,
+    required this.preferredMarket,
   });
 
   final PortfolioState portfolio;
   final VoidCallback onPortfolioChanged;
   final FiiRepository fiiRepository;
   final QuoteRepository quoteRepository;
+  final MarketPreference preferredMarket;
 
   @override
   State<PortfolioTabScreen> createState() => _PortfolioTabScreenState();
@@ -61,14 +63,11 @@ class _PortfolioTabScreenState extends State<PortfolioTabScreen> {
     widget.onPortfolioChanged();
   }
 
-  Future<void> _openAddAsset() async {
-    final added = await Navigator.of(context).push<bool>(
-      MaterialPageRoute<bool>(
-        builder: (_) => AddAssetScreen(portfolio: widget.portfolio),
-      ),
-    );
-    if (added == true) widget.onPortfolioChanged();
-  }
+  Future<void> _openAddAsset() => openAddAssetScreen(
+        context,
+        portfolio: widget.portfolio,
+        onPortfolioChanged: widget.onPortfolioChanged,
+      );
 
   Future<void> _confirmRemoveHolding(PortfolioHolding holding) async {
     final confirmed = await confirmRemovePortfolioHolding(context, holding);
@@ -115,9 +114,11 @@ class _PortfolioTabScreenState extends State<PortfolioTabScreen> {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.only(bottom: kBottomNavContentPadding),
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 12, 20, 0),
-              child: ConnectInvestmentsCard(),
+            PortfolioSummaryRow(
+              portfolio: widget.portfolio,
+              preferredMarket: widget.preferredMarket,
+              onPortfolioTap: () {},
+              showDividendsCard: false,
             ),
             PortfolioFavoritesGadget(
               key: _favoritesKey,
@@ -132,23 +133,9 @@ class _PortfolioTabScreenState extends State<PortfolioTabScreen> {
                 child: _EmptyPortfolioTab(onAdd: _openAddAsset),
               )
             else ...[
-              PortfolioSummaryRow(
-                summary: widget.portfolio.buildSummary(),
-                onPortfolioTap: () {},
-                showDividendsCard: false,
-              ),
-              if (widget.portfolio.usdBrlRate != null)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
-                  child: Text(
-                    'Carteira em US\$ · USD/BRL ${widget.portfolio.usdBrlRate!.toStringAsFixed(2)}',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
-                        ),
-                  ),
-                ),
               PortfolioAllocationCard(
                 portfolio: widget.portfolio,
+                preferredMarket: widget.preferredMarket,
                 onTap: _openAddAsset,
               ),
               Padding(
@@ -178,6 +165,7 @@ class _PortfolioTabScreenState extends State<PortfolioTabScreen> {
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
                 child: PortfolioDividendsSection(
                   portfolio: widget.portfolio,
+                  preferredMarket: widget.preferredMarket,
                   onPortfolioChanged: widget.onPortfolioChanged,
                 ),
               ),
@@ -224,8 +212,8 @@ class _EmptyPortfolioTab extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Use Adicionar para incluir ativos manualmente. '
-            'Carteira automática chega em breve.',
+            'Use Adicionar para incluir ativos com quantidade e preço médio. '
+            'O saldo atualiza com as cotações em tempo real.',
             style: Theme.of(context).textTheme.bodyMedium,
             textAlign: TextAlign.center,
           ),

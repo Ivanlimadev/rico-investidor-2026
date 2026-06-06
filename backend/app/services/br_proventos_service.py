@@ -11,6 +11,7 @@ from app.clients.bolsai.proventos_mapper import (
 )
 from app.clients.brapi.client import BrapiClient
 from app.clients.brapi.models import (
+    MarketQuote,
     StockDividendEvent,
     StockDividendsResponse,
     StockDividendsSummary,
@@ -19,9 +20,13 @@ from app.clients.brapi.models import (
 from app.config import settings
 from app.core.cache import TtlCache
 from app.core.exceptions import UpstreamError
-from app.domain.dividends.br_dividend_analytics import build_br_dividends_summary
+from app.domain.dividends.br_dividend_analytics import (
+    build_br_dividends_summary,
+    resolve_display_dividend_yield,
+)
 from app.domain.fii.models import FiiDetail, FiiDistributions
 from app.domain.fii.ticker import is_valid_fii_ticker, normalize_fii_ticker
+from app.domain.quotes.br_quote_reconcile import merge_bolsai_fundamentals_into_quote
 from app.domain.quotes.category_map import looks_like_fii
 
 
@@ -52,6 +57,7 @@ class BrProventosService:
         self._fundamentals_cache: TtlCache[dict] = TtlCache(cache_ttl)
         self._dividends_cache: TtlCache[BolsaiDividendsResponse] = TtlCache(cache_ttl)
         self._company_cache: TtlCache[dict] = TtlCache(cache_ttl)
+        self._bolsai_quote_cache: TtlCache[dict] = TtlCache(cache_ttl)
 
     @property
     def uses_bolsai(self) -> bool:
@@ -111,6 +117,100 @@ class BrProventosService:
 
         await asyncio.gather(*(one(symbol) for symbol in unique))
         return names
+
+    async def get_bolsai_quote_cached(self, ticker: str) -> dict | None:
+        normalized = ticker.upper().strip()
+        if not normalized or not self._bolsai.configured:
+            return None
+        cached = self._bolsai_quote_cache.get(normalized)
+        if cached is not None:
+            return cached
+        payload = await self._bolsai.get_stock_quote(normalized)
+        if payload:
+            self._bolsai_quote_cache.set(normalized, payload)
+        return payload
+
+    async def display_dividend_yield_for_price(
+        self,
+        ticker: str,
+        *,
+        price: float,
+        limit: int = 60,
+    ) -> float | None:
+        """DY exibido — janela de pagamentos estilo Investidor10."""
+        if price <= 0:
+            return None
+        dividends = await self.get_stock_dividends(ticker, limit=limit)
+        enriched = self.enrich_dividends_with_summary(dividends, price=price)
+        return resolve_display_dividend_yield(
+            dividend_yield_display=enriched.summary.dividend_yield_display,
+            dividend_yield_ttm=enriched.dividend_yield_ttm,
+        )
+
+    async def reconcile_market_quote(self, quote: MarketQuote) -> MarketQuote:
+        """Cotação + DY + fundamentos alinhados (Bolsai + regra Investidor10)."""
+        price = quote.price
+        display_dy = await self.display_dividend_yield_for_price(
+            quote.symbol,
+            price=price,
+        )
+
+        if not self._bolsai.configured:
+            if display_dy is None:
+                return quote
+            return quote.model_copy(update={"dividend_yield_12m": display_dy})
+
+        fund_raw, quote_raw = await asyncio.gather(
+            self.get_fundamentals_cached(quote.symbol),
+            self.get_bolsai_quote_cached(quote.symbol),
+            return_exceptions=True,
+        )
+        fund_payload = fund_raw if isinstance(fund_raw, dict) else None
+        quote_payload = quote_raw if isinstance(quote_raw, dict) else None
+
+        reconciled_price = price
+        quote_patch = merge_bolsai_fundamentals_into_quote(
+            quote,
+            fundamentals=fund_payload,
+            bolsai_quote=quote_payload,
+            display_dividend_yield=None,
+        )
+        if quote_patch.price > 0:
+            reconciled_price = quote_patch.price
+
+        if display_dy is None and reconciled_price != price:
+            display_dy = await self.display_dividend_yield_for_price(
+                quote.symbol,
+                price=reconciled_price,
+            )
+
+        return merge_bolsai_fundamentals_into_quote(
+            quote,
+            fundamentals=fund_payload,
+            bolsai_quote=quote_payload,
+            display_dividend_yield=display_dy,
+        )
+
+    async def reconcile_market_quotes_batch(
+        self,
+        items: list[MarketQuote],
+        *,
+        max_concurrency: int | None = None,
+    ) -> list[MarketQuote]:
+        if not items:
+            return items
+
+        concurrency = max_concurrency or settings.bolsai_dy_enrich_concurrency
+        semaphore = asyncio.Semaphore(max(1, concurrency))
+
+        async def one(item: MarketQuote) -> MarketQuote:
+            try:
+                async with semaphore:
+                    return await self.reconcile_market_quote(item)
+            except Exception:
+                return item
+
+        return list(await asyncio.gather(*(one(item) for item in items)))
 
     async def get_fundamentals_cached(self, ticker: str) -> dict | None:
         normalized = ticker.upper().strip()
@@ -246,16 +346,32 @@ class BrProventosService:
         fundamentals: StockFundamentals,
         dividends: StockDividendsResponse,
     ) -> StockFundamentals:
-        dy = dividends.summary.dividend_yield_display or dividends.dividend_yield_ttm
+        dy = resolve_display_dividend_yield(
+            dividend_yield_display=dividends.summary.dividend_yield_display,
+            dividend_yield_ttm=dividends.dividend_yield_ttm,
+        )
         if dy is None:
             return fundamentals
         return fundamentals.model_copy(update={"dividend_yield_12m": dy})
 
 
-    async def fetch_dividend_yield_ttm(self, ticker: str) -> float | None:
+    async def fetch_dividend_yield_ttm(
+        self,
+        ticker: str,
+        *,
+        price: float | None = None,
+    ) -> float | None:
         normalized = ticker.upper().strip()
         if not normalized:
             return None
+
+        if price is not None and price > 0:
+            computed = await self.display_dividend_yield_for_price(
+                normalized,
+                price=price,
+            )
+            if computed is not None:
+                return computed
 
         try:
             if self._bolsai.configured:

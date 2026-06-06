@@ -130,13 +130,17 @@ class _CryptoExploreScreenState extends State<CryptoExploreScreen> {
   }
 
   void _onSearchChanged(String value) {
-    _unifiedSearch.search(value, (snapshot) {
-      if (!mounted) return;
-      setState(() => _searchSnapshot = snapshot);
-      if (!snapshot.active) {
-        _load(reset: true);
-      }
-    });
+    _unifiedSearch.search(
+      value,
+      (snapshot) {
+        if (!mounted) return;
+        setState(() => _searchSnapshot = snapshot);
+        if (!snapshot.active) {
+          _load(reset: true);
+        }
+      },
+      preferredMarket: AppShellScope.maybeOf(context)?.preferredMarket,
+    );
   }
 
   void _clearSearch() {
@@ -200,18 +204,6 @@ class _CryptoExploreScreenState extends State<CryptoExploreScreen> {
                     onSelected: (_) => _selectGroup(group.id),
                   );
                 },
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: Text(
-                  'Binance',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
-                      ),
-                ),
               ),
             ),
           ] else

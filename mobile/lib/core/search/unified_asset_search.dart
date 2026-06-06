@@ -12,6 +12,7 @@ import 'package:rico_investidor/models/market_category.dart';
 import 'package:rico_investidor/navigation/open_asset_detail.dart';
 import 'package:rico_investidor/core/search/asset_search_config.dart';
 import 'package:rico_investidor/services/asset_search_service.dart';
+import 'package:rico_investidor/services/market_preference_storage.dart';
 
 /// Debounce + cancelamento para busca global em qualquer tela.
 class UnifiedAssetSearchSnapshot {
@@ -52,7 +53,11 @@ class UnifiedAssetSearchRunner {
   Timer? _debounce;
   int _generation = 0;
 
-  void search(String rawQuery, UnifiedAssetSearchListener listener) {
+  void search(
+    String rawQuery,
+    UnifiedAssetSearchListener listener, {
+    MarketPreference? preferredMarket,
+  }) {
     _debounce?.cancel();
     final query = rawQuery.trim();
 
@@ -65,7 +70,10 @@ class UnifiedAssetSearchRunner {
 
     _debounce = Timer(kAssetSearchDebounce, () async {
       final generation = ++_generation;
-      final results = await _searchService.searchAsync(query);
+      final results = await _searchService.searchAsync(
+        query,
+        preferredMarket: preferredMarket,
+      );
       if (generation != _generation) return;
       listener(UnifiedAssetSearchSnapshot.done(query: query, results: results));
     });

@@ -4,10 +4,33 @@ from app.domain.dividends.br_dividend_analytics import (
     build_br_dividends_summary,
     investidor10_dy_atual,
     payments_to_global_dividends,
+    resolve_display_dividend_yield,
 )
 from app.domain.dividends.br_com_date import investidor10_br_com_date as com_from_ex
 from app.domain.fii.models import FiiDistributionPayment, FiiDistributionYearSummary
 from app.domain.global_markets.dividend_analytics import pick_next_dividend
+
+
+def test_resolve_display_dividend_yield_preserves_zero():
+    assert resolve_display_dividend_yield(
+        dividend_yield_display=0.0,
+        dividend_yield_ttm=7.65,
+    ) == 0.0
+
+
+def test_investidor10_dy_zero_when_no_payments_in_12m():
+    as_of = datetime(2026, 6, 5, tzinfo=UTC)
+    payments = [
+        FiiDistributionPayment(
+            reference_date="2024-08-21",
+            payment_date="2024-11-21",
+            value_per_share=0.33,
+            label="Jcp",
+        ),
+    ]
+    dy, ttm = investidor10_dy_atual(payments, price=10.52, as_of=as_of)
+    assert dy == 0.0
+    assert ttm == 0.0
 
 
 def test_investidor10_dy_uses_paid_window():

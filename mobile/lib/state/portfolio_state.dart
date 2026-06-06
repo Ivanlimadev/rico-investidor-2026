@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:rico_investidor/core/utils/portfolio_balance.dart';
 import 'package:rico_investidor/models/dividend_payment.dart';
 import 'package:rico_investidor/models/holding_currency.dart';
 import 'package:rico_investidor/models/market_category.dart';
@@ -7,6 +8,7 @@ import 'package:rico_investidor/models/portfolio_allocation_slice.dart';
 import 'package:rico_investidor/models/portfolio_holding.dart';
 import 'package:rico_investidor/models/portfolio_summary.dart';
 import 'package:rico_investidor/services/asset_search_service.dart';
+import 'package:rico_investidor/services/market_preference_storage.dart';
 
 class PortfolioState {
   PortfolioState({
@@ -27,57 +29,72 @@ class PortfolioState {
   String _nextId() => 'h-${++_idCounter}';
   String _nextDividendId() => 'd-${++_idCounter}';
 
-  /// Patrimônio total convertido para US$.
-  double get totalBalance =>
-      holdings.fold(0.0, (sum, h) => sum + h.marketValueInUsd(usdBrlRate));
-
-  double _dividendInUsd(DividendPayment payment) => convertToUsd(
-        amount: payment.amount,
-        currency: holdingCurrencyForSymbol(payment.symbol),
+  PortfolioBalanceBreakdown computeBalanceBreakdown() => computePortfolioBalanceBreakdown(
+        holdings: holdings,
+        categoryResolver: searchService.categoryForSymbol,
         usdBrlRate: usdBrlRate,
       );
 
-  double get monthlyDividends {
+  /// Patrimônio na moeda preferida do usuário (BR → R$, US → US$).
+  double totalBalanceFor(MarketPreference preference) =>
+      computeBalanceBreakdown().primaryTotal(preference);
+
+  /// Legado — total em US$. Prefira [totalBalanceFor].
+  double get totalBalance => computeBalanceBreakdown().totalUsd;
+
+  double _dividendInCurrency(DividendPayment payment, HoldingCurrency target) =>
+      dividendAmountInCurrency(
+        payment,
+        target: target,
+        usdBrlRate: usdBrlRate,
+      );
+
+  double monthlyDividendsFor(MarketPreference preference) {
+    final target = preference.isBrazil ? HoldingCurrency.brl : HoldingCurrency.usd;
     final now = DateTime.now();
     return dividends
         .where((d) => d.date.year == now.year && d.date.month == now.month)
-        .fold(0.0, (sum, d) => sum + _dividendInUsd(d));
+        .fold(0.0, (sum, d) => sum + _dividendInCurrency(d, target));
   }
 
-  double get previousMonthDividends {
+  double previousMonthDividendsFor(MarketPreference preference) {
+    final target = preference.isBrazil ? HoldingCurrency.brl : HoldingCurrency.usd;
     final now = DateTime.now();
     final prev = DateTime(now.year, now.month - 1);
     return dividends
         .where((d) => d.date.year == prev.year && d.date.month == prev.month)
-        .fold(0.0, (sum, d) => sum + _dividendInUsd(d));
+        .fold(0.0, (sum, d) => sum + _dividendInCurrency(d, target));
   }
 
-  PortfolioSummary buildSummary() {
-    final prev = previousMonthDividends;
-    final current = monthlyDividends;
+  PortfolioSummary buildSummary(MarketPreference preference) {
+    final breakdown = computeBalanceBreakdown();
+    final prev = previousMonthDividendsFor(preference);
+    final current = monthlyDividendsFor(preference);
     final divChange = prev == 0 ? (current > 0 ? 100.0 : 0.0) : ((current - prev) / prev) * 100;
 
-    final invested = holdings.fold(0.0, (s, h) => s + h.invested);
-    final profit = holdings.fold(0.0, (s, h) => s + h.profit);
-    final portfolioChange = invested == 0 ? 0.0 : (profit / invested) * 100;
-
     return PortfolioSummary(
-      totalBalance: totalBalance,
-      monthlyDividends: monthlyDividends,
-      portfolioChangePercent: portfolioChange,
+      totalBalance: breakdown.primaryTotal(preference),
+      monthlyDividends: current,
+      portfolioChangePercent: breakdown.primaryProfitPercent(preference),
       dividendsVsLastMonthPercent: divChange,
+      displayCurrency: preference.isBrazil ? HoldingCurrency.brl : HoldingCurrency.usd,
     );
   }
 
-  List<PortfolioAllocationSlice> computeAllocation() {
+  List<PortfolioAllocationSlice> computeAllocation(MarketPreference preference) {
     if (holdings.isEmpty) return const [];
 
+    final breakdown = computeBalanceBreakdown();
     final totals = <MarketCategory, double>{};
     var outros = 0.0;
 
     for (final holding in holdings) {
       final category = searchService.categoryForSymbol(holding.symbol);
-      final value = holding.marketValueInUsd(usdBrlRate);
+      final value = breakdown.allocationWeight(
+        holding,
+        preference: preference,
+        category: category,
+      );
       if (category == null) {
         outros += value;
       } else {
@@ -85,7 +102,7 @@ class PortfolioState {
       }
     }
 
-    final total = totalBalance;
+    final total = breakdown.primaryTotal(preference);
     if (total <= 0) return const [];
 
     final slices = <PortfolioAllocationSlice>[];
@@ -219,24 +236,28 @@ class PortfolioState {
       ..sort((a, b) => b.date.compareTo(a.date));
   }
 
-  List<DividendChartPoint> chartPoints(DividendChartGranularity granularity) {
+  /// Gráfico Mês — total de proventos em cada mês do ano corrente.
+  List<DividendChartPoint> chartPointsFor(
+    DividendChartGranularity granularity,
+    MarketPreference preference,
+  ) {
+    final target = preference.isBrazil ? HoldingCurrency.brl : HoldingCurrency.usd;
     final now = DateTime.now();
     return switch (granularity) {
-      DividendChartGranularity.month => _aggregateMonthsOfYear(now),
+      DividendChartGranularity.month => _aggregateMonthsOfYear(now, target),
       DividendChartGranularity.year =>
-        dividends.isEmpty ? const [] : _aggregateYears(now, 5),
+        dividends.isEmpty ? const [] : _aggregateYears(now, 5, target),
     };
   }
 
-  /// Gráfico Mês — total de proventos em cada mês do ano corrente.
-  List<DividendChartPoint> _aggregateMonthsOfYear(DateTime now) {
+  List<DividendChartPoint> _aggregateMonthsOfYear(DateTime now, HoldingCurrency target) {
     return [
       for (var month = 1; month <= 12; month++)
         DividendChartPoint(
           label: _monthShortLabel(month),
           total: dividends
               .where((d) => d.date.year == now.year && d.date.month == month)
-              .fold(0.0, (sum, d) => sum + _dividendInUsd(d)),
+              .fold(0.0, (sum, d) => sum + _dividendInCurrency(d, target)),
           periodStart: DateTime(now.year, month),
         ),
     ];
@@ -260,11 +281,13 @@ class PortfolioState {
     return labels[month - 1];
   }
 
-  List<DividendChartPoint> _aggregateYears(DateTime now, int years) {
+  List<DividendChartPoint> _aggregateYears(DateTime now, int years, HoldingCurrency target) {
     final points = <DividendChartPoint>[];
     for (var i = years - 1; i >= 0; i--) {
       final year = now.year - i;
-      final total = dividends.where((d) => d.date.year == year).fold(0.0, (s, d) => s + _dividendInUsd(d));
+      final total = dividends
+          .where((d) => d.date.year == year)
+          .fold(0.0, (s, d) => s + _dividendInCurrency(d, target));
       points.add(
         DividendChartPoint(
           label: '$year',
