@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 
 from app.clients.brapi.models import StockCompareReturnPeriod
-from app.domain.fii.models import FiiCandleBar, FiiDistributionPayment
+from app.clients.brapi.models import FiiCandleBar, FiiDistributionPayment
 
 RETURN_PERIODS: tuple[tuple[str, int], ...] = (
     ("1M", 21),

@@ -12,21 +12,15 @@ import 'package:rico_investidor/features/crypto/utils/crypto_explore_presets.dar
 import 'package:rico_investidor/features/crypto/widgets/crypto_heatmap_block.dart';
 import 'package:rico_investidor/features/crypto/widgets/crypto_movers_block.dart';
 import 'package:rico_investidor/features/crypto/widgets/crypto_panorama_block.dart';
-import 'package:rico_investidor/features/fii/data/fii_repository.dart';
-import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/navigation/open_asset_detail.dart';
 
 class CryptoExploreScreen extends StatefulWidget {
   const CryptoExploreScreen({
     super.key,
     this.repository,
-    this.fiiRepository,
-    this.quoteRepository,
   });
 
   final CryptoRepository? repository;
-  final FiiRepository? fiiRepository;
-  final QuoteRepository? quoteRepository;
 
   @override
   State<CryptoExploreScreen> createState() => _CryptoExploreScreenState();
@@ -226,8 +220,6 @@ class _CryptoExploreScreenState extends State<CryptoExploreScreen> {
     if (_searchSnapshot.active) {
       return UnifiedAssetResultsBody(
         snapshot: _searchSnapshot,
-        fiiRepository: widget.fiiRepository ?? fiiRepository,
-        quoteRepository: widget.quoteRepository ?? quoteRepository,
       );
     }
 
@@ -268,8 +260,6 @@ class _CryptoExploreScreenState extends State<CryptoExploreScreen> {
             onTap: (asset) => openAssetDetail(
               context,
               asset: asset,
-              fiiRepository: widget.fiiRepository ?? fiiRepository,
-              quoteRepository: widget.quoteRepository ?? quoteRepository,
             ),
           ),
         ),
@@ -279,8 +269,6 @@ class _CryptoExploreScreenState extends State<CryptoExploreScreen> {
             onTap: (asset) => openAssetDetail(
               context,
               asset: asset,
-              fiiRepository: widget.fiiRepository ?? fiiRepository,
-              quoteRepository: widget.quoteRepository ?? quoteRepository,
             ),
           ),
         ),
@@ -313,8 +301,6 @@ class _CryptoExploreScreenState extends State<CryptoExploreScreen> {
                 onTap: () => openAssetDetail(
                   context,
                   asset: quote.toAssetItem(),
-                  fiiRepository: widget.fiiRepository ?? fiiRepository,
-                  quoteRepository: widget.quoteRepository ?? quoteRepository,
                 ),
               );
             },

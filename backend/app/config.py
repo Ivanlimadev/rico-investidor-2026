@@ -30,26 +30,18 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    brapi_api_key: str = ""
-    brapi_base_url: str = "https://brapi.dev/api"
     # Bolsai — proventos e fundamentos TTM B3. Sem chave, agenda BR usa só Brapi.
-    bolsai_api_key: str = ""
-    bolsai_base_url: str = "https://api.usebolsai.com/api/v1"
     # free = 200 req/dia | pro = 10k req/dia (ajusta limites padrão quando não sobrescritos).
-    bolsai_plan: str = "pro"
     # Agenda BR: universo de tickers consultados na Bolsai por rebuild.
-    bolsai_calendar_max_tickers: int = 350
     # Pro: inclui catálogo B3 + FIIs na agenda de proventos.
-    bolsai_calendar_include_catalog: bool = True
-    bolsai_dy_enrich_concurrency: int = 10
     # Tickers enriquecidos com fundamentos TTM por página de lista/screener.
-    bolsai_dy_list_max_symbols: int = 100
     # Cache por ticker — fundamentos/proventos mudam no fechamento (evita calls repetidas).
-    bolsai_ticker_cache_ttl_seconds: int = 7200
     marketstack_api_key: str = ""
     marketstack_base_url: str = "https://api.marketstack.com/v2"
     marketstack_plan: str = "basic"
     marketstack_intraday_interval: str = "5min"
+    # Atraso típico do feed intraday Marketstack (não é tick-by-tick de bolsa).
+    marketstack_intraday_delay_minutes: int = 15
     marketstack_realtime_cache_ttl_seconds: int = 60
     # Financial Modeling Prep — opcional. Plano grátis (250 req/dia) enriquece o
     # perfil internacional e ratios TTM (P/L, ROE, margens) quando Marketstack
@@ -86,21 +78,26 @@ class Settings(BaseSettings):
     logo_rate_limit_per_minute: int = 120
     trust_proxy_headers: bool = False
     cache_max_entries: int = 512
-    fii_fund_catalog_ttl_seconds: int = 3600
-    fii_cache_ttl_seconds: int = 900
     quote_cache_ttl_seconds: int = 300
     api_host: str = "127.0.0.1"
     api_port: int = 8000
     auth_secret: str = ""
     auth_token_ttl_seconds: int = 60 * 60 * 24 * 30
     auth_users_path: Path = _BACKEND_ROOT / "data" / "users.json"
+    database_url: str = f"sqlite:///{(_BACKEND_ROOT / 'data' / 'ricoapp.db').as_posix()}"
+    database_pool_size: int = 5
+    database_max_overflow: int = 10
     # Swagger/ReDoc/OpenAPI. Em produção use DOCS_ENABLED=false.
     docs_enabled: bool = True
-
 
     @property
     def is_production(self) -> bool:
         return self.app_env.strip().lower() == "production"
+
+    @property
+    def uses_postgres(self) -> bool:
+        normalized = self.database_url.lower()
+        return normalized.startswith("postgresql") or normalized.startswith("postgres://")
 
 
 settings = Settings()

@@ -60,6 +60,10 @@ class AuthService:
             raise AppError("Usuário não encontrado", status_code=404)
         return self._to_response(user)
 
+    def update_profile(self, user_id: str, *, name: str) -> UserResponse:
+        user = self._store.update_name(user_id, name)
+        return self._to_response(user)
+
     def _token_for(self, user: StoredUser) -> TokenResponse:
         token, expires_in = create_access_token(user.id, user.email)
         return TokenResponse(access_token=token, expires_in=expires_in)

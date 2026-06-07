@@ -3,8 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
-import 'package:rico_investidor/features/fii/utils/fii_quote_chart.dart';
-import 'package:rico_investidor/models/fii_models.dart';
+import 'package:rico_investidor/core/utils/quote_chart.dart';
+import 'package:rico_investidor/models/market_series_models.dart';
 
 class StockCandlestickChart extends StatelessWidget {
   const StockCandlestickChart({
@@ -17,8 +17,8 @@ class StockCandlestickChart extends StatelessWidget {
     this.bottomPadding = 26,
   });
 
-  final List<FiiCandleBar> bars;
-  final FiiQuotePeriod period;
+  final List<QuoteCandleBar> bars;
+  final QuotePeriod period;
   final int? selectedIndex;
   final ValueChanged<int>? onSelected;
   final double leftPadding;
@@ -107,8 +107,8 @@ class _CandlestickPainter extends CustomPainter {
     required this.bearishColor,
   });
 
-  final List<FiiCandleBar> bars;
-  final FiiQuotePeriod period;
+  final List<QuoteCandleBar> bars;
+  final QuotePeriod period;
   final int? selectedIndex;
   final double yMin;
   final double yMax;
@@ -249,7 +249,7 @@ class _CandlestickPainter extends CustomPainter {
 class StockSelectedCandleBar extends StatelessWidget {
   const StockSelectedCandleBar({super.key, required this.bar});
 
-  final FiiCandleBar bar;
+  final QuoteCandleBar bar;
 
   @override
   Widget build(BuildContext context) {

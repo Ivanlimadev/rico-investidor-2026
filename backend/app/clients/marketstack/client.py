@@ -492,6 +492,36 @@ class MarketstackClient:
             limit=limit,
         )
 
+    async def get_intraday(
+        self,
+        symbols: list[str],
+        *,
+        interval: str = "5min",
+        date_from: str | None = None,
+        date_to: str | None = None,
+        exchange: str | None = None,
+        limit: int = 1000,
+        sort: str = "ASC",
+    ) -> list[dict]:
+        normalized = self._normalize_symbols(symbols)
+        if not normalized:
+            return []
+
+        params: dict[str, str | int] = {
+            "symbols": ",".join(normalized),
+            "interval": interval,
+            "limit": max(1, min(limit, 1000)),
+            "sort": sort.upper() if sort.upper() in {"ASC", "DESC"} else "ASC",
+        }
+        if date_from:
+            params["date_from"] = date_from
+        if date_to:
+            params["date_to"] = date_to
+        if exchange:
+            params["exchange"] = exchange.upper()
+        payload = await self._get("intraday", params=params)
+        return self._data(payload)
+
     async def get_intraday_latest(
         self,
         symbols: list[str],
@@ -525,20 +555,27 @@ class MarketstackClient:
         if not symbols:
             return []
 
+        from datetime import UTC, datetime, timedelta
+
+        date_from = (datetime.now(UTC).date() - timedelta(days=max(2, lookback_days))).isoformat()
+        eod_rows = await self.get_eod_range(symbols, date_from=date_from, exchange=exchange, limit=1000)
+        quotes = map_eod_quotes_with_change(eod_rows, category=category)
+
         if use_intraday:
-            rows = await self.get_intraday_latest(
+            from app.clients.marketstack.stock_mapper import filter_today_intraday_rows, overlay_intraday_prices
+
+            intraday_rows = await self.get_intraday_latest(
                 symbols,
                 interval=intraday_interval,
                 exchange=exchange,
             )
-            if rows:
-                return map_eod_quotes_with_change(rows, category=category)
+            intraday_rows = filter_today_intraday_rows(intraday_rows or [])
+            if intraday_rows:
+                if quotes:
+                    return overlay_intraday_prices(quotes, intraday_rows)
+                return map_eod_quotes_with_change(intraday_rows, category=category)
 
-        from datetime import UTC, datetime, timedelta
-
-        date_from = (datetime.now(UTC).date() - timedelta(days=max(2, lookback_days))).isoformat()
-        rows = await self.get_eod_range(symbols, date_from=date_from, exchange=exchange, limit=1000)
-        return map_eod_quotes_with_change(rows, category=category)
+        return quotes
 
     async def map_candles(
         self,

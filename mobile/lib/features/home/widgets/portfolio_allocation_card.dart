@@ -1,5 +1,6 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:rico_investidor/core/markets/supported_market_countries.dart';
 import 'package:rico_investidor/models/holding_currency.dart';
 import 'package:rico_investidor/models/portfolio_allocation_slice.dart';
 import 'package:rico_investidor/services/market_preference_storage.dart';
@@ -19,9 +20,8 @@ class PortfolioAllocationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final slices = portfolio.computeAllocation(preferredMarket);
-    final total = portfolio.totalBalanceFor(preferredMarket);
-    final currency = preferredMarket.isBrazil ? HoldingCurrency.brl : HoldingCurrency.usd;
+    final slices = portfolio.computeAllocation(defaultMarketPreference);
+    final total = portfolio.patrimonioTotalUsd;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
@@ -44,7 +44,7 @@ class PortfolioAllocationCard extends StatelessWidget {
                 Text(
                   slices.isEmpty
                       ? 'Adicione ativos para ver o gráfico'
-                      : currency.format(total),
+                      : 'Patrimônio total: ${HoldingCurrency.usd.format(total)}',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                   ),

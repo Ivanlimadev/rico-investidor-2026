@@ -24,7 +24,7 @@ const kSearchGridMinLogoSize = 46.0;
 
 const kSearchGridMaxLogoSize = 58.0;
 
-const kUnifiedAssetSearchHint = 'Buscar qualquer ativo (ação, cripto, FII, EUA…)';
+const kUnifiedAssetSearchHint = 'Buscar ações americanas, REITs ou cripto';
 
 bool unifiedSearchActive(String query) => query.trim().length >= kMinAssetSearchLength;
 

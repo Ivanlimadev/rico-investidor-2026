@@ -1,15 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:rico_investidor/core/utils/quote_refresh_timer.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/core/search/asset_search_config.dart';
 import 'package:rico_investidor/core/search/unified_asset_search.dart';
 import 'package:rico_investidor/features/global_markets/widgets/us_market_quote_list_tile.dart';
-import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
 import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
 import 'package:rico_investidor/features/global_markets/screens/global_stock_detail_screen.dart';
 import 'package:rico_investidor/features/global_markets/utils/marketstack_errors.dart';
 import 'package:rico_investidor/core/widgets/market_heatmap/stock_heatmap_block.dart';
-import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/market_category.dart';
 import 'package:rico_investidor/navigation/open_asset_detail.dart';
@@ -19,14 +20,10 @@ class UsMarketListScreen extends StatefulWidget {
     super.key,
     required this.category,
     required this.repository,
-    required this.fiiRepository,
-    required this.quoteRepository,
   });
 
   final MarketCategory category;
   final GlobalMarketRepository repository;
-  final FiiRepository fiiRepository;
-  final QuoteRepository quoteRepository;
 
   @override
   State<UsMarketListScreen> createState() => _UsMarketListScreenState();
@@ -45,6 +42,7 @@ class _UsMarketListScreenState extends State<UsMarketListScreen> {
   int _page = 1;
   int? _total;
   Object? _error;
+  QuoteRefreshTimer? _listRefreshTimer;
 
   String get _categorySlug =>
       widget.category == MarketCategory.reits ? 'reits' : 'stocks';
@@ -53,13 +51,42 @@ class _UsMarketListScreenState extends State<UsMarketListScreen> {
   void initState() {
     super.initState();
     _loadInitial();
+    _configureListRefresh();
   }
 
   @override
   void dispose() {
+    _listRefreshTimer?.stop();
     _unifiedSearch.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _configureListRefresh() async {
+    try {
+      final caps = await widget.repository.getCapabilities();
+      if (!caps.realtimeEnabled) return;
+      _listRefreshTimer = QuoteRefreshTimer(onTick: _refreshVisibleQuotes)
+        ..start(refreshSeconds: caps.refreshSeconds ?? 60, enabled: true);
+    } catch (_) {}
+  }
+
+  Future<void> _refreshVisibleQuotes() async {
+    if (_searchSnapshot.query.isNotEmpty || _loading) return;
+    final response = await widget.repository.listUsMarketWithRetry(
+      category: _categorySlug,
+      page: 1,
+      limit: _pageSize,
+    );
+    if (!mounted) return;
+    final refreshed = _mapItems(response);
+    final bySymbol = {for (final item in refreshed) item.symbol: item};
+    setState(() {
+      for (var i = 0; i < _items.length; i++) {
+        final updated = bySymbol[_items[i].symbol];
+        if (updated != null) _items[i] = updated;
+      }
+    });
   }
 
   Future<void> _loadInitial() async {
@@ -159,8 +186,6 @@ class _UsMarketListScreenState extends State<UsMarketListScreen> {
     openAssetDetail(
       context,
       asset: asset,
-      fiiRepository: widget.fiiRepository,
-      quoteRepository: widget.quoteRepository,
     );
   }
 
@@ -220,8 +245,6 @@ class _UsMarketListScreenState extends State<UsMarketListScreen> {
     if (_searchSnapshot.active) {
       return UnifiedAssetResultsBody(
         snapshot: _searchSnapshot,
-        fiiRepository: widget.fiiRepository,
-        quoteRepository: widget.quoteRepository,
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
       );
     }
@@ -291,6 +314,10 @@ class _UsMarketListScreenState extends State<UsMarketListScreen> {
               volumeLabel: 'NASDAQ · volume',
               mapAsset: (quote) => quote.toUsAssetItem(),
               onTap: _openDetail,
+              resolveRefreshSeconds: () async {
+                final caps = await widget.repository.getCapabilities();
+                return caps.realtimeEnabled ? (caps.refreshSeconds ?? 60) : null;
+              },
             ),
           ),
           SliverPadding(

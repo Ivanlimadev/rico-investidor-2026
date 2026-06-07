@@ -1,4 +1,6 @@
+import 'package:rico_investidor/core/utils/market_category_storage.dart';
 import 'package:rico_investidor/models/holding_currency.dart';
+import 'package:rico_investidor/models/market_category.dart';
 
 class PortfolioHolding {
   const PortfolioHolding({
@@ -9,7 +11,8 @@ class PortfolioHolding {
     required this.averagePrice,
     required this.currentPrice,
     this.changePercent = 0,
-    this.currency = HoldingCurrency.brl,
+    this.currency = HoldingCurrency.usd,
+    this.category,
   });
 
   final String id;
@@ -20,6 +23,7 @@ class PortfolioHolding {
   final double currentPrice;
   final double changePercent;
   final HoldingCurrency currency;
+  final MarketCategory? category;
 
   double get invested => quantity * averagePrice;
   double get marketValue => quantity * currentPrice;
@@ -35,6 +39,7 @@ class PortfolioHolding {
     double? currentPrice,
     double? changePercent,
     HoldingCurrency? currency,
+    MarketCategory? category,
   }) {
     return PortfolioHolding(
       id: id,
@@ -45,6 +50,7 @@ class PortfolioHolding {
       currentPrice: currentPrice ?? this.currentPrice,
       changePercent: changePercent ?? this.changePercent,
       currency: currency ?? this.currency,
+      category: category ?? this.category,
     );
   }
 
@@ -57,6 +63,7 @@ class PortfolioHolding {
         'current_price': currentPrice,
         'change_percent': changePercent,
         'currency': currency.code,
+        if (category != null) 'category': marketCategoryToStorage(category),
       };
 
   factory PortfolioHolding.fromJson(Map<String, dynamic> json) {
@@ -72,6 +79,7 @@ class PortfolioHolding {
       currency: json['currency'] != null
           ? HoldingCurrency.fromCode(json['currency'] as String?)
           : holdingCurrencyForSymbol(symbol),
+      category: marketCategoryFromStorage(json['category'] as String?),
     );
   }
 }

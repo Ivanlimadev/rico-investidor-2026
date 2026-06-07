@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
 import 'package:rico_investidor/features/quotes/utils/stock_payments.dart';
-import 'package:rico_investidor/models/fii_models.dart';
+import 'package:rico_investidor/models/market_series_models.dart';
 
 class StockRecentDividendsCard extends StatefulWidget {
   const StockRecentDividendsCard({super.key, required this.payments});
 
-  final List<FiiDistributionPayment> payments;
+  final List<DistributionPayment> payments;
 
   @override
   State<StockRecentDividendsCard> createState() => _StockRecentDividendsCardState();
@@ -116,7 +116,7 @@ class _TableHeader extends StatelessWidget {
 class _PaymentRow extends StatelessWidget {
   const _PaymentRow({required this.payment});
 
-  final FiiDistributionPayment payment;
+  final DistributionPayment payment;
 
   @override
   Widget build(BuildContext context) {

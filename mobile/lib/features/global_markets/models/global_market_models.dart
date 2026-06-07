@@ -1,8 +1,7 @@
-import 'package:rico_investidor/core/utils/asset_logo_url.dart';
-import 'package:rico_investidor/features/quotes/data/quote_api_client.dart';
 import 'package:rico_investidor/features/quotes/models/stock_quote_detail.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/market_category.dart';
+import 'package:rico_investidor/features/quotes/models/market_quote_dto.dart';
 
 class ExchangeMarketListResponseDto {
   const ExchangeMarketListResponseDto({
@@ -59,6 +58,14 @@ class GlobalMarketCapabilitiesDto {
     required this.realtimeEnabled,
     required this.fundamentalsEnabled,
     this.monthlyRequestBudget,
+    this.intradayInterval,
+    this.refreshSeconds,
+    this.usMarketStatus = 'closed',
+    this.usMarketOpen = false,
+    this.usMarketLabel = 'Mercado fechado',
+    this.usMarketTimezone = 'America/New_York',
+    this.usMarketHoliday = false,
+    this.intradayDelayMinutes,
     this.provider = 'marketstack',
   });
 
@@ -68,6 +75,14 @@ class GlobalMarketCapabilitiesDto {
   final bool realtimeEnabled;
   final bool fundamentalsEnabled;
   final int? monthlyRequestBudget;
+  final String? intradayInterval;
+  final int? refreshSeconds;
+  final String usMarketStatus;
+  final bool usMarketOpen;
+  final String usMarketLabel;
+  final String usMarketTimezone;
+  final bool usMarketHoliday;
+  final int? intradayDelayMinutes;
   final String provider;
 
   factory GlobalMarketCapabilitiesDto.fromJson(Map<String, dynamic> json) {
@@ -78,6 +93,14 @@ class GlobalMarketCapabilitiesDto {
       realtimeEnabled: json['realtime_enabled'] as bool? ?? false,
       fundamentalsEnabled: json['fundamentals_enabled'] as bool? ?? false,
       monthlyRequestBudget: (json['monthly_request_budget'] as num?)?.toInt(),
+      intradayInterval: json['intraday_interval'] as String?,
+      refreshSeconds: (json['refresh_seconds'] as num?)?.toInt(),
+      usMarketStatus: json['us_market_status'] as String? ?? 'closed',
+      usMarketOpen: json['us_market_open'] as bool? ?? false,
+      usMarketLabel: json['us_market_label'] as String? ?? 'Mercado fechado',
+      usMarketTimezone: json['us_market_timezone'] as String? ?? 'America/New_York',
+      usMarketHoliday: json['us_market_holiday'] as bool? ?? false,
+      intradayDelayMinutes: (json['intraday_delay_minutes'] as num?)?.toInt(),
       provider: json['provider'] as String? ?? 'marketstack',
     );
   }
@@ -503,6 +526,9 @@ class GlobalStockDetailResponseDto {
     this.candlesCount = 0,
     this.dividendsTotal = 0,
     this.splitsTotal = 0,
+    this.realtimeEnabled = false,
+    this.intradayInterval,
+    this.refreshSeconds,
     this.provider = 'marketstack',
   });
 
@@ -523,6 +549,9 @@ class GlobalStockDetailResponseDto {
   final String plan;
   final bool historyLimited;
   final int maxHistoryDays;
+  final bool realtimeEnabled;
+  final String? intradayInterval;
+  final int? refreshSeconds;
   final String provider;
 
   factory GlobalStockDetailResponseDto.fromJson(Map<String, dynamic> json) {
@@ -557,6 +586,9 @@ class GlobalStockDetailResponseDto {
       plan: json['plan'] as String? ?? 'basic',
       historyLimited: json['history_limited'] as bool? ?? false,
       maxHistoryDays: (json['max_history_days'] as num?)?.toInt() ?? 365,
+      realtimeEnabled: json['realtime_enabled'] as bool? ?? false,
+      intradayInterval: json['intraday_interval'] as String?,
+      refreshSeconds: (json['refresh_seconds'] as num?)?.toInt(),
       provider: json['provider'] as String? ?? 'marketstack',
     );
   }
@@ -646,19 +678,45 @@ class GlobalStockCandlesResponseDto {
   }
 }
 
+class GlobalStockIntradayCandlesResponseDto {
+  const GlobalStockIntradayCandlesResponseDto({
+    required this.symbol,
+    required this.candles,
+    required this.count,
+    this.exchange,
+    this.interval = '5min',
+    this.dataMode = 'realtime',
+  });
+
+  final String symbol;
+  final String? exchange;
+  final List<GlobalStockCandleDto> candles;
+  final int count;
+  final String interval;
+  final String dataMode;
+
+  factory GlobalStockIntradayCandlesResponseDto.fromJson(Map<String, dynamic> json) {
+    final raw = json['candles'] as List<dynamic>? ?? const [];
+    return GlobalStockIntradayCandlesResponseDto(
+      symbol: json['symbol'] as String,
+      exchange: json['exchange'] as String?,
+      candles: raw.map((e) => GlobalStockCandleDto.fromJson(e as Map<String, dynamic>)).toList(),
+      count: (json['count'] as num?)?.toInt() ?? raw.length,
+      interval: json['interval'] as String? ?? '5min',
+      dataMode: json['data_mode'] as String? ?? 'realtime',
+    );
+  }
+}
+
 extension GlobalMarketQuoteMapper on MarketQuoteDto {
   AssetItem toUsAssetItem({MarketCategory category = MarketCategory.stocks}) {
-    final resolvedLogo = provider == 'marketstack'
-        ? globalMarketLogoApiUrl(symbol)
-        : resolveAssetLogoUrl(symbol, logoUrl, isFii: false);
-
     return AssetItem(
       symbol: symbol,
       name: name,
       category: category,
       price: price,
       changePercent: changePercent,
-      logoUrl: resolvedLogo,
+      logoUrl: logoUrl,
       exchangeMic: exchange,
       sparkline: sparkline,
     );

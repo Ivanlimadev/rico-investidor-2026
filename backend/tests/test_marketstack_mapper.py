@@ -1,9 +1,12 @@
+from app.clients.brapi.models import MarketQuote
 from app.clients.marketstack.stock_mapper import (
+    filter_today_intraday_rows,
     map_eod_candles,
     map_eod_quote,
     map_eod_quotes_with_change,
     map_exchange,
     normalize_marketstack_symbol,
+    overlay_intraday_prices,
     resolve_catalog_symbol,
     us_logo_source_url,
 )
@@ -36,6 +39,38 @@ def test_resolve_catalog_symbol():
     catalog = ["AAPL", "BRK.B", "MSFT"]
     assert resolve_catalog_symbol("BRK-B", catalog) == "BRK.B"
     assert resolve_catalog_symbol("AAPL", catalog) == "AAPL"
+
+
+def test_filter_today_intraday_rows_drops_stale_session():
+    rows = [
+        {"symbol": "AAPL", "close": 311.23, "date": "2026-06-05T20:00:00+0000"},
+        {"symbol": "AAPL", "close": 308.0, "date": "2026-06-08T14:30:00+0000"},
+    ]
+    filtered = filter_today_intraday_rows(rows, today="2026-06-08")
+    assert len(filtered) == 1
+    assert filtered[0]["close"] == 308.0
+
+
+def test_overlay_intraday_prices_keeps_previous_close():
+    base = [
+        MarketQuote(
+            symbol="AAPL",
+            name="Apple",
+            price=100.0,
+            change_percent=0.0,
+            category="stocks",
+            provider="marketstack",
+            previous_close=95.0,
+        )
+    ]
+    updated = overlay_intraday_prices(
+        base,
+        [{"symbol": "AAPL", "close": 101.5, "date": "2026-06-06T15:55:00+0000"}],
+    )
+    assert len(updated) == 1
+    assert updated[0].price == 101.5
+    assert updated[0].previous_close == 95.0
+    assert updated[0].change_percent == round(((101.5 - 95.0) / 95.0) * 100, 4)
 
 
 def test_map_eod_quotes_with_change():

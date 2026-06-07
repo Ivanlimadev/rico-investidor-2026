@@ -5,7 +5,7 @@ import 'package:rico_investidor/core/utils/asset_investment_simulation.dart';
 import 'package:rico_investidor/core/utils/asset_returns.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
 import 'package:rico_investidor/core/utils/parse_decimal.dart';
-import 'package:rico_investidor/models/fii_models.dart';
+import 'package:rico_investidor/models/market_series_models.dart';
 
 enum WhatIfInvestmentCurrency { brl, usd }
 
@@ -25,9 +25,9 @@ class WhatIfInvestmentCard extends StatefulWidget {
   });
 
   final double? currentPrice;
-  final List<FiiCandleBar> candles;
-  final List<FiiHistoryPoint> history;
-  final List<FiiDistributionPayment> payments;
+  final List<QuoteCandleBar> candles;
+  final List<HistoryPricePoint> history;
+  final List<DistributionPayment> payments;
   final WhatIfInvestmentCurrency currency;
   final double initialAmount;
   final String unitLabel;

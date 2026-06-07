@@ -1,15 +1,12 @@
 import 'package:rico_investidor/core/search/asset_search_config.dart';
 import 'package:rico_investidor/core/widgets/asset_logo.dart';
-import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
 import 'package:rico_investidor/features/global_markets/widgets/market_hub_section_grid.dart';
 import 'package:rico_investidor/features/home/data/preferred_market_preloader.dart';
-import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/services/asset_search_service.dart';
 import 'package:rico_investidor/services/favorites_storage.dart';
 import 'package:rico_investidor/services/market_preference_storage.dart';
 
-/// Pré-carrega dados enquanto a intro roda (~5s) para a home abrir pronta.
 class AppBootstrapService {
   AppBootstrapService({
     AssetSearchService? searchService,
@@ -22,19 +19,15 @@ class AppBootstrapService {
 
   Future<void> warmIntro({
     MarketPreference? preferredMarket,
-    required QuoteRepository quoteRepository,
     required GlobalMarketRepository globalMarketRepository,
-    required FiiRepository fiiRepository,
   }) async {
     await Future.wait<void>([
       if (preferredMarket != null)
         _warmPreferredMarket(
           preference: preferredMarket,
-          quoteRepository: quoteRepository,
           globalMarketRepository: globalMarketRepository,
         ),
       _warmSearchFavorites(),
-      _warmFiiCatalog(fiiRepository),
     ], eagerError: false);
 
     _warmed = true;
@@ -42,7 +35,6 @@ class AppBootstrapService {
 
   Future<void> _warmPreferredMarket({
     required MarketPreference preference,
-    required QuoteRepository quoteRepository,
     required GlobalMarketRepository globalMarketRepository,
   }) async {
     try {
@@ -50,14 +42,11 @@ class AppBootstrapService {
         preferredMarketPreloader
             .load(
               preference: preference,
-              quoteRepository: quoteRepository,
               globalMarketRepository: globalMarketRepository,
             )
             .then((sections) => warmAssetLogoSymbols(_symbolsFromHubSections(sections))),
       ];
-      if (preference.isBrazil) {
-        warmTasks.add(quoteRepository.getHeatmap().then((_) {}));
-      } else if (preference.code.toUpperCase() == 'US') {
+      if (preference.code.toUpperCase() == 'US') {
         warmTasks.add(globalMarketRepository.getUsHeatmap().then((_) {}));
       }
       await Future.wait(warmTasks, eagerError: false);
@@ -85,12 +74,6 @@ class AppBootstrapService {
           (item) => item.symbol,
         ),
       );
-    } catch (_) {}
-  }
-
-  Future<void> _warmFiiCatalog(FiiRepository fiiRepository) async {
-    try {
-      await fiiRepository.loadCatalog();
     } catch (_) {}
   }
 

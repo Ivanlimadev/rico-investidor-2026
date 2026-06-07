@@ -1,6 +1,6 @@
 import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
-import 'package:rico_investidor/features/quotes/data/quote_api_client.dart';
-import 'package:rico_investidor/models/fii_models.dart';
+import 'package:rico_investidor/models/market_series_models.dart';
+import 'package:rico_investidor/features/quotes/models/market_quote_dto.dart';
 
 class StockMarketStatsDto {
   const StockMarketStatsDto({
@@ -297,8 +297,8 @@ class StockDividendsDto {
     this.summary = const StockDividendsSummaryDto(),
   });
 
-  final List<FiiDistributionPayment> payments;
-  final List<FiiDistributionYear> annualSummary;
+  final List<DistributionPayment> payments;
+  final List<DistributionYear> annualSummary;
   final double? ttmPerShare;
   final double? dividendYieldTtm;
   final int? totalPayments;
@@ -322,10 +322,10 @@ class StockDividendsDto {
 
     return StockDividendsDto(
       payments: rawPayments
-          .map((item) => FiiDistributionPayment.fromJson(item as Map<String, dynamic>))
+          .map((item) => DistributionPayment.fromJson(item as Map<String, dynamic>))
           .toList(),
       annualSummary: rawSummary
-          .map((item) => FiiDistributionYear.fromJson(item as Map<String, dynamic>))
+          .map((item) => DistributionYear.fromJson(item as Map<String, dynamic>))
           .toList(),
       ttmPerShare: ttm == null ? null : (ttm as num).toDouble(),
       dividendYieldTtm: dy == null ? null : (dy as num).toDouble(),
@@ -354,12 +354,12 @@ class StockQuoteDetailDto {
   final StockMarketStatsDto marketStats;
   final StockProfileDto profile;
   final StockFundamentalsDto fundamentals;
-  final List<FiiCandleBar> candles;
+  final List<QuoteCandleBar> candles;
   final StockDividendsDto dividends;
   final List<GlobalStockReturnPeriodDto> returns;
   final String provider;
 
-  List<FiiDistributionPayment> get payments => dividends.payments;
+  List<DistributionPayment> get payments => dividends.payments;
 
   factory StockQuoteDetailDto.fromJson(Map<String, dynamic> json) {
     final rawCandles = json['candles'] as List<dynamic>? ?? const [];
@@ -375,7 +375,7 @@ class StockQuoteDetailDto {
         json['fundamentals'] as Map<String, dynamic>? ?? const {},
       ),
       candles: rawCandles
-          .map((item) => FiiCandleBar.fromJson(item as Map<String, dynamic>))
+          .map((item) => QuoteCandleBar.fromJson(item as Map<String, dynamic>))
           .toList(),
       dividends: StockDividendsDto.fromJson(json['dividends'] as Map<String, dynamic>? ?? const {}),
       returns: rawReturns
@@ -389,12 +389,12 @@ class StockQuoteDetailDto {
 class StockCandlesResponseDto {
   const StockCandlesResponseDto({required this.candles});
 
-  final List<FiiCandleBar> candles;
+  final List<QuoteCandleBar> candles;
 
   factory StockCandlesResponseDto.fromJson(Map<String, dynamic> json) {
     final raw = json['candles'] as List<dynamic>? ?? const [];
     return StockCandlesResponseDto(
-      candles: raw.map((item) => FiiCandleBar.fromJson(item as Map<String, dynamic>)).toList(),
+      candles: raw.map((item) => QuoteCandleBar.fromJson(item as Map<String, dynamic>)).toList(),
     );
   }
 }

@@ -1,7 +1,7 @@
 import 'package:rico_investidor/core/network/api_client.dart';
 import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
-import 'package:rico_investidor/features/quotes/data/quote_api_client.dart';
 import 'package:rico_investidor/features/quotes/models/stock_compare.dart';
+import 'package:rico_investidor/features/quotes/models/market_quote_dto.dart';
 
 class GlobalMarketApiClient {
   GlobalMarketApiClient({ApiClient? client}) : _client = client ?? apiClient;
@@ -140,6 +140,23 @@ class GlobalMarketApiClient {
       '/v1/global-markets/$encoded',
       query: query.isEmpty ? null : query,
       fromJson: MarketQuoteDto.fromJson,
+    );
+  }
+
+  Future<GlobalStockIntradayCandlesResponseDto> getIntradayCandles(
+    String symbol, {
+    String? exchange,
+    int limit = 500,
+  }) {
+    final encoded = _encodedSymbol(symbol);
+    final query = <String, String>{'limit': '$limit'};
+    if (exchange != null && exchange.isNotEmpty) {
+      query['exchange'] = exchange;
+    }
+    return _client.getJson(
+      '/v1/global-markets/$encoded/intraday',
+      query: query,
+      fromJson: GlobalStockIntradayCandlesResponseDto.fromJson,
     );
   }
 

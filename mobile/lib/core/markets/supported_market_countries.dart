@@ -1,24 +1,24 @@
 import 'package:rico_investidor/services/market_preference_storage.dart';
 
-/// Países de bolsa disponíveis no app (temporário: só EUA e Brasil).
-const supportedMarketCountryCodes = <String>{'US', 'BR'};
+/// País de bolsa disponível no app.
+const supportedMarketCountryCodes = <String>{'US'};
+
+/// Nome exibido na home, onboarding e preferências salvas.
+const kAmericanMarketDisplayName = 'Mercado Americano';
 
 const defaultMarketPreference = MarketPreference(
   code: 'US',
-  name: 'Estados Unidos',
+  name: kAmericanMarketDisplayName,
 );
 
 bool isSupportedMarketCountry(String code) {
   return supportedMarketCountryCodes.contains(code.toUpperCase().trim());
 }
 
-/// Corrige preferência salva de mercados que foram desativados.
 MarketPreference normalizeMarketPreference(MarketPreference preference) {
-  if (isSupportedMarketCountry(preference.code)) {
-    return MarketPreference(
-      code: preference.code.toUpperCase(),
-      name: preference.name,
-    );
+  final code = preference.code.toUpperCase();
+  if (!isSupportedMarketCountry(code)) {
+    return defaultMarketPreference;
   }
-  return defaultMarketPreference;
+  return const MarketPreference(code: 'US', name: kAmericanMarketDisplayName);
 }

@@ -1,23 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/widgets/asset_country_flag.dart';
-import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
 import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
 import 'package:rico_investidor/features/global_markets/screens/country_hub_screen.dart';
-import 'package:rico_investidor/features/home/screens/brazilian_market_hub_screen.dart';
-import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 
 class WorldExchangesHubScreen extends StatefulWidget {
   const WorldExchangesHubScreen({
     super.key,
     required this.repository,
-    required this.fiiRepository,
-    required this.quoteRepository,
   });
 
   final GlobalMarketRepository repository;
-  final FiiRepository fiiRepository;
-  final QuoteRepository quoteRepository;
 
   @override
   State<WorldExchangesHubScreen> createState() => _WorldExchangesHubScreenState();
@@ -64,7 +57,9 @@ class _WorldExchangesHubScreenState extends State<WorldExchangesHubScreen> {
           }
 
           final data = snapshot.data!;
-          final groups = [...data.priorityCountries, ...data.otherCountries];
+          final groups = [...data.priorityCountries, ...data.otherCountries]
+              .where((group) => group.countryCode.toUpperCase() != 'BR')
+              .toList();
 
           if (groups.isEmpty) {
             return const Center(child: Text('Nenhum mercado disponível no momento.'));
@@ -77,7 +72,7 @@ class _WorldExchangesHubScreenState extends State<WorldExchangesHubScreen> {
             itemBuilder: (context, index) {
               if (index == 0) {
                 return Text(
-                  '${data.totalCountries > 0 ? data.totalCountries : groups.length} mercados · Brasil e Estados Unidos',
+                  'Mercado Americano · NYSE e NASDAQ',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
                       ),
@@ -88,8 +83,6 @@ class _WorldExchangesHubScreenState extends State<WorldExchangesHubScreen> {
               return _CountryMarketCard(
                 group: group,
                 repository: widget.repository,
-                fiiRepository: widget.fiiRepository,
-                quoteRepository: widget.quoteRepository,
               );
             },
           );
@@ -103,38 +96,18 @@ class _CountryMarketCard extends StatelessWidget {
   const _CountryMarketCard({
     required this.group,
     required this.repository,
-    required this.fiiRepository,
-    required this.quoteRepository,
   });
 
   final CountryExchangesGroupDto group;
   final GlobalMarketRepository repository;
-  final FiiRepository fiiRepository;
-  final QuoteRepository quoteRepository;
 
   void _openCountry(BuildContext context) {
-    final code = group.countryCode.toUpperCase();
-    if (code == 'BR') {
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => BrazilianMarketHubScreen(
-            fiiRepository: fiiRepository,
-            quoteRepository: quoteRepository,
-            globalMarketRepository: repository,
-          ),
-        ),
-      );
-      return;
-    }
-
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => CountryHubScreen(
           countryCode: group.countryCode,
           countryName: group.countryName,
           repository: repository,
-          fiiRepository: fiiRepository,
-          quoteRepository: quoteRepository,
           exchangeCount: group.exchangeCount,
         ),
       ),

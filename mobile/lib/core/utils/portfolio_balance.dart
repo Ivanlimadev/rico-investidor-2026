@@ -52,55 +52,136 @@ class PortfolioBalanceBreakdown {
     return internationalMarketValueUsd + converted;
   }
 
-  double primaryTotal(MarketPreference preference) =>
-      preference.isBrazil ? totalBrl : totalUsd;
+  /// Patrimônio total exibido no topo — tudo em dólares (mercado EUA).
+  HoldingCurrency get displayCurrency => HoldingCurrency.usd;
+
+  double get displayTotal => totalUsd;
+
+  double get totalInvestedBrl =>
+      domesticInvestedBrl +
+      convertToBrl(
+        amount: internationalInvestedUsd,
+        currency: HoldingCurrency.usd,
+        usdBrlRate: usdBrlRate,
+      );
+
+  double get totalInvestedUsd =>
+      internationalInvestedUsd +
+      convertToUsd(
+        amount: domesticInvestedBrl,
+        currency: HoldingCurrency.brl,
+        usdBrlRate: usdBrlRate,
+      );
+
+  double get combinedProfitBrl => totalBrl - totalInvestedBrl;
+
+  double get combinedProfitUsd => totalUsd - totalInvestedUsd;
+
+  double get combinedProfitPercent {
+    if (totalInvestedUsd <= 0) return 0;
+    return (combinedProfitUsd / totalInvestedUsd) * 100;
+  }
+
+  double get displayProfitPercent => combinedProfitPercent;
+
+  /// % do patrimônio total (em R$) no bucket Brasil/B3.
+  double get domesticShareOfTotal {
+    final total = totalBrl;
+    if (total <= 0) return 0;
+    return (domesticMarketValueBrl / total) * 100;
+  }
+
+  /// % do patrimônio total (em R$) no bucket internacional.
+  double get internationalShareOfTotal {
+    final total = totalBrl;
+    if (total <= 0) return 0;
+    final intlBrl = convertToBrl(
+      amount: internationalMarketValueUsd,
+      currency: HoldingCurrency.usd,
+      usdBrlRate: usdBrlRate,
+    );
+    return (intlBrl / total) * 100;
+  }
+
+  /// Total na moeda da preferência (só alocação / pesos relativos).
+  double primaryTotal(MarketPreference preference) => preference.isBrazil
+      ? domesticMarketValueBrl
+      : internationalMarketValueUsd;
+
+  double primaryInvested(MarketPreference preference) => preference.isBrazil
+      ? domesticInvestedBrl
+      : internationalInvestedUsd;
+
+  double primaryProfit(MarketPreference preference) => preference.isBrazil
+      ? domesticProfitBrl
+      : internationalProfitUsd;
 
   double primaryProfitPercent(MarketPreference preference) {
-    if (preference.isBrazil) {
-      final invested = domesticInvestedBrl +
-          convertToBrl(
-            amount: internationalInvestedUsd,
-            currency: HoldingCurrency.usd,
-            usdBrlRate: usdBrlRate,
-          );
-      final profit = primaryTotal(preference) - invested;
-      return invested <= 0 ? 0 : (profit / invested) * 100;
-    }
+    final invested = primaryInvested(preference);
+    if (invested <= 0) return 0;
+    return (primaryProfit(preference) / invested) * 100;
+  }
 
-    final invested = internationalInvestedUsd +
+  /// Soma dos pesos de alocação na moeda da preferência (denominador do gráfico).
+  double allocationTotal(
+    Iterable<PortfolioHolding> holdings, {
+    required MarketPreference preference,
+    required MarketCategory? Function(PortfolioHolding holding) categoryResolver,
+  }) {
+    var total = 0.0;
+    for (final holding in holdings) {
+      total += allocationWeight(
+        holding,
+        preference: preference,
+        category: categoryResolver(holding),
+      );
+    }
+    return total;
+  }
+
+  /// Base para % da carteira nos sub-informativos (ambos os baldes).
+  double combinedTotalBrl() {
+    return domesticMarketValueBrl +
+        convertToBrl(
+          amount: internationalMarketValueUsd,
+          currency: HoldingCurrency.usd,
+          usdBrlRate: usdBrlRate,
+        );
+  }
+
+  double combinedTotalUsd() {
+    return internationalMarketValueUsd +
         convertToUsd(
-          amount: domesticInvestedBrl,
+          amount: domesticMarketValueBrl,
           currency: HoldingCurrency.brl,
           usdBrlRate: usdBrlRate,
         );
-    final profit = primaryTotal(preference) - invested;
-    return invested <= 0 ? 0 : (profit / invested) * 100;
   }
 
   double domesticSharePercent(MarketPreference preference) {
-    final total = primaryTotal(preference);
+    final total = preference.isBrazil ? combinedTotalBrl() : combinedTotalUsd();
     if (total <= 0) return 0;
-    final domesticPrimary = preference.isBrazil
+    final domesticWeight = preference.isBrazil
         ? domesticMarketValueBrl
         : convertToUsd(
             amount: domesticMarketValueBrl,
             currency: HoldingCurrency.brl,
             usdBrlRate: usdBrlRate,
           );
-    return (domesticPrimary / total) * 100;
+    return (domesticWeight / total) * 100;
   }
 
   double internationalSharePercent(MarketPreference preference) {
-    final total = primaryTotal(preference);
+    final total = preference.isBrazil ? combinedTotalBrl() : combinedTotalUsd();
     if (total <= 0) return 0;
-    final internationalPrimary = preference.isBrazil
+    final internationalWeight = preference.isBrazil
         ? convertToBrl(
             amount: internationalMarketValueUsd,
             currency: HoldingCurrency.usd,
             usdBrlRate: usdBrlRate,
           )
         : internationalMarketValueUsd;
-    return (internationalPrimary / total) * 100;
+    return (internationalWeight / total) * 100;
   }
 
   /// Peso do ativo na alocação (moeda de exibição do usuário).
@@ -130,7 +211,7 @@ class PortfolioBalanceBreakdown {
 
 PortfolioBalanceBreakdown computePortfolioBalanceBreakdown({
   required Iterable<PortfolioHolding> holdings,
-  required MarketCategory? Function(String symbol) categoryResolver,
+  required MarketCategory? Function(PortfolioHolding holding) categoryResolver,
   double? usdBrlRate,
 }) {
   var domesticMarket = 0.0;
@@ -139,7 +220,7 @@ PortfolioBalanceBreakdown computePortfolioBalanceBreakdown({
   var internationalInvested = 0.0;
 
   for (final holding in holdings) {
-    final category = categoryResolver(holding.symbol);
+    final category = categoryResolver(holding);
     if (isInternationalUsdHolding(holding, category: category)) {
       internationalMarket += holding.marketValue;
       internationalInvested += holding.invested;

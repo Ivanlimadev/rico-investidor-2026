@@ -1,6 +1,46 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
-from app.domain.fii.models import FiiCandleBar, FiiDistributionPayment, FiiDistributionYearSummary
+
+def _none_to_list(value):
+    return value if value is not None else []
+
+
+class FiiDistributionPayment(BaseModel):
+    reference_date: str | None = None
+    payment_date: str | None = None
+    value_per_share: float | None = None
+    dy_month_pct: float | None = None
+    book_value_per_share: float | None = None
+    label: str | None = None
+
+
+class FiiDistributionYearSummary(BaseModel):
+    year: int
+    total_per_share: float | None = None
+    payments: int | None = None
+
+
+class FiiCandleBar(BaseModel):
+    trade_date: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float | None = None
+
+
+class FiiCandlesResponse(BaseModel):
+    ticker: str
+    count: int
+    candles: list[FiiCandleBar] = Field(default_factory=list)
+    provider: str = "brapi"
+    interval: str | None = None
+    range: str | None = None
+
+    @field_validator("candles", mode="before")
+    @classmethod
+    def _candles_none(cls, value):
+        return _none_to_list(value)
 
 
 class MarketQuote(BaseModel):

@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:rico_investidor/core/markets/market_visibility.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/market_category.dart';
+import 'package:rico_investidor/services/portfolio_data_migration.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const _favoritesKey = 'asset_favorites_v1';
@@ -21,10 +23,11 @@ class FavoritesStorage {
     if (raw == null) return [];
 
     final decoded = jsonDecode(raw) as List<dynamic>;
-    return decoded
+    final items = decoded
         .map((item) => _assetFromJson(item as Map<String, dynamic>))
         .whereType<AssetItem>()
         .toList();
+    return PortfolioDataMigration.migrateAssets(items);
   }
 
   Future<bool> isFavorite(String symbol) async {
@@ -103,7 +106,7 @@ class FavoritesStorage {
     return AssetItem(
       symbol: symbol,
       name: json['name'] as String? ?? symbol,
-      category: category ?? MarketCategory.acoesBr,
+      category: resolveMarketCategory(symbol: symbol, stored: category),
       price: (json['price'] as num?)?.toDouble() ?? 0,
       changePercent: (json['change_percent'] as num?)?.toDouble() ?? 0,
       logoUrl: json['logo_url'] as String?,

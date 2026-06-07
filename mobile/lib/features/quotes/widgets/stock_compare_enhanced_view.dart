@@ -3,10 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
 import 'package:rico_investidor/core/widgets/asset_logo.dart';
-import 'package:rico_investidor/features/fii/utils/fii_format.dart';
-import 'package:rico_investidor/features/fii/utils/fii_payments.dart';
+import 'package:rico_investidor/core/utils/percent_format.dart';
+import 'package:rico_investidor/core/utils/dividend_payment_format.dart';
 import 'package:rico_investidor/features/quotes/models/stock_compare.dart';
-import 'package:rico_investidor/features/quotes/utils/stock_screener_presets.dart';
 
 enum CompareMarket { brazil, us }
 
@@ -245,7 +244,7 @@ class _ReportHeader extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '$count ativos · ${isBr ? 'B3' : 'EUA'}',
+                    '$count ativos · ${isBr ? 'B3' : 'NYSE/NASDAQ'}',
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
                         ),
@@ -1302,3 +1301,29 @@ class _MetricCompareRow extends StatelessWidget {
     );
   }
 }
+
+String sectorLabel(String? sector) {
+  if (sector == null || sector.isEmpty) return '—';
+  return switch (sector) {
+    'Finance' => 'Financeiro',
+    'Energy Minerals' => 'Energia',
+    'Utilities' => 'Utilidades',
+    'Retail Trade' => 'Varejo',
+    'Health Services' => 'Saúde',
+    'Technology Services' => 'Tecnologia',
+    'Consumer Services' => 'Consumo',
+    'Producer Manufacturing' => 'Indústria',
+    'Transportation' => 'Transporte',
+    'Communications' => 'Comunicações',
+    'Non-Energy Minerals' => 'Mineração',
+    'Process Industries' => 'Indústria proc.',
+    'Electronic Technology' => 'Eletrônicos',
+    'Consumer Non-Durables' => 'Consumo NC',
+    'Consumer Durables' => 'Consumo dur.',
+    'Distribution Services' => 'Distribuição',
+    'Commercial Services' => 'Serviços com.',
+    'Industrial Services' => 'Serviços ind.',
+    _ => sector,
+  };
+}
+

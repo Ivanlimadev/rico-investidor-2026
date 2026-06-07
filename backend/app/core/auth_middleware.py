@@ -18,6 +18,10 @@ _DOC_PUBLIC_PATHS = {"/docs", "/openapi.json", "/redoc"}
 
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
+        # Browsers (Flutter web) enviam OPTIONS antes de GET/POST com Authorization.
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
         if not auth_is_enabled() or self._is_public(request.url.path):
             return await call_next(request)
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:rico_investidor/core/widgets/safe_network_avatar.dart';
 import 'package:rico_investidor/models/user_profile.dart';
 
 class ProfileHeader extends StatelessWidget {
@@ -19,18 +20,9 @@ class ProfileHeader extends StatelessWidget {
 
     final content = Row(
       children: [
-        CircleAvatar(
+        SafeNetworkAvatar(
           radius: avatarRadius,
-          backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
-          backgroundImage:
-              profile.hasPhoto ? NetworkImage(profile.photoUrl!) : null,
-          child: profile.hasPhoto
-              ? null
-              : Icon(
-                  Icons.person,
-                  size: avatarRadius,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
+          photoUrl: profile.hasPhoto ? profile.photoUrl : null,
         ),
         const SizedBox(width: 14),
         Expanded(

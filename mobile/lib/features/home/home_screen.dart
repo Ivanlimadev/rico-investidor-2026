@@ -1,18 +1,23 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
+import 'package:rico_investidor/core/widgets/safe_network_avatar.dart';
 import 'package:rico_investidor/app/main_shell_screen.dart';
 import 'package:rico_investidor/features/crypto/screens/crypto_explore_screen.dart';
-import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
 import 'package:rico_investidor/features/home/data/home_repository.dart';
-import 'package:rico_investidor/features/home/screens/world_exchanges_hub_screen.dart';
 import 'package:rico_investidor/features/home/widgets/portfolio_allocation_card.dart';
 import 'package:rico_investidor/features/home/widgets/crypto_market_hub_card.dart';
 import 'package:rico_investidor/features/home/widgets/portfolio_summary_row.dart';
 import 'package:rico_investidor/features/home/widgets/preferred_market_section.dart';
-import 'package:rico_investidor/features/home/widgets/world_exchanges_hub_card.dart';
+import 'package:rico_investidor/features/dividends/screens/portfolio_month_dividends_screen.dart';
+import 'package:rico_investidor/core/auth/auth_session.dart';
+import 'package:rico_investidor/services/portfolio_dividend_service.dart';
+import 'package:rico_investidor/services/portfolio_fx_service.dart';
+import 'package:rico_investidor/services/portfolio_price_service.dart';
+import 'package:rico_investidor/services/portfolio_storage.dart';
 import 'package:rico_investidor/features/portfolio/portfolio_screen.dart';
-import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/menu/account_menu_items.dart';
 import 'package:rico_investidor/features/settings/settings_screen.dart';
 import 'package:rico_investidor/models/subscription_plan.dart';
@@ -28,8 +33,6 @@ class HomeScreen extends StatefulWidget {
     required this.portfolio,
     required this.onPortfolioChanged,
     required this.homeRepository,
-    required this.fiiRepository,
-    required this.quoteRepository,
     required this.isDarkMode,
     required this.onToggleTheme,
     required this.preferredMarket,
@@ -45,8 +48,6 @@ class HomeScreen extends StatefulWidget {
   final PortfolioState portfolio;
   final VoidCallback onPortfolioChanged;
   final HomeRepository homeRepository;
-  final FiiRepository fiiRepository;
-  final QuoteRepository quoteRepository;
   final GlobalMarketRepository? globalMarketRepository;
   final bool isDarkMode;
   final VoidCallback onToggleTheme;
@@ -62,9 +63,66 @@ class HomeScreen extends StatefulWidget {
 
 class HomeScreenState extends State<HomeScreen> {
   final ScrollController scrollController = ScrollController();
+  bool _syncingPortfolio = false;
+  String? _syncMessage;
 
   GlobalMarketRepository get _globalMarketRepository =>
       widget.globalMarketRepository ?? globalMarketRepository;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_syncPortfolioOnHomeOpen());
+    });
+  }
+
+  Future<void> _syncPortfolioOnHomeOpen() async {
+    if (widget.portfolio.holdings.isEmpty) return;
+
+    setState(() {
+      _syncingPortfolio = true;
+      _syncMessage = null;
+    });
+
+    try {
+      await authSession.ensureAuthenticated();
+    } catch (_) {}
+
+    final rate = await portfolioFxService.fetchUsdBrlRate();
+    if (rate != null) {
+      widget.portfolio.usdBrlRate = rate;
+    }
+
+    final priceResult = await PortfolioPriceService().refreshAllDetailed(widget.portfolio);
+
+    var dividendsOk = false;
+    try {
+      final divResult = await portfolioDividendService.syncPortfolioDividends(widget.portfolio);
+      dividendsOk = divResult.completed;
+    } catch (_) {}
+
+    if (!mounted) return;
+
+    if (priceResult.updated > 0 || dividendsOk) {
+      widget.onPortfolioChanged();
+      await PortfolioStorage().save(
+        holdings: widget.portfolio.holdings,
+        dividends: widget.portfolio.dividends,
+      );
+    }
+
+    setState(() {
+      _syncingPortfolio = false;
+      if (!priceResult.isSuccess && !(priceResult.updated > 0 || dividendsOk)) {
+        _syncMessage = widget.portfolio.holdings.isNotEmpty
+            ? 'Preços desatualizados — use Atualizar na aba Carteira'
+            : 'Sem conexão com o backend (porta 8000)';
+      } else {
+        _syncMessage = null;
+      }
+    });
+  }
 
   void scrollToTop() {
     if (!scrollController.hasClients) return;
@@ -81,26 +139,30 @@ class HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  void _openWorldExchanges(BuildContext context) {
+  void _openCrypto(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => WorldExchangesHubScreen(
-          repository: _globalMarketRepository,
-          fiiRepository: widget.fiiRepository,
-          quoteRepository: widget.quoteRepository,
-        ),
+        builder: (_) => const CryptoExploreScreen(),
       ),
     );
   }
 
-  void _openCrypto(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => CryptoExploreScreen(
-          fiiRepository: widget.fiiRepository,
-          quoteRepository: widget.quoteRepository,
-        ),
-      ),
+  Future<void> _openMonthDividends(BuildContext context) async {
+    if (widget.portfolio.holdings.isNotEmpty) {
+      final result = await portfolioDividendService.syncPortfolioDividends(widget.portfolio);
+      if (result.completed) {
+        widget.onPortfolioChanged();
+        await PortfolioStorage().save(
+          holdings: widget.portfolio.holdings,
+          dividends: widget.portfolio.dividends,
+        );
+      }
+    }
+    if (!context.mounted) return;
+    openPortfolioMonthDividendsScreen(
+      context,
+      portfolio: widget.portfolio,
+      onPortfolioChanged: widget.onPortfolioChanged,
     );
   }
 
@@ -132,17 +194,9 @@ class HomeScreenState extends State<HomeScreen> {
               onRegister: widget.onRegister,
               onLogout: widget.onLogout,
             ),
-            icon: CircleAvatar(
+            icon: SafeNetworkAvatar(
               radius: 14,
-              backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
-              backgroundImage: widget.profile.hasPhoto ? NetworkImage(widget.profile.photoUrl!) : null,
-              child: widget.profile.hasPhoto
-                  ? null
-                  : Icon(
-                      Icons.person,
-                      size: 18,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
+              photoUrl: widget.profile.hasPhoto ? widget.profile.photoUrl : null,
             ),
           ),
           IconButton(
@@ -160,13 +214,14 @@ class HomeScreenState extends State<HomeScreen> {
               portfolio: widget.portfolio,
               preferredMarket: widget.preferredMarket,
               countryCode: widget.profile.countryCode,
+              syncMessage: _syncMessage,
+              syncing: _syncingPortfolio,
               onPortfolioTap: () => openPortfolioScreen(
                 context,
                 portfolio: widget.portfolio,
                 onPortfolioChanged: widget.onPortfolioChanged,
-                fiiRepository: widget.fiiRepository,
-                quoteRepository: widget.quoteRepository,
               ),
+              onDividendsTap: () => _openMonthDividends(context),
             ),
           ),
           SliverToBoxAdapter(
@@ -183,8 +238,6 @@ class HomeScreenState extends State<HomeScreen> {
                         context,
                         portfolio: widget.portfolio,
                         onPortfolioChanged: widget.onPortfolioChanged,
-                        fiiRepository: widget.fiiRepository,
-                        quoteRepository: widget.quoteRepository,
                       ),
             ),
           ),
@@ -195,8 +248,6 @@ class HomeScreenState extends State<HomeScreen> {
               // Sem isso, trocar de mercado não atualizava a home.
               preference: AppShellScope.of(context).preferredMarket,
               globalMarketRepository: _globalMarketRepository,
-              fiiRepository: widget.fiiRepository,
-              quoteRepository: widget.quoteRepository,
               onChangePreferred: AppShellScope.of(context).onChangePreferredMarket,
             ),
           ),
@@ -204,15 +255,9 @@ class HomeScreenState extends State<HomeScreen> {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
               child: Text(
-                'Explore outros mercados',
+                'Cripto',
                 style: Theme.of(context).textTheme.titleMedium,
               ),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: WorldExchangesHubCard(
-              totalExchanges: null,
-              onTap: () => _openWorldExchanges(context),
             ),
           ),
           SliverToBoxAdapter(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
+import 'package:rico_investidor/features/auth/data/auth_repository.dart';
 import 'package:rico_investidor/models/subscription_plan.dart';
 import 'package:rico_investidor/models/user_profile.dart';
 
@@ -60,37 +61,16 @@ class AccountMenuItems extends StatelessWidget {
         ],
       ),
     );
-    if (result != null && context.mounted) {
-      onProfileChanged(profile.copyWith(displayName: result));
-    }
-  }
-
-  Future<void> _confirmDeleteAccount(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Excluir conta'),
-        content: const Text(
-          'Esta ação removerá sua conta e todos os dados associados. '
-          'Não pode ser desfeita.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.negative,
-            ),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Excluir'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true && context.mounted) {
-      await _showComingSoon(context, 'Exclusão de conta');
+    if (result == null || !context.mounted) return;
+    try {
+      final updated = await authRepository.updateProfile(name: result);
+      if (!context.mounted) return;
+      onProfileChanged(updated);
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Não foi possível atualizar o nome')),
+      );
     }
   }
 
@@ -199,15 +179,6 @@ class AccountMenuItems extends StatelessWidget {
           leading: const Icon(Icons.help_outline),
           title: const Text('Ajuda e suporte'),
           onTap: () => _showComingSoon(context, 'Ajuda'),
-        ),
-        ListTile(
-          dense: dense,
-          leading: Icon(Icons.delete_outline, color: AppColors.negative),
-          title: Text(
-            'Excluir conta',
-            style: TextStyle(color: AppColors.negative),
-          ),
-          onTap: () => _confirmDeleteAccount(context),
         ),
         if (profile.isRegistered) ...[
           const Divider(height: 8),

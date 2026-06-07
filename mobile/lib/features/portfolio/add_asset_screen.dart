@@ -8,10 +8,10 @@ import 'package:rico_investidor/core/widgets/asset_country_flag.dart';
 import 'package:rico_investidor/core/utils/asset_magic_number.dart';
 import 'package:rico_investidor/core/utils/parse_decimal.dart';
 import 'package:rico_investidor/core/widgets/asset_magic_number_card.dart';
-import 'package:rico_investidor/features/fii/data/fii_repository.dart';
+import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
+import 'package:rico_investidor/features/portfolio/data/portfolio_repository.dart';
 import 'package:rico_investidor/features/portfolio/widgets/add_asset_circle_card.dart';
 import 'package:rico_investidor/features/portfolio/widgets/add_asset_suggestions.dart';
-import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/navigation/open_asset_detail.dart';
 import 'package:rico_investidor/services/recent_searched_assets_storage.dart';
 import 'package:rico_investidor/models/asset_item.dart';
@@ -101,7 +101,7 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
     });
   }
 
-  void _save() {
+  Future<void> _save() async {
     if (_selected == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Busque e selecione um ativo')),
@@ -124,16 +124,36 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
       return;
     }
 
+    var livePrice = _selected!.price;
+    var liveChange = _selected!.changePercent;
+    try {
+      final quote = await globalMarketRepository.refreshQuote(_selected!.symbol);
+      if (quote.price > 0) {
+        livePrice = quote.price;
+        liveChange = quote.changePercent;
+      }
+    } catch (_) {}
+
     widget.portfolio.addHolding(
       symbol: _selected!.symbol,
       name: _selected!.name,
       quantity: quantity,
       averagePrice: averagePrice,
-      currentPrice: _selected!.price > 0 ? _selected!.price : null,
-      changePercent: _selected!.price > 0 ? _selected!.changePercent : null,
+      currentPrice: livePrice > 0 ? livePrice : null,
+      changePercent: livePrice > 0 ? liveChange : null,
       category: _selected!.category,
     );
 
+    if (portfolioRepository.canSync) {
+      try {
+        final synced = await portfolioRepository.syncLocalHoldings(widget.portfolio.holdings);
+        widget.portfolio.holdings
+          ..clear()
+          ..addAll(synced);
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
     Navigator.pop(context, true);
   }
 
@@ -144,8 +164,6 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
     openAssetDetail(
       context,
       asset: asset,
-      fiiRepository: fiiRepository,
-      quoteRepository: quoteRepository,
     );
   }
 

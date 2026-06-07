@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/app/main_shell_screen.dart';
-import 'package:rico_investidor/features/fii/data/fii_repository.dart';
-import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/menu/account_menu_items.dart';
 import 'package:rico_investidor/features/menu/widgets/profile_header.dart';
 import 'package:rico_investidor/features/dividends/screens/dividend_agenda_screen.dart';
@@ -18,8 +16,6 @@ class MenuTabScreen extends StatelessWidget {
     required this.onProfileChanged,
     required this.portfolio,
     required this.onPortfolioChanged,
-    required this.fiiRepository,
-    required this.quoteRepository,
     this.globalMarketRepository,
     required this.isDarkMode,
     required this.onToggleTheme,
@@ -32,8 +28,6 @@ class MenuTabScreen extends StatelessWidget {
   final void Function(UserProfile profile) onProfileChanged;
   final PortfolioState portfolio;
   final VoidCallback onPortfolioChanged;
-  final FiiRepository fiiRepository;
-  final QuoteRepository quoteRepository;
   final GlobalMarketRepository? globalMarketRepository;
   final bool isDarkMode;
   final VoidCallback onToggleTheme;
@@ -61,11 +55,9 @@ class MenuTabScreen extends StatelessWidget {
           ListTile(
             leading: const Icon(Icons.calendar_month_outlined),
             title: const Text('Agenda de dividendos'),
-            subtitle: const Text('Ações BR (B3) e EUA — data com, pagamento e valor'),
+            subtitle: const Text('Ações americanas — data com, pagamento e valor'),
             onTap: () => openDividendAgendaScreen(
               context,
-              fiiRepository: fiiRepository,
-              quoteRepository: quoteRepository,
               globalMarketRepository: globalMarketRepository,
             ),
           ),

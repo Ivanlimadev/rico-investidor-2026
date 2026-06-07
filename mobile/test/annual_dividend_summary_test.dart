@@ -1,21 +1,21 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rico_investidor/core/utils/annual_dividend_summary.dart';
-import 'package:rico_investidor/models/fii_models.dart';
+import 'package:rico_investidor/models/market_series_models.dart';
 
 void main() {
   test('buildAnnualDividendSummaryFromPayments sums by payment year', () {
     final payments = [
-      FiiDistributionPayment(
+      DistributionPayment(
         referenceDate: '2024-03-10',
         paymentDate: '2024-03-25',
         valuePerShare: 1.0,
       ),
-      FiiDistributionPayment(
+      DistributionPayment(
         referenceDate: '2024-06-10',
         paymentDate: '2024-06-25',
         valuePerShare: 0.5,
       ),
-      FiiDistributionPayment(
+      DistributionPayment(
         referenceDate: '2023-12-01',
         paymentDate: '2023-12-15',
         valuePerShare: 0.25,
@@ -35,14 +35,14 @@ void main() {
 
   test('resolveAnnualDividendSummary prefers payments over API summary', () {
     final payments = [
-      FiiDistributionPayment(
+      DistributionPayment(
         referenceDate: '2025-01-01',
         paymentDate: '2025-01-15',
         valuePerShare: 2,
       ),
     ];
     const apiSummary = [
-      FiiDistributionYear(year: 2025, totalPerShare: 99, payments: 1),
+      DistributionYear(year: 2025, totalPerShare: 99, payments: 1),
     ];
 
     final resolved = resolveAnnualDividendSummary(

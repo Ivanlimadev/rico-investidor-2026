@@ -1,10 +1,13 @@
-import json
 import secrets
 from dataclasses import dataclass
-from pathlib import Path
 
-from app.config import settings
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
 from app.core.exceptions import AppError
+from app.db.models import UserRow
+from app.db.session import get_session_factory
 
 
 @dataclass(frozen=True)
@@ -17,34 +20,31 @@ class StoredUser:
 
 
 class UserStore:
-    def __init__(self, path: Path | None = None) -> None:
-        self._path = path or settings.auth_users_path
+    def __init__(self, session_factory=None) -> None:
+        self._session_factory = session_factory or get_session_factory()
 
-    def _load(self) -> dict:
-        if not self._path.exists():
-            return {"users": []}
-        return json.loads(self._path.read_text(encoding="utf-8"))
-
-    def _save(self, data: dict) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    def _to_user(self, row: UserRow) -> StoredUser:
+        return StoredUser(
+            id=row.id,
+            email=row.email,
+            name=row.name,
+            password_hash=row.password_hash,
+            is_anonymous=row.is_anonymous,
+        )
 
     def get_by_id(self, user_id: str) -> StoredUser | None:
-        for raw in self._load()["users"]:
-            if raw["id"] == user_id:
-                return self._to_user(raw)
-        return None
+        with self._session_factory() as session:
+            row = session.get(UserRow, user_id)
+            return self._to_user(row) if row else None
 
     def get_by_email(self, email: str) -> StoredUser | None:
         normalized = email.strip().lower()
-        for raw in self._load()["users"]:
-            if raw["email"] == normalized:
-                return self._to_user(raw)
-        return None
+        with self._session_factory() as session:
+            row = session.scalar(select(UserRow).where(UserRow.email == normalized))
+            return self._to_user(row) if row else None
 
     def get_by_device_id(self, device_id: str) -> StoredUser | None:
-        email = self._device_email(device_id)
-        return self.get_by_email(email)
+        return self.get_by_email(self._device_email(device_id))
 
     def create_user(
         self,
@@ -68,18 +68,38 @@ class UserStore:
             password_hash=password_hash,
             is_anonymous=is_anonymous,
         )
-        data = self._load()
-        data["users"].append(
-            {
-                "id": user.id,
-                "email": user.email,
-                "name": user.name,
-                "password_hash": user.password_hash,
-                "is_anonymous": user.is_anonymous,
-            }
-        )
-        self._save(data)
+        with self._session_factory() as session:
+            session.add(
+                UserRow(
+                    id=user.id,
+                    email=user.email,
+                    name=user.name,
+                    password_hash=user.password_hash,
+                    is_anonymous=user.is_anonymous,
+                )
+            )
+            try:
+                session.commit()
+            except IntegrityError as exc:
+                session.rollback()
+                raise AppError(
+                    "Não foi possível criar a conta com estes dados",
+                    status_code=400,
+                ) from exc
         return user
+
+    def update_name(self, user_id: str, name: str) -> StoredUser:
+        cleaned = name.strip()
+        if len(cleaned) < 2:
+            raise AppError("Nome inválido", status_code=400)
+        with self._session_factory() as session:
+            row = session.get(UserRow, user_id)
+            if row is None:
+                raise AppError("Usuário não encontrado", status_code=404)
+            row.name = cleaned[:80]
+            session.commit()
+            session.refresh(row)
+            return self._to_user(row)
 
     def get_or_create_device_user(self, device_id: str) -> StoredUser:
         existing = self.get_by_device_id(device_id)
@@ -99,13 +119,3 @@ class UserStore:
     def _device_email(device_id: str) -> str:
         safe = device_id.strip().lower().replace("@", "_")
         return f"device+{safe}@rico.local"
-
-    @staticmethod
-    def _to_user(raw: dict) -> StoredUser:
-        return StoredUser(
-            id=raw["id"],
-            email=raw["email"],
-            name=raw["name"],
-            password_hash=raw["password_hash"],
-            is_anonymous=bool(raw.get("is_anonymous", False)),
-        )

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
-import 'package:rico_investidor/features/fii/data/fii_repository.dart';
-import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
+import 'package:rico_investidor/features/portfolio/portfolio_auth_gate.dart';
 import 'package:rico_investidor/features/portfolio/add_asset_screen.dart';
 import 'package:rico_investidor/features/portfolio/widgets/confirm_remove_holding_dialog.dart';
 import 'package:rico_investidor/features/portfolio/widgets/portfolio_holding_card.dart';
@@ -13,16 +12,12 @@ void openPortfolioScreen(
   BuildContext context, {
   required PortfolioState portfolio,
   required VoidCallback onPortfolioChanged,
-  FiiRepository? fiiRepository,
-  QuoteRepository? quoteRepository,
 }) {
   Navigator.of(context).push(
     MaterialPageRoute<void>(
       builder: (_) => PortfolioScreen(
         portfolio: portfolio,
         onPortfolioChanged: onPortfolioChanged,
-        fiiRepository: fiiRepository,
-        quoteRepository: quoteRepository,
       ),
     ),
   );
@@ -33,7 +28,14 @@ Future<void> openAddAssetScreen(
   BuildContext context, {
   required PortfolioState portfolio,
   required VoidCallback onPortfolioChanged,
+  Future<void> Function()? onAccountReady,
 }) async {
+  final allowed = await ensureRegisteredForPortfolio(
+    context,
+    onAccountReady: onAccountReady ?? () async {},
+  );
+  if (!allowed || !context.mounted) return;
+
   final added = await Navigator.of(context).push<bool>(
     MaterialPageRoute<bool>(
       builder: (_) => AddAssetScreen(portfolio: portfolio),
@@ -47,14 +49,11 @@ class PortfolioScreen extends StatefulWidget {
     super.key,
     required this.portfolio,
     required this.onPortfolioChanged,
-    this.fiiRepository,
-    this.quoteRepository,
   });
 
   final PortfolioState portfolio;
   final VoidCallback onPortfolioChanged;
-  final FiiRepository? fiiRepository;
-  final QuoteRepository? quoteRepository;
+
 
   @override
   State<PortfolioScreen> createState() => _PortfolioScreenState();
@@ -64,16 +63,8 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
   bool _refreshing = false;
 
   Future<void> _refreshPrices() async {
-    final fiiRepo = widget.fiiRepository;
-    final quoteRepo = widget.quoteRepository;
-    if (fiiRepo == null && quoteRepo == null) return;
-
     setState(() => _refreshing = true);
-    if (quoteRepo != null) {
-      await PortfolioPriceService(quoteRepository: quoteRepo).refreshAll(widget.portfolio);
-    } else if (fiiRepo != null) {
-      await fiiRepo.refreshPortfolioFiiPrices(widget.portfolio);
-    }
+    await PortfolioPriceService().refreshAll(widget.portfolio);
     if (!mounted) return;
     setState(() => _refreshing = false);
     widget.onPortfolioChanged();
@@ -101,8 +92,7 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
       appBar: AppBar(
         title: const Text('Minha carteira'),
         actions: [
-          if (widget.fiiRepository != null || widget.quoteRepository != null)
-            IconButton(
+          IconButton(
               tooltip: 'Atualizar cotações',
               onPressed: _refreshing ? null : _refreshPrices,
               icon: _refreshing
@@ -128,7 +118,7 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
                 physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 88),
                 children: [
-                  _TotalHeader(total: widget.portfolio.totalBalance),
+                  _TotalHeader(total: widget.portfolio.patrimonioTotalUsd),
                   const SizedBox(height: 16),
                   Text(
                     'Ativos (${holdings.length})',
@@ -199,16 +189,35 @@ class _TotalHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.primary;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(18),
         child: Row(
           children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                'US\$',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: color,
+                    ),
+              ),
+            ),
+            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Patrimônio total (US\$)', style: Theme.of(context).textTheme.labelLarge),
+                  Text('Patrimônio total', style: Theme.of(context).textTheme.labelLarge),
                   const SizedBox(height: 6),
                   Text(
                     formatUsd(total),
@@ -218,11 +227,6 @@ class _TotalHeader extends StatelessWidget {
                   ),
                 ],
               ),
-            ),
-            Icon(
-              Icons.account_balance_wallet_outlined,
-              size: 36,
-              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.8),
             ),
           ],
         ),

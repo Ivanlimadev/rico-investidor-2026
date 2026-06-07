@@ -3,7 +3,7 @@ from app.domain.global_markets.presets import country_display_name, country_exch
 
 def test_country_display_name_pt():
     assert country_display_name("DE") == "Alemanha"
-    assert country_display_name("US") == "Estados Unidos"
+    assert country_display_name("US") == "Mercado Americano"
     assert country_display_name("XX", "Unknown") == "Unknown"
 
 

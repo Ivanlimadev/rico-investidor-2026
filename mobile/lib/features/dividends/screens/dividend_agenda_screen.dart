@@ -4,22 +4,16 @@ import 'package:rico_investidor/core/network/api_exception.dart';
 import 'package:rico_investidor/features/dividends/data/dividend_calendar_repository.dart';
 import 'package:rico_investidor/features/dividends/models/dividend_calendar_models.dart';
 import 'package:rico_investidor/features/dividends/utils/dividend_agenda_format.dart';
-import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
-import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/navigation/open_asset_detail.dart';
 
 void openDividendAgendaScreen(
   BuildContext context, {
-  FiiRepository? fiiRepository,
-  QuoteRepository? quoteRepository,
   GlobalMarketRepository? globalMarketRepository,
 }) {
   Navigator.of(context).push(
     MaterialPageRoute<void>(
       builder: (_) => DividendAgendaScreen(
-        fiiRepository: fiiRepository,
-        quoteRepository: quoteRepository,
         globalMarketRepository: globalMarketRepository,
       ),
     ),
@@ -29,14 +23,11 @@ void openDividendAgendaScreen(
 class DividendAgendaScreen extends StatefulWidget {
   const DividendAgendaScreen({
     super.key,
-    this.fiiRepository,
-    this.quoteRepository,
     this.globalMarketRepository,
   });
 
-  final FiiRepository? fiiRepository;
-  final QuoteRepository? quoteRepository;
   final GlobalMarketRepository? globalMarketRepository;
+
 
   @override
   State<DividendAgendaScreen> createState() => _DividendAgendaScreenState();
@@ -44,11 +35,10 @@ class DividendAgendaScreen extends StatefulWidget {
 
 class _DividendAgendaScreenState extends State<DividendAgendaScreen> {
   static const _markets = [
-    ('br', 'Brasil (B3)'),
-    ('us', 'Estados Unidos'),
+    ('us', 'Mercado Americano'),
   ];
 
-  var _market = 'br';
+  var _market = 'us';
   var _sortBy = 'payment';
   var _loading = true;
   String? _error;
@@ -106,8 +96,6 @@ class _DividendAgendaScreenState extends State<DividendAgendaScreen> {
     openTickerDetail(
       context,
       ticker: entry.symbol,
-      fiiRepo: widget.fiiRepository,
-      quoteRepo: widget.quoteRepository,
       globalMarketRepo: widget.globalMarketRepository,
     );
   }
@@ -115,9 +103,7 @@ class _DividendAgendaScreenState extends State<DividendAgendaScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final subtitle = _market == 'us'
-        ? 'Ações americanas — NYSE e NASDAQ'
-        : 'Ações brasileiras — B3';
+    const subtitle = 'Ações americanas — NYSE e NASDAQ';
 
     return Scaffold(
       appBar: AppBar(

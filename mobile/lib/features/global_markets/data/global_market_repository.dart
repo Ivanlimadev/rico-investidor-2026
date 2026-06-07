@@ -5,16 +5,17 @@ import 'package:rico_investidor/features/global_markets/data/global_market_api_c
 import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
 import 'package:rico_investidor/features/global_markets/utils/us_quote_enrichment.dart';
 import 'package:rico_investidor/features/global_markets/utils/marketstack_errors.dart';
-import 'package:rico_investidor/features/quotes/data/quote_api_client.dart';
 import 'package:rico_investidor/features/quotes/models/stock_compare.dart';
 import 'package:rico_investidor/features/quotes/models/stock_quote_detail.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/market_category.dart';
+import 'package:rico_investidor/features/quotes/models/market_quote_dto.dart';
 
 class GlobalMarketRepository {
   GlobalMarketRepository({GlobalMarketApiClient? api}) : _api = api ?? GlobalMarketApiClient();
 
   final GlobalMarketApiClient _api;
+  final _capabilitiesCache = SessionCache<GlobalMarketCapabilitiesDto>(ttl: const Duration(hours: 1));
   final _featuredCache = SessionCache<List<AssetItem>>(ttl: const Duration(minutes: 5));
   final _heatmapCache = SessionCache<QuoteListResponse>(ttl: const Duration(minutes: 5));
   final _exchangesCache = SessionCache<WorldExchangesResponseDto>(ttl: const Duration(hours: 6));
@@ -36,6 +37,38 @@ class GlobalMarketRepository {
     return _detailCache.cacheFor(key);
   }
 
+  Future<GlobalMarketCapabilitiesDto> getCapabilities({bool force = false}) async {
+    if (!force) {
+      final cached = _capabilitiesCache.get();
+      if (cached != null) return cached;
+    }
+    final caps = await _api.getCapabilities();
+    _capabilitiesCache.set(caps);
+    return caps;
+  }
+
+  Duration get quoteRefreshDuration {
+    final secs = _capabilitiesCache.get()?.refreshSeconds;
+    if (secs != null && secs > 0) {
+      return Duration(seconds: secs.clamp(30, 600));
+    }
+    return const Duration(minutes: 5);
+  }
+
+  Duration get _quoteRefreshTtl => quoteRefreshDuration;
+
+  Future<GlobalStockIntradayCandlesResponseDto> getIntradayCandles(
+    String symbol, {
+    String? exchange,
+    int limit = 500,
+  }) {
+    return _api.getIntradayCandles(symbol, exchange: exchange, limit: limit);
+  }
+
+  Future<MarketQuoteDto> refreshQuote(String symbol, {String? exchange}) {
+    return _api.getQuote(symbol, exchange: exchange);
+  }
+
   Future<List<AssetItem>> listFeaturedUsAssets() {
     final cached = _featuredCache.get();
     if (cached != null) return Future.value(cached);
@@ -48,12 +81,13 @@ class GlobalMarketRepository {
   }
 
   Future<List<AssetItem>> _loadFeaturedUs() async {
+    await getCapabilities();
     final response = await _withRetry(
       () => _api.listFeaturedUs(),
-      fallbackMessage: 'Não foi possível carregar destaques EUA.',
+      fallbackMessage: 'Não foi possível carregar destaques do mercado americano.',
     );
     final items = response.items.map((e) => e.toUsAssetItem()).toList();
-    _featuredCache.set(items);
+    _featuredCache.set(items, ttlOverride: _quoteRefreshTtl);
     return items;
   }
 
@@ -87,9 +121,10 @@ class GlobalMarketRepository {
     try {
       final response = await _withRetry(
         () => _api.getUsHeatmap(limit: limit, exchange: exchange),
-        fallbackMessage: 'Não foi possível carregar o mapa de calor EUA.',
+        fallbackMessage: 'Não foi possível carregar o mapa de calor americano.',
       );
-      _heatmapCache.set(response);
+      await getCapabilities();
+      _heatmapCache.set(response, ttlOverride: _quoteRefreshTtl);
       return response;
     } finally {
       _heatmapFuture = null;
@@ -379,6 +414,9 @@ class GlobalMarketRepository {
       dataMode: response.dataMode,
       historyLimited: response.historyLimited,
       maxHistoryDays: response.maxHistoryDays,
+      realtimeEnabled: response.realtimeEnabled,
+      intradayInterval: response.intradayInterval,
+      refreshSeconds: response.refreshSeconds,
       provider: response.provider,
     );
   }
@@ -408,6 +446,9 @@ class GlobalStockDetailDto {
     required this.historyLimited,
     required this.maxHistoryDays,
     required this.provider,
+    this.realtimeEnabled = false,
+    this.intradayInterval,
+    this.refreshSeconds,
   });
 
   final AssetItem quote;
@@ -428,6 +469,9 @@ class GlobalStockDetailDto {
   final bool historyLimited;
   final int maxHistoryDays;
   final String provider;
+  final bool realtimeEnabled;
+  final String? intradayInterval;
+  final int? refreshSeconds;
 }
 
 final globalMarketRepository = GlobalMarketRepository();

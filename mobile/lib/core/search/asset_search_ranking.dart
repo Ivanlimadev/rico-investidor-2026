@@ -1,3 +1,4 @@
+import 'package:rico_investidor/core/utils/crypto_ticker_utils.dart';
 import 'package:rico_investidor/core/widgets/asset_country_flag.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 
@@ -86,11 +87,7 @@ List<AssetItem> rankAndDedupeSearchResults(
 }
 
 bool looksLikeObviousCryptoTicker(String query) {
-  final normalized = query.trim().toUpperCase();
-  if (normalized.length < 2 || normalized.length > 12) return false;
-  if (normalized.contains('-') || normalized.contains('/')) return false;
-  if (RegExp(r'\d$').hasMatch(normalized) && normalized.length >= 5) return false;
-  return RegExp(r'^[A-Z0-9]+$').hasMatch(normalized);
+  return isKnownCryptoTicker(query);
 }
 
 bool looksLikeCurrencySearchQuery(String query) {

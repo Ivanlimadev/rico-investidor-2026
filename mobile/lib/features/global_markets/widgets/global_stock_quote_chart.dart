@@ -1,21 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/widgets/simple_quote_line_chart.dart';
-import 'package:rico_investidor/features/fii/utils/fii_quote_chart.dart';
+import 'package:rico_investidor/core/utils/quote_chart.dart';
 import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
 import 'package:rico_investidor/features/global_markets/utils/global_stock_chart_prices.dart';
-import 'package:rico_investidor/models/fii_models.dart';
+import 'package:rico_investidor/models/market_series_models.dart';
 
-enum GlobalStockChartPeriod { months3, months6, year1, years5 }
+enum GlobalStockChartPeriod { today, months3, months6, year1, years5, max }
 
 class GlobalStockQuoteChart extends StatefulWidget {
   const GlobalStockQuoteChart({
     super.key,
     required this.candles,
+    this.intradayCandles = const [],
+    this.intradayInterval = '5min',
+    this.maxHistoryDays = 1260,
+    this.realtimeEnabled = false,
     this.chartHeight = 220,
   });
 
   final List<GlobalStockCandleDto> candles;
+  final List<GlobalStockCandleDto> intradayCandles;
+  final String intradayInterval;
+  final int maxHistoryDays;
+  final bool realtimeEnabled;
   final double chartHeight;
 
   @override
@@ -50,19 +58,31 @@ class _GlobalStockQuoteChartState extends State<GlobalStockQuoteChart> {
     }
   }
 
-  List<FiiCandleBar> get _allBars => dedupeQuoteBarsByDate(_toBars(widget.candles));
+  bool get _showToday => widget.realtimeEnabled && widget.intradayCandles.length >= 2;
 
-  List<FiiCandleBar> get _bars =>
-      barsForTrailingTradingDays(_allBars, maxBars: _tradingDaysFor(_period));
+  List<GlobalStockCandleDto> get _sourceCandles =>
+      _period == GlobalStockChartPeriod.today ? widget.intradayCandles : widget.candles;
 
-  static int _tradingDaysFor(GlobalStockChartPeriod period) {
+  List<QuoteCandleBar> get _allBars => dedupeQuoteBarsByDate(_toBars(_sourceCandles));
+
+  List<QuoteCandleBar> get _bars {
+    if (_period == GlobalStockChartPeriod.today) return _allBars;
+    return barsForTrailingTradingDays(_allBars, maxBars: _tradingDaysForPeriod(_period));
+  }
+
+  static int _tradingDaysFor(GlobalStockChartPeriod period, {int maxHistoryDays = 1260}) {
     return switch (period) {
+      GlobalStockChartPeriod.today => 500,
       GlobalStockChartPeriod.months3 => 66,
       GlobalStockChartPeriod.months6 => 132,
       GlobalStockChartPeriod.year1 => 252,
       GlobalStockChartPeriod.years5 => 1260,
+      GlobalStockChartPeriod.max => maxHistoryDays.clamp(252, 5475),
     };
   }
+
+  int _tradingDaysForPeriod(GlobalStockChartPeriod period) =>
+      _tradingDaysFor(period, maxHistoryDays: widget.maxHistoryDays);
 
   @override
   Widget build(BuildContext context) {
@@ -95,9 +115,11 @@ class _GlobalStockQuoteChartState extends State<GlobalStockQuoteChart> {
                       Text('Histórico', style: Theme.of(context).textTheme.titleSmall),
                       if (bars.isNotEmpty)
                         Text(
-                          _effectiveUseAdjusted
-                              ? 'Fechamento diário EOD · ${bars.length} pregões · preço ajustado'
-                              : 'Fechamento diário EOD · ${bars.length} pregões · preço nominal',
+                          _period == GlobalStockChartPeriod.today
+                              ? 'Intraday · ${widget.intradayInterval} · ${bars.length} barras'
+                              : _effectiveUseAdjusted
+                                  ? 'Fechamento diário EOD · ${bars.length} pregões · preço ajustado'
+                                  : 'Fechamento diário EOD · ${bars.length} pregões · preço nominal',
                           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                 color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                               ),
@@ -120,7 +142,18 @@ class _GlobalStockQuoteChartState extends State<GlobalStockQuoteChart> {
               spacing: 6,
               runSpacing: 6,
               children: [
-                if (_hasSplitAdjustment)
+                if (_showToday)
+                  FilterChip(
+                    label: const Text('Hoje'),
+                    selected: _period == GlobalStockChartPeriod.today,
+                    onSelected: (_) => setState(() {
+                      _period = GlobalStockChartPeriod.today;
+                      _selectedIndex = null;
+                    }),
+                    visualDensity: VisualDensity.compact,
+                    showCheckmark: false,
+                  ),
+                if (_hasSplitAdjustment && _period != GlobalStockChartPeriod.today)
                   Tooltip(
                     message: _useAdjusted
                         ? 'Exibindo preços ajustados por splits'
@@ -136,13 +169,20 @@ class _GlobalStockQuoteChartState extends State<GlobalStockQuoteChart> {
                       showCheckmark: false,
                     ),
                   ),
-                ...GlobalStockChartPeriod.values.map((period) {
+                ...GlobalStockChartPeriod.values.where((period) {
+                  if (period == GlobalStockChartPeriod.today) return false;
+                  if (period == GlobalStockChartPeriod.max && widget.maxHistoryDays <= 1260) {
+                    return false;
+                  }
+                  return true;
+                }).map((period) {
                   return FilterChip(
                     label: Text(_periodLabel(period)),
                     selected: _period == period,
                     onSelected: (_) => setState(() {
                       _period = period;
-                      if (period == GlobalStockChartPeriod.years5) {
+                      if (period == GlobalStockChartPeriod.years5 ||
+                          period == GlobalStockChartPeriod.max) {
                         _useAdjusted = true;
                       }
                       _selectedIndex = null;
@@ -172,13 +212,13 @@ class _GlobalStockQuoteChartState extends State<GlobalStockQuoteChart> {
     );
   }
 
-  List<FiiCandleBar> _toBars(List<GlobalStockCandleDto> candles) {
+  List<QuoteCandleBar> _toBars(List<GlobalStockCandleDto> candles) {
     return candles
         .map(
           (c) {
             final price = _chartClose(c);
             if (price <= 0) return null;
-            return FiiCandleBar(
+            return QuoteCandleBar(
               tradeDate: c.date,
               open: c.open ?? price,
               high: c.high ?? price,
@@ -188,7 +228,7 @@ class _GlobalStockQuoteChartState extends State<GlobalStockQuoteChart> {
             );
           },
         )
-        .whereType<FiiCandleBar>()
+        .whereType<QuoteCandleBar>()
         .toList();
   }
 
@@ -197,10 +237,12 @@ class _GlobalStockQuoteChartState extends State<GlobalStockQuoteChart> {
 
   static String _periodLabel(GlobalStockChartPeriod period) {
     return switch (period) {
+      GlobalStockChartPeriod.today => 'Hoje',
       GlobalStockChartPeriod.months3 => '3M',
       GlobalStockChartPeriod.months6 => '6M',
       GlobalStockChartPeriod.year1 => '1A',
       GlobalStockChartPeriod.years5 => '5A',
+      GlobalStockChartPeriod.max => 'Máx',
     };
   }
 
@@ -223,7 +265,7 @@ class _GlobalStockQuoteChartState extends State<GlobalStockQuoteChart> {
 class _SelectedBar extends StatelessWidget {
   const _SelectedBar({required this.bar});
 
-  final FiiCandleBar bar;
+  final QuoteCandleBar bar;
 
   @override
   Widget build(BuildContext context) {

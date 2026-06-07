@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:http/http.dart' as http;
 import 'package:rico_investidor/core/auth/auth_session.dart';
+import 'package:rico_investidor/core/markets/market_visibility.dart';
 import 'package:rico_investidor/core/utils/asset_logo_url.dart';
 import 'package:rico_investidor/models/market_category.dart';
 import 'package:rico_investidor/models/market_category_theme.dart';
@@ -14,6 +15,11 @@ enum AssetLogoStyle {
 
   /// Logo colorido em tela cheia + brilho — carteira.
   vibrant,
+}
+
+MarketCategory _logoCategory(String symbol) {
+  if (looksLikeCryptoSymbol(symbol)) return MarketCategory.cripto;
+  return MarketCategory.stocks;
 }
 
 final _svgCache = <String, String>{};
@@ -105,22 +111,7 @@ Map<String, String> _logoRequestHeaders(String url) {
 }
 
 Future<void> warmAssetLogoSymbols(Iterable<String> symbols) async {
-  await Future.wait(
-    symbols.map((symbol) async {
-      if (hasBundledLogo(symbol)) return;
-      final isFii = looksLikeFiiTicker(symbol);
-      final resolved = resolveAssetLogoUrl(symbol, null, isFii: isFii);
-      for (final url in logoDownloadCandidates(
-        symbol: symbol,
-        isFii: isFii,
-        resolvedUrl: resolved,
-      )) {
-        final bytes = await loadAssetLogoRaster(url, headers: _logoRequestHeaders(url));
-        if (bytes != null) return;
-      }
-    }),
-    eagerError: false,
-  );
+  // Pré-carga desligada — evita centenas de GET /logo.png 404 no catálogo B3.
 }
 
 Future<void> precacheCryptoLogos(Iterable<String> symbols) async {
@@ -137,6 +128,35 @@ Future<void> precacheCryptoLogos(Iterable<String> symbols) async {
   );
 }
 
+/// Badge estável com iniciais do ticker — sem download de imagem.
+class AssetTickerBadge extends StatelessWidget {
+  const AssetTickerBadge({
+    super.key,
+    required this.symbol,
+    this.size = 36,
+    this.borderRadius = 10,
+  });
+
+  final String symbol;
+  final double size;
+  final double borderRadius;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: _TickerFallback(
+        symbol: symbol,
+        size: size,
+        borderRadius: borderRadius,
+        isFii: false,
+        style: AssetLogoStyle.standard,
+      ),
+    );
+  }
+}
+
 class AssetLogo extends StatelessWidget {
   const AssetLogo({
     super.key,
@@ -144,7 +164,7 @@ class AssetLogo extends StatelessWidget {
     this.logoUrl,
     this.size = 40,
     this.borderRadius = 8,
-    this.style = AssetLogoStyle.vibrant,
+    this.style = AssetLogoStyle.standard,
   });
 
   final String symbol;
@@ -155,7 +175,7 @@ class AssetLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isFii = looksLikeFiiTicker(symbol);
+    final isFii = false;
 
     if (hasBundledLogo(symbol)) {
       return SizedBox(
@@ -171,25 +191,7 @@ class AssetLogo extends StatelessWidget {
       );
     }
 
-    final resolvedUrl = resolveAssetLogoUrl(symbol, logoUrl, isFii: isFii);
-
-    if (looksLikeCryptoSymbol(symbol) &&
-        resolvedUrl != null &&
-        !isApiLogoUrl(resolvedUrl) &&
-        isRasterLogoUrl(resolvedUrl)) {
-      return SizedBox(
-        width: size,
-        height: size,
-        child: _CryptoNetworkLogo(
-          url: resolvedUrl,
-          symbol: symbol,
-          size: size,
-          borderRadius: borderRadius,
-          isFii: isFii,
-          style: style,
-        ),
-      );
-    }
+    final resolvedUrl = resolveAssetLogoUrl(symbol, logoUrl);
 
     return SizedBox(
       width: size,
@@ -204,76 +206,13 @@ class AssetLogo extends StatelessWidget {
             )
           : _RemoteAssetLogo(
               url: resolvedUrl,
+              originalLogoUrl: logoUrl,
               symbol: symbol,
               size: size,
               borderRadius: borderRadius,
               isFii: isFii,
               style: style,
             ),
-    );
-  }
-}
-
-class _CryptoNetworkLogo extends StatelessWidget {
-  const _CryptoNetworkLogo({
-    required this.url,
-    required this.symbol,
-    required this.size,
-    required this.borderRadius,
-    required this.isFii,
-    required this.style,
-  });
-
-  final String url;
-  final String symbol;
-  final double size;
-  final double borderRadius;
-  final bool isFii;
-  final AssetLogoStyle style;
-
-  @override
-  Widget build(BuildContext context) {
-    final dpr = MediaQuery.devicePixelRatioOf(context);
-    final cacheSize = (size * dpr).round().clamp(32, 128);
-    final vibrant = style == AssetLogoStyle.vibrant;
-    final innerSize = vibrant ? size : size * 0.84;
-
-    Widget placeholder({bool loading = false}) {
-      return _TickerFallback(
-        symbol: symbol,
-        size: size,
-        borderRadius: borderRadius,
-        isFii: isFii,
-        style: style,
-        loading: loading,
-      );
-    }
-
-    final image = Image.network(
-      url,
-      width: innerSize,
-      height: innerSize,
-      fit: vibrant ? BoxFit.cover : BoxFit.contain,
-      cacheWidth: cacheSize,
-      cacheHeight: cacheSize,
-      gaplessPlayback: true,
-      filterQuality: FilterQuality.low,
-      errorBuilder: (context, error, stackTrace) => placeholder(),
-      frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-        if (wasSynchronouslyLoaded || frame != null) return child;
-        return placeholder();
-      },
-    );
-
-    return _LogoImageShell(
-      symbol: symbol,
-      size: size,
-      borderRadius: borderRadius,
-      isFii: isFii,
-      style: style,
-      child: vibrant
-          ? image
-          : Padding(padding: EdgeInsets.all(size * 0.08), child: image),
     );
   }
 }
@@ -320,6 +259,7 @@ class _BundledAssetLogo extends StatelessWidget {
 class _RemoteAssetLogo extends StatefulWidget {
   const _RemoteAssetLogo({
     required this.url,
+    required this.originalLogoUrl,
     required this.symbol,
     required this.size,
     required this.borderRadius,
@@ -328,6 +268,7 @@ class _RemoteAssetLogo extends StatefulWidget {
   });
 
   final String url;
+  final String? originalLogoUrl;
   final String symbol;
   final double size;
   final double borderRadius;
@@ -351,7 +292,7 @@ class _RemoteAssetLogoState extends State<_RemoteAssetLogo> {
   @override
   void didUpdateWidget(covariant _RemoteAssetLogo oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.url != widget.url) {
+    if (oldWidget.url != widget.url || oldWidget.originalLogoUrl != widget.originalLogoUrl) {
       _bytes = null;
       _finished = false;
       _load();
@@ -366,8 +307,8 @@ class _RemoteAssetLogoState extends State<_RemoteAssetLogo> {
 
     final candidates = logoDownloadCandidates(
       symbol: widget.symbol,
-      isFii: widget.isFii,
       resolvedUrl: widget.url,
+      originalLogoUrl: widget.originalLogoUrl,
     );
 
     Uint8List? bytes;
@@ -394,32 +335,6 @@ class _RemoteAssetLogoState extends State<_RemoteAssetLogo> {
     );
   }
 
-  Widget _buildCryptoPng() {
-    final pngUrl = cryptoIconPngUrlFor(widget.symbol);
-    return FutureBuilder<Uint8List?>(
-      future: loadAssetLogoRaster(pngUrl),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return _fallback(loading: true);
-        }
-
-        final bytes = snapshot.data;
-        if (bytes != null) {
-          return _LogoImageShell(
-            symbol: widget.symbol,
-            size: widget.size,
-            borderRadius: widget.borderRadius,
-            isFii: widget.isFii,
-            style: widget.style,
-            image: MemoryImage(bytes),
-          );
-        }
-
-        return _fallback();
-      },
-    );
-  }
-
   Widget _buildBundled() {
     final assetPath = localLogoAssetPath(widget.symbol);
     if (assetPath == null) return _fallback();
@@ -435,15 +350,12 @@ class _RemoteAssetLogoState extends State<_RemoteAssetLogo> {
   }
 
   Widget _buildSvg(String svg) {
-    final vibrant = widget.style == AssetLogoStyle.vibrant;
-    final innerSize = vibrant ? widget.size : widget.size * 0.84;
-
     try {
       final logo = SvgPicture.string(
         svg,
-        width: innerSize,
-        height: innerSize,
-        fit: vibrant ? BoxFit.cover : BoxFit.contain,
+        width: widget.size * 0.84,
+        height: widget.size * 0.84,
+        fit: BoxFit.contain,
         clipBehavior: Clip.hardEdge,
       );
       return _LogoImageShell(
@@ -452,9 +364,7 @@ class _RemoteAssetLogoState extends State<_RemoteAssetLogo> {
         borderRadius: widget.borderRadius,
         isFii: widget.isFii,
         style: widget.style,
-        child: vibrant
-            ? logo
-            : Padding(padding: EdgeInsets.all(widget.size * 0.08), child: logo),
+        child: logo,
       );
     } catch (_) {
       return _buildBundled();
@@ -463,6 +373,16 @@ class _RemoteAssetLogoState extends State<_RemoteAssetLogo> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_finished) {
+      return _LogoPlaceholder(
+        symbol: widget.symbol,
+        size: widget.size,
+        borderRadius: widget.borderRadius,
+        style: widget.style,
+        loading: true,
+      );
+    }
+
     if (_bytes != null) {
       return _LogoImageShell(
         symbol: widget.symbol,
@@ -474,33 +394,27 @@ class _RemoteAssetLogoState extends State<_RemoteAssetLogo> {
       );
     }
 
-    if (!_finished) {
-      return _fallback(loading: true);
-    }
-
     if (isSvgLogoUrl(widget.url) && !isApiLogoUrl(widget.url)) {
       return FutureBuilder<String?>(
         future: loadAssetLogoSvg(widget.url),
         builder: (context, snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
-            return _fallback(loading: true);
+            return _LogoPlaceholder(
+              symbol: widget.symbol,
+              size: widget.size,
+              borderRadius: widget.borderRadius,
+              style: widget.style,
+              loading: true,
+            );
           }
-
           final svg = snapshot.data;
-          if (svg != null) {
-            return _buildSvg(svg);
-          }
-
-          if (looksLikeCryptoSymbol(widget.symbol)) {
-            return _buildCryptoPng();
-          }
-
-          return _buildBundled();
+          if (svg == null) return _fallback();
+          return _buildSvg(svg);
         },
       );
     }
 
-    return _buildBundled();
+    return _fallback();
   }
 }
 
@@ -533,32 +447,36 @@ class _LogoImageShell extends StatelessWidget {
     );
   }
 
+  Widget _placeholder({bool loading = false}) {
+    return _LogoPlaceholder(
+      symbol: symbol,
+      size: size,
+      borderRadius: borderRadius,
+      style: style,
+      loading: loading,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final vibrant = style == AssetLogoStyle.vibrant;
-    final innerSize = vibrant ? size : size * 0.84;
+    final innerSize = size * 0.84;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final logoBackground = isDark ? const Color(0xFF232B36) : const Color(0xFFF4F6F8);
+    final logoBackground = isDark ? const Color(0xFF232B36) : Colors.white;
     final logoBorder = isDark ? Colors.white.withValues(alpha: 0.1) : Colors.black.withValues(alpha: 0.08);
-    final glowColor = (isFii
-            ? MarketCategory.fiis
-            : looksLikeCryptoSymbol(symbol)
-                ? MarketCategory.cripto
-                : MarketCategory.acoesBr)
-        .theme
-        .accentColor;
+    final glowColor = _logoCategory(symbol).theme.accentColor;
 
     final content = child ??
         Image(
           image: image!,
-          fit: vibrant ? BoxFit.cover : BoxFit.contain,
+          fit: BoxFit.contain,
           width: innerSize,
           height: innerSize,
           gaplessPlayback: true,
           filterQuality: FilterQuality.medium,
           frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
             if (wasSynchronouslyLoaded || frame != null) return child;
-            return _fallback();
+            return _placeholder(loading: true);
           },
           errorBuilder: (context, error, stackTrace) => _fallback(),
         );
@@ -568,7 +486,16 @@ class _LogoImageShell extends StatelessWidget {
         size: size,
         borderRadius: borderRadius,
         glowColor: glowColor,
-        child: content,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: logoBackground,
+            borderRadius: BorderRadius.circular(borderRadius),
+          ),
+          child: Padding(
+            padding: EdgeInsets.all(size * 0.1),
+            child: content,
+          ),
+        ),
       );
     }
 
@@ -581,6 +508,73 @@ class _LogoImageShell extends StatelessWidget {
         padding: EdgeInsets.all(size * 0.08),
         child: content,
       ),
+    );
+  }
+}
+
+class _LogoPlaceholder extends StatelessWidget {
+  const _LogoPlaceholder({
+    required this.symbol,
+    required this.size,
+    required this.borderRadius,
+    required this.style,
+    this.loading = false,
+  });
+
+  final String symbol;
+  final double size;
+  final double borderRadius;
+  final AssetLogoStyle style;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final background = isDark ? const Color(0xFF232B36) : const Color(0xFFF4F6F8);
+    final border = isDark ? Colors.white.withValues(alpha: 0.1) : Colors.black.withValues(alpha: 0.08);
+
+    if (style == AssetLogoStyle.vibrant) {
+      final glowColor = _logoCategory(symbol).theme.accentColor;
+      return _VibrantShell(
+        size: size,
+        borderRadius: borderRadius,
+        glowColor: glowColor,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: BorderRadius.circular(borderRadius),
+          ),
+          child: loading
+              ? Center(
+                  child: SizedBox(
+                    width: size * 0.3,
+                    height: size * 0.3,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: glowColor.withValues(alpha: 0.7),
+                    ),
+                  ),
+                )
+              : null,
+        ),
+      );
+    }
+
+    return _LogoFrame(
+      size: size,
+      borderRadius: borderRadius,
+      backgroundColor: background,
+      borderColor: border,
+      child: loading
+          ? SizedBox(
+              width: size * 0.3,
+              height: size * 0.3,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
+              ),
+            )
+          : const SizedBox.shrink(),
     );
   }
 }
@@ -674,11 +668,7 @@ class _TickerFallback extends StatelessWidget {
   final AssetLogoStyle style;
   final bool loading;
 
-  MarketCategory get _category {
-    if (isFii) return MarketCategory.fiis;
-    if (looksLikeCryptoSymbol(symbol)) return MarketCategory.cripto;
-    return MarketCategory.acoesBr;
-  }
+  MarketCategory get _category => _logoCategory(symbol);
 
   String get _label {
     final normalized = symbol.trim().toUpperCase();

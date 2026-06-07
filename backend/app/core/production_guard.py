@@ -13,10 +13,8 @@ def validate_production_settings() -> None:
         errors.append("DOCS_ENABLED deve ser false em produção")
     if not settings.open_finance_api_key.strip():
         errors.append("OPEN_FINANCE_API_KEY é obrigatória em produção")
-    if not settings.bolsai_api_key.strip():
-        errors.append(
-            "BOLSAI_API_KEY é obrigatória em produção (fundamentos e proventos B3 fiéis ao Investidor10)"
-        )
+    if not settings.uses_postgres:
+        errors.append("DATABASE_URL deve usar PostgreSQL em produção")
 
     if errors:
         raise RuntimeError("Configuração de produção inválida: " + "; ".join(errors))

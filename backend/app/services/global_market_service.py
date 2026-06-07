@@ -34,9 +34,11 @@ from app.domain.global_markets.models import (
     GlobalStockCandlesResponse,
     GlobalStockDetailResponse,
     GlobalStockExploreResponse,
+    GlobalStockIntradayCandlesResponse,
     GlobalStockTickerInfo,
     WorldExchangesResponse,
 )
+from app.domain.global_markets.us_market_session import quote_cache_ttl_seconds, us_market_session
 from app.domain.market_heatmap.presets import (
     DEFAULT_HEATMAP_LIMIT,
     MAX_HEATMAP_LIMIT,
@@ -92,6 +94,7 @@ class GlobalMarketService:
         self._heatmap_cache: StaleTtlCache[MarketQuoteBatchResponse] = StaleTtlCache(heatmap_ttl)
         self._explore_cache: StaleTtlCache[GlobalStockExploreResponse] = StaleTtlCache(quote_ttl)
         self._candles_cache: StaleTtlCache[GlobalStockCandlesResponse] = StaleTtlCache(quote_ttl * 2)
+        self._intraday_cache: StaleTtlCache[GlobalStockIntradayCandlesResponse] = StaleTtlCache(quote_ttl)
         self._exchanges_cache: TtlCache[WorldExchangesResponse] = TtlCache(long_ttl)
         self._exchange_market_cache: StaleTtlCache[ExchangeMarketListResponse] = StaleTtlCache(quote_ttl)
         self._us_market_cache: StaleTtlCache[ExchangeMarketListResponse] = StaleTtlCache(quote_ttl * 6)
@@ -127,17 +130,82 @@ class GlobalMarketService:
     def _with_logo(quote: MarketQuote) -> MarketQuote:
         return with_us_logo(quote)
 
+    @staticmethod
+    def _live_intraday_enabled() -> bool:
+        """Intraday só durante pré/pregão/after — evita preço obsoleto no fim de semana."""
+        from app.domain.global_markets.quote_reconcile import should_reconcile_quotes_to_eod
+
+        return not should_reconcile_quotes_to_eod()
+
     def _quote_kwargs(self) -> dict:
         caps = marketstack_capabilities()
         return {
-            "use_intraday": caps.realtime_enabled,
+            "use_intraday": caps.realtime_enabled and self._live_intraday_enabled(),
             "intraday_interval": caps.intraday_interval or settings.marketstack_intraday_interval,
         }
 
+    def _refresh_seconds(self) -> int:
+        caps = marketstack_capabilities()
+        return quote_cache_ttl_seconds(
+            realtime_enabled=caps.realtime_enabled,
+            base_realtime=settings.marketstack_realtime_cache_ttl_seconds,
+            base_eod=settings.quote_cache_ttl_seconds,
+        )
+
+    async def _overlay_live_intraday_prices(
+        self,
+        quotes: list[MarketQuote],
+        *,
+        exchange: str | None = None,
+    ) -> list[MarketQuote]:
+        caps = marketstack_capabilities()
+        if not caps.realtime_enabled or not self._live_intraday_enabled() or not quotes:
+            return quotes
+
+        from app.clients.marketstack.stock_mapper import (
+            filter_today_intraday_rows,
+            normalize_marketstack_symbol,
+            overlay_intraday_prices,
+        )
+
+        symbols = [normalize_marketstack_symbol(quote.symbol) for quote in quotes]
+        intraday_rows = await self._safe_upstream(
+            self._client.get_intraday_latest(
+                symbols,
+                interval=caps.intraday_interval or settings.marketstack_intraday_interval,
+                exchange=exchange,
+            ),
+            default=[],
+        )
+        intraday_rows = filter_today_intraday_rows(intraday_rows or [])
+        if not intraday_rows:
+            return quotes
+        return overlay_intraday_prices(quotes, intraday_rows)
+
+    async def _finalize_batch_quotes(
+        self,
+        quotes: list[MarketQuote],
+        *,
+        eod_rows: list[dict] | None = None,
+        exchange: str | None = None,
+    ) -> list[MarketQuote]:
+        from app.domain.global_markets.quote_reconcile import (
+            reconcile_quotes_from_eod_rows,
+            should_reconcile_quotes_to_eod,
+        )
+
+        if should_reconcile_quotes_to_eod() and eod_rows:
+            return reconcile_quotes_from_eod_rows(quotes, eod_rows)
+        return await self._overlay_live_intraday_prices(quotes, exchange=exchange)
+
     def capabilities(self) -> GlobalMarketCapabilitiesResponse:
         caps = marketstack_capabilities()
-        refresh = (
-            settings.marketstack_realtime_cache_ttl_seconds if caps.realtime_enabled else settings.quote_cache_ttl_seconds
+        refresh = self._refresh_seconds()
+        session = us_market_session()
+        intraday_delay = (
+            settings.marketstack_intraday_delay_minutes
+            if caps.realtime_enabled and settings.marketstack_intraday_delay_minutes > 0
+            else None
         )
         return GlobalMarketCapabilitiesResponse(
             plan=caps.plan.value,
@@ -151,6 +219,12 @@ class GlobalMarketService:
             api_configured=self._client.configured,
             enabled_country_codes=list(ENABLED_MARKET_COUNTRY_CODES),
             global_markets_expanded=False,
+            us_market_status=str(session["status"]),
+            us_market_open=bool(session["is_open"]),
+            us_market_label=str(session["label"]),
+            us_market_timezone=str(session["timezone"]),
+            us_market_holiday=bool(session.get("is_holiday")),
+            intraday_delay_minutes=intraday_delay,
         )
 
     def _order_quotes(self, symbols: list[str], quotes: list[MarketQuote]) -> list[MarketQuote]:
@@ -195,6 +269,12 @@ class GlobalMarketService:
                 )
                 for item in items
             ]
+            items = await self._finalize_batch_quotes(
+                items,
+                eod_rows=eod_rows or None,
+                exchange=US_PRIMARY_EXCHANGE_MIC,
+            )
+            items = [self._with_logo(item) for item in items]
             result = MarketQuoteBatchResponse(items=items, count=len(items), provider="marketstack")
             self._featured_cache.set(cache_key, result)
             return result
@@ -209,14 +289,16 @@ class GlobalMarketService:
         symbols: list[str],
         *,
         exchange: str,
+        rows: list[dict] | None = None,
     ) -> list[MarketQuote]:
         """Fallback rápido — uma chamada ``eod/latest`` (sem variação se faltar histórico)."""
         from app.clients.marketstack.stock_mapper import map_eod_quote
 
-        rows = await self._safe_upstream(
-            self._client.get_eod_latest(symbols, exchange=exchange),
-            default=[],
-        )
+        if rows is None:
+            rows = await self._safe_upstream(
+                self._client.get_eod_latest(symbols, exchange=exchange),
+                default=[],
+            )
         quotes: list[MarketQuote] = []
         for row in rows or []:
             quote = map_eod_quote(row, category="stocks")
@@ -239,6 +321,7 @@ class GlobalMarketService:
             chunk_size=US_HEATMAP_EOD_BATCH_SIZE,
             lookback_days=US_HEATMAP_LOOKBACK_DAYS,
         )
+        reconcile_rows: list[dict] = list(eod_rows)
         quotes = map_eod_quotes_with_change(eod_rows, category="stocks")
         if not quotes:
             fallback_symbols = list(FEATURED_US_TICKERS)[:US_HEATMAP_FETCH_COUNT]
@@ -248,11 +331,18 @@ class GlobalMarketService:
                 chunk_size=len(fallback_symbols),
                 lookback_days=US_HEATMAP_LOOKBACK_DAYS,
             )
+            reconcile_rows = list(eod_rows)
             quotes = map_eod_quotes_with_change(eod_rows, category="stocks")
         if not quotes:
+            latest_rows = await self._safe_upstream(
+                self._client.get_eod_latest(fetch_symbols, exchange=exchange),
+                default=[],
+            )
+            reconcile_rows = list(latest_rows or [])
             quotes = await self._us_heatmap_quotes_from_latest(
                 fetch_symbols,
                 exchange=exchange,
+                rows=reconcile_rows,
             )
 
         ranked = sorted(quotes, key=lambda quote: quote.volume or 0.0, reverse=True)
@@ -266,7 +356,11 @@ class GlobalMarketService:
                 self._with_logo(quote.model_copy(update={"exchange": exchange}))
                 for quote in ranked[:safe_limit]
             ]
-        return items
+        return await self._finalize_batch_quotes(
+            items,
+            eod_rows=reconcile_rows or None,
+            exchange=exchange,
+        )
 
     async def get_us_heatmap(
         self,
@@ -547,12 +641,19 @@ class GlobalMarketService:
         return total
 
     async def get_quote(self, symbol: str, *, exchange: str | None = None) -> MarketQuote:
+        from app.domain.global_markets.quote_reconcile import (
+            reconcile_quote_with_candles,
+            should_reconcile_quotes_to_eod,
+        )
+
         normalized = symbol.upper().strip()
         attempts: list[str | None] = []
         if exchange:
             attempts.append(exchange.upper())
         attempts.append(None)
 
+        quote: MarketQuote | None = None
+        resolved_exchange: str | None = exchange
         for mic in attempts:
             quotes = await self._client.map_quotes_with_change(
                 [normalized],
@@ -561,9 +662,26 @@ class GlobalMarketService:
                 **self._quote_kwargs(),
             )
             if quotes:
-                return self._with_logo(quotes[0])
+                quote = quotes[0]
+                resolved_exchange = exchange or quote.exchange or mic
+                break
 
-        raise UpstreamError(f"Cotação não encontrada: {normalized}", status_code=404)
+        if quote is None:
+            raise UpstreamError(f"Cotação não encontrada: {normalized}", status_code=404)
+
+        if should_reconcile_quotes_to_eod():
+            try:
+                candles_resp = await self.get_candles(
+                    normalized,
+                    exchange=resolved_exchange,
+                    limit=12,
+                )
+                if candles_resp.candles:
+                    quote = reconcile_quote_with_candles(quote, candles_resp.candles)
+            except UpstreamError:
+                pass
+
+        return self._with_logo(quote)
 
     async def get_candles(
         self,
@@ -609,6 +727,69 @@ class GlobalMarketService:
             data_mode=caps.data_mode,
         )
         self._candles_cache.set(cache_key, result)
+        return result
+
+    async def get_intraday_candles(
+        self,
+        symbol: str,
+        *,
+        exchange: str | None = None,
+        limit: int = 500,
+    ) -> GlobalStockIntradayCandlesResponse:
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        from app.clients.marketstack.stock_mapper import map_eod_candles, normalize_marketstack_symbol
+
+        normalized = symbol.upper().strip()
+        caps = marketstack_capabilities()
+        interval = caps.intraday_interval or settings.marketstack_intraday_interval
+        safe_limit = max(10, min(limit, 1000))
+        cache_key = f"intraday:{normalized}:{exchange}:{interval}:{safe_limit}"
+        cached = self._intraday_cache.get(cache_key)
+        if cached:
+            return cached
+
+        if not caps.realtime_enabled:
+            return GlobalStockIntradayCandlesResponse(
+                symbol=normalized,
+                exchange=exchange,
+                interval=interval,
+                data_mode=caps.data_mode,
+            )
+
+        ny = ZoneInfo("America/New_York")
+        today = datetime.now(ny).date().isoformat()
+        resolved_exchange = exchange
+        if not resolved_exchange:
+            try:
+                quote = await self.get_quote(normalized)
+                resolved_exchange = quote.exchange
+            except UpstreamError:
+                resolved_exchange = None
+
+        rows = await self._safe_upstream(
+            self._client.get_intraday(
+                [normalize_marketstack_symbol(normalized)],
+                interval=interval,
+                date_from=today,
+                exchange=resolved_exchange,
+                limit=safe_limit,
+                sort="ASC",
+            ),
+            default=[],
+        )
+        candles = map_eod_candles(rows or [])
+        result = GlobalStockIntradayCandlesResponse(
+            symbol=normalized,
+            exchange=resolved_exchange,
+            candles=candles,
+            count=len(candles),
+            interval=interval,
+            data_mode=caps.data_mode,
+        )
+        if candles:
+            self._intraday_cache.set(cache_key, result)
         return result
 
     @staticmethod
@@ -876,6 +1057,8 @@ class GlobalMarketService:
                 ticker_info = ticker_info.model_copy(update={"symbol": normalized})
                 if resolved_exchange and not ticker_info.exchange_mic:
                     ticker_info = ticker_info.model_copy(update={"exchange_mic": resolved_exchange})
+            if caps.realtime_enabled:
+                ticker_info = ticker_info.model_copy(update={"has_intraday": True})
 
             dividend_items, dividend_pagination = dividend_rows or ([], {})
             split_items, split_pagination = split_rows or ([], {})
@@ -885,7 +1068,21 @@ class GlobalMarketService:
                 previous_close = candles_resp.candles[-2].close
 
             quote = None
-            if isinstance(eod_latest, dict):
+            if caps.realtime_enabled:
+                quote = await self._safe_upstream(
+                    self.get_quote(normalized, exchange=resolved_exchange),
+                    default=None,
+                )
+                if quote is not None:
+                    quote = quote.model_copy(
+                        update={
+                            "name": ticker_info.name,
+                            "symbol": normalized,
+                            "previous_close": quote.previous_close or previous_close,
+                        }
+                    )
+
+            if quote is None and isinstance(eod_latest, dict):
                 quote = map_eod_quote(
                     eod_latest,
                     category=category,
@@ -921,9 +1118,13 @@ class GlobalMarketService:
             if quote is None:
                 raise UpstreamError(f"Cotação não encontrada: {normalized}", status_code=404)
 
-            from app.domain.global_markets.quote_reconcile import reconcile_quote_with_candles
+            from app.domain.global_markets.quote_reconcile import (
+                reconcile_quote_with_candles,
+                should_reconcile_quotes_to_eod,
+            )
 
-            quote = reconcile_quote_with_candles(quote, candles_resp.candles)
+            if should_reconcile_quotes_to_eod():
+                quote = reconcile_quote_with_candles(quote, candles_resp.candles)
 
             mapped_dividends = enrich_dividend_dates(map_dividends(dividend_items))
             company = enrich_company_profile(build_company_profile(ticker_info), tickerinfo=tickerinfo)
@@ -989,6 +1190,9 @@ class GlobalMarketService:
                 data_mode=caps.data_mode,
                 max_history_days=caps.max_history_days,
                 history_limited=caps.plan.value == "free",
+                realtime_enabled=caps.realtime_enabled,
+                intraday_interval=caps.intraday_interval,
+                refresh_seconds=self._refresh_seconds(),
             )
             self._detail_cache.set(cache_key, result)
             return result
@@ -1136,6 +1340,13 @@ class GlobalMarketService:
             rows = await self._fetch_eod_rows(batch_symbols, exchange=mic)
             quotes = map_eod_quotes_with_change(rows, category="stocks")
             if quotes:
+                from app.domain.global_markets.quote_reconcile import (
+                    reconcile_quotes_from_eod_rows,
+                    should_reconcile_quotes_to_eod,
+                )
+
+                if should_reconcile_quotes_to_eod():
+                    quotes = reconcile_quotes_from_eod_rows(quotes, rows)
                 return [
                     self._with_logo(
                         quote.model_copy(update={"exchange": quote.exchange or mic}),
@@ -1319,21 +1530,33 @@ class GlobalMarketService:
             include_extras=True,
         )
         profile = to_stock_profile(ticker=detail.ticker, company=detail.company)
-        from app.domain.quotes.compare_enrichment import (
-            dividends_snapshot_from_global,
-            return_periods_from_global,
+        from app.clients.brapi.models import StockCompareReturnPeriod, StockCompareDividendsSnapshot
+
+        next_ev = detail.dividends_summary.next_dividend
+        dividends = StockCompareDividendsSnapshot(
+            dividend_yield_display=detail.dividends_summary.dividend_yield_ttm,
+            dividend_yield_ttm=detail.dividends_summary.dividend_yield_ttm,
+            ttm_per_share=detail.dividends_summary.ttm_per_share,
+            frequency_label=detail.dividends_summary.frequency_label,
+            payments_12m=detail.dividends_summary.payments_12m or None,
+            next_com_date=next_ev.com_date if next_ev else None,
+            next_payment_date=next_ev.payment_date if next_ev else None,
+            next_amount=next_ev.amount if next_ev else None,
+            provider="marketstack",
         )
+        returns = [
+            StockCompareReturnPeriod(label=row.label, return_pct=row.return_pct)
+            for row in detail.returns
+            if row.return_pct is not None
+        ]
 
         return StockCompareItem(
             quote=detail.quote,
             profile=profile.model_copy(update={"logo_url": detail.quote.logo_url}),
             fundamentals=detail.fundamentals,
             market_stats=detail.market_stats,
-            dividends=dividends_snapshot_from_global(
-                detail.dividends_summary,
-                provider="marketstack",
-            ),
-            returns=return_periods_from_global(detail.returns),
+            dividends=dividends,
+            returns=returns,
             provider="marketstack",
         )
 
@@ -1630,7 +1853,7 @@ class GlobalMarketService:
                 }
             )
             quotes.append(self._with_logo(quote))
-        return quotes
+        return await self._finalize_batch_quotes(quotes, eod_rows=eod_rows, exchange=exchange)
 
     @staticmethod
     def _sparkline_for_quote(

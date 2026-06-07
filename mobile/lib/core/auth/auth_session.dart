@@ -120,8 +120,12 @@ class AuthSession {
   Future<void> setAccessToken(String token, {required bool registered}) async {
     _accessToken = token;
     _sessionKind = registered ? _registeredKind : _anonymousKind;
-    await _storage.write(key: _tokenKey, value: token);
-    await _storage.write(key: _sessionKindKey, value: _sessionKind);
+    try {
+      await _storage.write(key: _tokenKey, value: token);
+      await _storage.write(key: _sessionKindKey, value: _sessionKind);
+    } catch (_) {
+      // macOS desktop: Keychain pode falhar sem entitlement; token em memória segue válido.
+    }
   }
 
   Future<String> _getOrCreateDeviceId() async {
@@ -132,7 +136,9 @@ class AuthSession {
 
     final bytes = List<int>.generate(16, (_) => Random.secure().nextInt(256));
     final created = 'rico-${base64Url.encode(bytes).replaceAll('=', '')}';
-    await _storage.write(key: _deviceIdKey, value: created);
+    try {
+      await _storage.write(key: _deviceIdKey, value: created);
+    } catch (_) {}
     return created;
   }
 }

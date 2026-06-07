@@ -2,13 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
-import 'package:rico_investidor/core/utils/asset_logo_url.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
 import 'package:rico_investidor/core/widgets/asset_logo.dart';
 import 'package:rico_investidor/features/crypto/models/crypto_models.dart';
-import 'package:rico_investidor/features/fii/data/fii_repository.dart';
-import 'package:rico_investidor/features/indices/models/indices_models.dart';
-import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/market_category.dart';
 import 'package:rico_investidor/navigation/open_asset_detail.dart';
@@ -20,13 +16,9 @@ class PortfolioFavoritesGadget extends StatefulWidget {
   const PortfolioFavoritesGadget({
     super.key,
     required this.searchService,
-    required this.fiiRepository,
-    required this.quoteRepository,
   });
 
   final AssetSearchService searchService;
-  final FiiRepository fiiRepository;
-  final QuoteRepository quoteRepository;
 
   @override
   PortfolioFavoritesGadgetState createState() => PortfolioFavoritesGadgetState();
@@ -158,8 +150,6 @@ class PortfolioFavoritesGadgetState extends State<PortfolioFavoritesGadget> {
                       onTap: () => openAssetDetail(
                         context,
                         asset: asset,
-                        fiiRepository: widget.fiiRepository,
-                        quoteRepository: widget.quoteRepository,
                       ),
                       onRemove: () => favoritesStorage.remove(asset.symbol),
                     );
@@ -185,8 +175,7 @@ class _FavoriteAssetTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final changeColor = asset.isPositive ? AppColors.positive : AppColors.negative;
-    final logoUrl = asset.logoUrl ??
-        (asset.category == MarketCategory.cripto ? cryptoIconPngUrlFor(asset.symbol) : null);
+    final logoUrl = asset.logoUrl;
 
     return SizedBox(
       width: 132,
@@ -258,8 +247,5 @@ String _formatFavoritePrice(AssetItem asset) {
   return switch (asset.category) {
     MarketCategory.stocks || MarketCategory.reits => formatUsd(asset.price),
     MarketCategory.cripto => formatCryptoPrice(asset.price),
-    MarketCategory.moeda => asset.price.toStringAsFixed(4),
-    MarketCategory.indices => formatIndexPoints(asset.price),
-    _ => formatBrl(asset.price),
   };
 }

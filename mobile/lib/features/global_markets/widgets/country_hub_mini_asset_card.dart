@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
+import 'package:rico_investidor/features/crypto/models/crypto_models.dart';
 import 'package:rico_investidor/core/widgets/asset_logo.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/market_category.dart';
@@ -26,16 +27,8 @@ class CountryHubMiniAssetCard extends StatelessWidget {
   }
 
   static String formatPrice(AssetItem asset) {
-    final isBrazilian = asset.category == MarketCategory.acoesBr ||
-        asset.category == MarketCategory.bdr ||
-        asset.category == MarketCategory.etf ||
-        asset.category == MarketCategory.fiis;
-
-    if (isBrazilian) {
-      if (asset.price >= 1000) {
-        return 'R\$ ${asset.price.toStringAsFixed(0)}';
-      }
-      return formatBrl(asset.price);
+    if (asset.category == MarketCategory.cripto) {
+      return formatCryptoPrice(asset.price);
     }
 
     final value = asset.price;

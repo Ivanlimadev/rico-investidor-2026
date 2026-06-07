@@ -22,14 +22,14 @@ FEATURED_US_REITS: tuple[str, ...] = (
 )
 
 US_MARKET_CATEGORIES: tuple[dict[str, str], ...] = (
-    {"slug": "stocks", "label": "Ações EUA", "mic": "XNAS"},
+    {"slug": "stocks", "label": "Ações americanas", "mic": "XNAS"},
     {"slug": "reits", "label": "REITs", "mic": "XNYS"},
 )
 
 US_EXCHANGES: tuple[dict[str, str], ...] = (
-    {"mic": "XNAS", "name": "NASDAQ", "country_code": "US", "country_name": "Estados Unidos"},
-    {"mic": "XNYS", "name": "NYSE", "country_code": "US", "country_name": "Estados Unidos"},
-    {"mic": "ARCX", "name": "NYSE Arca", "country_code": "US", "country_name": "Estados Unidos"},
+    {"mic": "XNAS", "name": "NASDAQ", "country_code": "US", "country_name": "Mercado Americano"},
+    {"mic": "XNYS", "name": "NYSE", "country_code": "US", "country_name": "Mercado Americano"},
+    {"mic": "ARCX", "name": "NYSE Arca", "country_code": "US", "country_name": "Mercado Americano"},
 )
 
 # Segmentos agregados para listagem completa do mercado americano.
@@ -51,7 +51,7 @@ BR_EXCHANGES: tuple[dict[str, str], ...] = (
 PRIORITY_COUNTRY_CODES: tuple[str, ...] = ENABLED_MARKET_COUNTRY_CODES
 
 COUNTRY_DISPLAY_NAMES: dict[str, str] = {
-    "US": "Estados Unidos",
+    "US": "Mercado Americano",
     "BR": "Brasil",
     "CA": "Canadá",
     "DE": "Alemanha",

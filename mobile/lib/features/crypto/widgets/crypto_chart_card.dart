@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/features/crypto/data/crypto_repository.dart';
 import 'package:rico_investidor/features/crypto/models/crypto_models.dart';
-import 'package:rico_investidor/features/fii/utils/fii_quote_chart.dart';
+import 'package:rico_investidor/core/utils/quote_chart.dart';
 import 'package:rico_investidor/features/quotes/widgets/stock_candlestick_chart.dart';
-import 'package:rico_investidor/models/fii_models.dart';
+import 'package:rico_investidor/models/market_series_models.dart';
 
 class CryptoChartPreset {
   const CryptoChartPreset({required this.id, required this.label});
@@ -74,10 +74,10 @@ class _CryptoChartCardState extends State<CryptoChartCard> {
     });
   }
 
-  List<FiiCandleBar> _toFiiBars(List<CryptoCandleDto> candles) {
+  List<QuoteCandleBar> _toFiiBars(List<CryptoCandleDto> candles) {
     return candles
         .map(
-          (candle) => FiiCandleBar(
+          (candle) => QuoteCandleBar(
             tradeDate: candle.date,
             open: candle.open,
             high: candle.high,
@@ -187,7 +187,7 @@ class _CryptoChartCardState extends State<CryptoChartCard> {
                       child: _candlestick
                           ? StockCandlestickChart(
                               bars: _toFiiBars(sorted),
-                              period: FiiQuotePeriod.month1,
+                              period: QuotePeriod.month1,
                               selectedIndex: _selectedIndex,
                               onSelected: (index) => setState(() => _selectedIndex = index),
                             )

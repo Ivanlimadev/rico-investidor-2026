@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
 import 'package:rico_investidor/features/global_markets/utils/us_quote_enrichment.dart';
-import 'package:rico_investidor/features/quotes/data/quote_api_client.dart';
+import 'package:rico_investidor/features/quotes/models/market_quote_dto.dart';
 
 void main() {
   test('reconcileQuote skips trailing zero candles from Marketstack', () {

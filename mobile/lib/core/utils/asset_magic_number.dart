@@ -1,7 +1,7 @@
 import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
 import 'package:rico_investidor/features/quotes/models/stock_quote_detail.dart';
 import 'package:rico_investidor/models/asset_item.dart';
-import 'package:rico_investidor/models/fii_models.dart';
+import 'package:rico_investidor/models/market_series_models.dart';
 import 'package:rico_investidor/models/market_category.dart';
 
 class AssetMagicNumberResult {
@@ -20,7 +20,7 @@ class AssetMagicNumberResult {
 
 AssetMagicNumberResult? computeAssetMagicNumber({
   required double price,
-  List<FiiDistributionPayment> payments = const [],
+  List<DistributionPayment> payments = const [],
   double? ttmPerShare,
   List<double> historyMonthlyValues = const [],
   double? dividendYieldPercent,
@@ -49,28 +49,6 @@ AssetMagicNumberResult? computeAssetMagicNumber({
   );
 }
 
-AssetMagicNumberResult? magicNumberFromFii({
-  required FiiDetail detail,
-  FiiDistributions? distributions,
-  List<FiiHistoryPoint> history = const [],
-}) {
-  final price = detail.closePrice;
-  if (price == null || price <= 0) return null;
-
-  final historyValues = history
-      .where((p) => p.valuePerShare != null && p.valuePerShare! > 0)
-      .map((p) => p.valuePerShare!)
-      .toList();
-
-  return computeAssetMagicNumber(
-    price: price,
-    payments: distributions?.payments ?? const [],
-    ttmPerShare: distributions?.ttmPerShare,
-    historyMonthlyValues: historyValues,
-    dividendYieldPercent: detail.dividendYieldTtm,
-  );
-}
-
 AssetMagicNumberResult? magicNumberFromStock({
   required double price,
   required StockDividendsDto dividends,
@@ -93,7 +71,7 @@ AssetMagicNumberResult? magicNumberFromGlobalStock({
   final payments = dividends
       .where((item) => !item.isProjected && item.amount > 0)
       .map(
-        (item) => FiiDistributionPayment(
+        (item) => DistributionPayment(
           referenceDate: item.effectiveComDate ?? item.effectiveExDate,
           paymentDate: item.effectivePaymentDate ?? item.effectiveExDate,
           valuePerShare: item.amount,
@@ -119,15 +97,15 @@ AssetMagicNumberResult? magicNumberFromAssetItem(AssetItem asset) {
 }
 
 String magicNumberUnitLabel(MarketCategory category) {
-  return category == MarketCategory.fiis ? 'cota' : 'ação';
+  return category == MarketCategory.reits ? 'cota' : 'ação';
 }
 
 String magicNumberUnitPlural(MarketCategory category) {
-  return category == MarketCategory.fiis ? 'cotas' : 'ações';
+  return category == MarketCategory.reits ? 'cotas' : 'ações';
 }
 
 double? _estimateMonthlyDividend({
-  required List<FiiDistributionPayment> payments,
+  required List<DistributionPayment> payments,
   required double? ttmPerShare,
   required List<double> historyMonthlyValues,
   required double price,
@@ -164,7 +142,7 @@ double? _estimateMonthlyDividend({
 }
 
 String? _dividendSource({
-  required List<FiiDistributionPayment> payments,
+  required List<DistributionPayment> payments,
   required double? ttmPerShare,
   required List<double> historyMonthlyValues,
   required double? dividendYieldPercent,

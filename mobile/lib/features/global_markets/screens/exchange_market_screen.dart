@@ -4,11 +4,9 @@ import 'package:rico_investidor/core/search/asset_search_config.dart';
 import 'package:rico_investidor/core/search/unified_asset_search.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
 import 'package:rico_investidor/features/global_markets/widgets/us_market_quote_list_tile.dart';
-import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
 import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
 import 'package:rico_investidor/features/global_markets/screens/global_stock_detail_screen.dart';
-import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/market_category.dart';
 import 'package:rico_investidor/navigation/open_asset_detail.dart';
@@ -19,8 +17,6 @@ class ExchangeMarketScreen extends StatefulWidget {
     required this.exchangeMic,
     required this.exchangeName,
     required this.repository,
-    required this.fiiRepository,
-    required this.quoteRepository,
     this.countryCode,
   });
 
@@ -28,8 +24,6 @@ class ExchangeMarketScreen extends StatefulWidget {
   final String exchangeName;
   final String? countryCode;
   final GlobalMarketRepository repository;
-  final FiiRepository fiiRepository;
-  final QuoteRepository quoteRepository;
 
   @override
   State<ExchangeMarketScreen> createState() => _ExchangeMarketScreenState();
@@ -159,8 +153,6 @@ class _ExchangeMarketScreenState extends State<ExchangeMarketScreen> {
     openAssetDetail(
       context,
       asset: asset,
-      fiiRepository: widget.fiiRepository,
-      quoteRepository: widget.quoteRepository,
     );
   }
 
@@ -227,8 +219,6 @@ class _ExchangeMarketScreenState extends State<ExchangeMarketScreen> {
     if (_searchSnapshot.active) {
       return UnifiedAssetResultsBody(
         snapshot: _searchSnapshot,
-        fiiRepository: widget.fiiRepository,
-        quoteRepository: widget.quoteRepository,
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
       );
     }

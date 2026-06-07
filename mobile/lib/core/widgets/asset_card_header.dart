@@ -16,6 +16,7 @@ class AssetCardHeader extends StatelessWidget {
     this.logoSize = kAssetLogoSizeList,
     this.nameMaxLines = 2,
     this.trailing,
+    this.useTickerBadge = false,
   });
 
   final String symbol;
@@ -24,18 +25,25 @@ class AssetCardHeader extends StatelessWidget {
   final double logoSize;
   final int nameMaxLines;
   final Widget? trailing;
+  final bool useTickerBadge;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        AssetLogo(
-          symbol: symbol,
-          logoUrl: logoUrl,
-          size: logoSize,
-          borderRadius: kAssetLogoBorderRadius,
-        ),
+        useTickerBadge
+            ? AssetTickerBadge(
+                symbol: symbol,
+                size: logoSize,
+                borderRadius: kAssetLogoBorderRadius,
+              )
+            : AssetLogo(
+                symbol: symbol,
+                logoUrl: logoUrl,
+                size: logoSize,
+                borderRadius: kAssetLogoBorderRadius,
+              ),
         const SizedBox(width: 12),
         Expanded(
           child: Column(

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/widgets/asset_country_flag.dart';
-import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
 import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
 import 'package:rico_investidor/features/global_markets/screens/country_market_screen.dart';
@@ -8,7 +7,6 @@ import 'package:rico_investidor/features/global_markets/screens/global_stock_com
 import 'package:rico_investidor/features/global_markets/widgets/market_hub_section_grid.dart';
 import 'package:rico_investidor/core/widgets/market_heatmap/stock_heatmap_block.dart';
 import 'package:rico_investidor/features/home/screens/us_market_hub_screen.dart';
-import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/market_category.dart';
 import 'package:rico_investidor/navigation/open_asset_detail.dart';
@@ -19,16 +17,12 @@ class CountryHubScreen extends StatefulWidget {
     required this.countryCode,
     required this.countryName,
     required this.repository,
-    required this.fiiRepository,
-    required this.quoteRepository,
     this.exchangeCount,
   });
 
   final String countryCode;
   final String countryName;
   final GlobalMarketRepository repository;
-  final FiiRepository fiiRepository;
-  final QuoteRepository quoteRepository;
   final int? exchangeCount;
 
   @override
@@ -68,8 +62,6 @@ class _CountryHubScreenState extends State<CountryHubScreen> {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => UsMarketHubScreen(
-          fiiRepository: widget.fiiRepository,
-          quoteRepository: widget.quoteRepository,
           globalMarketRepository: widget.repository,
         ),
       ),
@@ -88,8 +80,6 @@ class _CountryHubScreenState extends State<CountryHubScreen> {
     openAssetDetail(
       context,
       asset: asset,
-      fiiRepository: widget.fiiRepository,
-      quoteRepository: widget.quoteRepository,
     );
   }
 
@@ -189,6 +179,10 @@ class _CountryHubScreenState extends State<CountryHubScreen> {
                       volumeLabel: 'NASDAQ · volume',
                       mapAsset: (quote) => quote.toUsAssetItem(),
                       onTap: _openAsset,
+                      resolveRefreshSeconds: () async {
+                        final caps = await widget.repository.getCapabilities();
+                        return caps.realtimeEnabled ? (caps.refreshSeconds ?? 60) : null;
+                      },
                     ),
                   ),
                 SliverPadding(

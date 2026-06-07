@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
-import 'package:rico_investidor/features/quotes/data/quote_api_client.dart';
+import 'package:rico_investidor/features/quotes/models/market_quote_dto.dart';
 
 class GlobalStockMarketStatsCard extends StatelessWidget {
   const GlobalStockMarketStatsCard({super.key, required this.meta});

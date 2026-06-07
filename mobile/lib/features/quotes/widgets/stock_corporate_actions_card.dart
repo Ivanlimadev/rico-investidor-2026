@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:rico_investidor/features/fii/utils/fii_payments.dart';
+import 'package:rico_investidor/core/utils/dividend_payment_format.dart';
 import 'package:rico_investidor/features/quotes/models/stock_quote_detail.dart';
 
 class StockCorporateActionsCard extends StatelessWidget {

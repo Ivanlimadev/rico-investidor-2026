@@ -2,14 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
+import 'package:rico_investidor/core/markets/market_visibility.dart';
 import 'package:rico_investidor/core/markets/supported_market_countries.dart';
 import 'package:rico_investidor/core/search/asset_search_config.dart';
-import 'package:rico_investidor/core/utils/asset_logo_url.dart';
 import 'package:rico_investidor/core/widgets/asset_logo.dart';
 import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
 import 'package:rico_investidor/features/global_markets/widgets/market_hub_section_grid.dart';
 import 'package:rico_investidor/features/home/data/preferred_market_preloader.dart';
-import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/portfolio/widgets/add_asset_circle_grid.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/services/favorites_storage.dart';
@@ -23,12 +22,10 @@ class AddAssetSuggestions extends StatefulWidget {
   const AddAssetSuggestions({
     super.key,
     required this.onAssetTap,
-    this.quoteRepository,
     this.globalMarketRepository,
   });
 
   final ValueChanged<AssetItem> onAssetTap;
-  final QuoteRepository? quoteRepository;
   final GlobalMarketRepository? globalMarketRepository;
 
   @override
@@ -45,7 +42,6 @@ class _AddAssetSuggestionsState extends State<AddAssetSuggestions> {
   StreamSubscription<void>? _recentSubscription;
   int _loadGeneration = 0;
 
-  QuoteRepository get _quoteRepository => widget.quoteRepository ?? quoteRepository;
   GlobalMarketRepository get _globalMarketRepository =>
       widget.globalMarketRepository ?? globalMarketRepository;
 
@@ -109,21 +105,23 @@ class _AddAssetSuggestionsState extends State<AddAssetSuggestions> {
   List<AssetItem> _enrichStoredAssets(Iterable<AssetItem> items) {
     return items
         .map(
-          (item) => AssetItem(
+          (item) {
+            final category = resolveMarketCategory(
+              symbol: item.symbol,
+              stored: item.category,
+            );
+            return AssetItem(
             symbol: item.symbol,
             name: item.name,
-            category: item.category,
+            category: category,
             price: item.price,
             changePercent: item.changePercent,
-            logoUrl: resolveAssetLogoUrl(
-              item.symbol,
-              item.logoUrl,
-              isFii: looksLikeFiiTicker(item.symbol),
-            ),
+            logoUrl: item.logoUrl,
             dividendYield12m: item.dividendYield12m,
             priceToBook: item.priceToBook,
             exchangeMic: item.exchangeMic,
-          ),
+          );
+          },
         )
         .toList();
   }
@@ -138,7 +136,6 @@ class _AddAssetSuggestionsState extends State<AddAssetSuggestions> {
       final sections = await preferredMarketPreloader
           .load(
             preference: preferredMarket,
-            quoteRepository: _quoteRepository,
             globalMarketRepository: _globalMarketRepository,
           )
           .timeout(_featuredLoadTimeout);
@@ -156,18 +153,6 @@ class _AddAssetSuggestionsState extends State<AddAssetSuggestions> {
         assets = section.assets.take(kMaxSearchFavoritesDisplay).toList();
       }
     } catch (_) {}
-
-    if (assets.isEmpty && preferredMarket.isBrazil) {
-      try {
-        final stocks = await _quoteRepository
-            .featuredStocks()
-            .timeout(_featuredLoadTimeout);
-        if (stocks.isNotEmpty) {
-          assets = stocks.take(kMaxSearchFavoritesDisplay).toList();
-        }
-      } catch (_) {}
-    }
-
     return (title: title, assets: assets);
   }
 

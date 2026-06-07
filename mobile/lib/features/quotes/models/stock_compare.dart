@@ -1,5 +1,5 @@
-import 'package:rico_investidor/features/quotes/data/quote_api_client.dart';
 import 'package:rico_investidor/features/quotes/models/stock_quote_detail.dart';
+import 'package:rico_investidor/features/quotes/models/market_quote_dto.dart';
 
 class StockCompareDividendsDto {
   const StockCompareDividendsDto({

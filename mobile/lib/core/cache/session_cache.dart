@@ -14,9 +14,9 @@ class SessionCache<T> {
     return _value;
   }
 
-  void set(T value) {
+  void set(T value, {Duration? ttlOverride}) {
     _value = value;
-    _expiresAt = DateTime.now().add(ttl);
+    _expiresAt = DateTime.now().add(ttlOverride ?? ttl);
   }
 
   void clear() {

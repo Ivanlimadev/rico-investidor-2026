@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
-import 'package:rico_investidor/features/fii/widgets/fii_history_charts.dart';
 import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
 import 'package:rico_investidor/features/global_markets/utils/global_stock_dividend_utils.dart';
-import 'package:rico_investidor/models/fii_models.dart';
 
 class GlobalStockDividendsSection extends StatelessWidget {
   const GlobalStockDividendsSection({
@@ -24,16 +22,6 @@ class GlobalStockDividendsSection extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    final annual = summary.annualTotals
-        .map(
-          (row) => FiiDistributionYear(
-            year: row.year,
-            totalPerShare: row.total,
-            payments: null,
-          ),
-        )
-        .toList();
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -48,17 +36,6 @@ class GlobalStockDividendsSection extends StatelessWidget {
           _NextDividendCard(
             dividend: summary.nextDividend!,
             frequencyLabel: summary.frequencyLabel,
-          ),
-        ],
-        if (annual.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          FiiDistributionsChart(
-            annualSummary: annual,
-            globalDividends: dividends,
-            title: 'Dividendos pagos por ano',
-            valueFormatter: formatUsd,
-            maxYears: 8,
-            perShareLabel: 'ação',
           ),
         ],
         if (summary.upcoming.isNotEmpty) ...[

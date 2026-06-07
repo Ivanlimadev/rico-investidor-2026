@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
+import 'package:rico_investidor/core/markets/market_visibility.dart';
 import 'package:rico_investidor/core/utils/portfolio_balance.dart';
 import 'package:rico_investidor/models/dividend_payment.dart';
 import 'package:rico_investidor/models/holding_currency.dart';
@@ -25,22 +27,67 @@ class PortfolioState {
   final AssetSearchService searchService;
   double? usdBrlRate;
 
-  int _idCounter = 0;
-  String _nextId() => 'h-${++_idCounter}';
-  String _nextDividendId() => 'd-${++_idCounter}';
+  /// Corrige moeda persistida errada (ex.: ação B3 salva como US$).
+  static List<PortfolioHolding> repairHoldingsCurrencies(
+    List<PortfolioHolding> holdings, {
+    required AssetSearchService searchService,
+  }) {
+    return holdings.map((holding) {
+      final inferred = searchService.categoryForSymbol(holding.symbol);
+      final category = resolveMarketCategory(
+        symbol: holding.symbol,
+        stored: holding.category,
+        inferred: inferred,
+      );
+      final correct = resolvedHoldingCurrency(
+        holding.copyWith(category: category),
+        category: category,
+      );
+      final needsCurrency = holding.currency != correct;
+      final needsCategory = holding.category != category;
+      if (!needsCurrency && !needsCategory) return holding;
+      return holding.copyWith(
+        currency: correct,
+        category: category,
+      );
+    }).toList();
+  }
+
+  static const _uuid = Uuid();
+  String _nextId() => _uuid.v4();
+  String _nextDividendId() => _uuid.v4();
+
+  MarketCategory? categoryForHolding(PortfolioHolding holding) {
+    return resolveMarketCategory(
+      symbol: holding.symbol,
+      stored: holding.category,
+      inferred: searchService.categoryForSymbol(holding.symbol),
+    );
+  }
 
   PortfolioBalanceBreakdown computeBalanceBreakdown() => computePortfolioBalanceBreakdown(
         holdings: holdings,
-        categoryResolver: searchService.categoryForSymbol,
+        categoryResolver: categoryForHolding,
         usdBrlRate: usdBrlRate,
       );
 
-  /// Patrimônio na moeda preferida do usuário (BR → R$, US → US$).
-  double totalBalanceFor(MarketPreference preference) =>
-      computeBalanceBreakdown().primaryTotal(preference);
+  /// Patrimônio total em US$.
+  double totalBalanceFor(MarketPreference preference) => patrimonioTotalUsd;
 
-  /// Legado — total em US$. Prefira [totalBalanceFor].
-  double get totalBalance => computeBalanceBreakdown().totalUsd;
+  double allocationTotalFor(MarketPreference preference) =>
+      computeBalanceBreakdown().allocationTotal(
+        holdings,
+        preference: preference,
+        categoryResolver: categoryForHolding,
+      );
+
+  /// Legado — total em reais. Evite em UI; prefira [patrimonioTotalUsd].
+  double get patrimonioTotalBrl => computeBalanceBreakdown().totalBrl;
+
+  /// Patrimônio total da carteira em dólares.
+  double get patrimonioTotalUsd => computeBalanceBreakdown().totalUsd;
+
+  double get totalBalance => patrimonioTotalUsd;
 
   double _dividendInCurrency(DividendPayment payment, HoldingCurrency target) =>
       dividendAmountInCurrency(
@@ -49,21 +96,54 @@ class PortfolioState {
         usdBrlRate: usdBrlRate,
       );
 
+  /// Total de proventos do mês (pagamento ou data com) em reais.
+  double get monthlyDividendsTotalBrl => dividendsThisMonthDetailed().fold(
+        0.0,
+        (sum, payment) => sum + _dividendInCurrency(payment, HoldingCurrency.brl),
+      );
+
+  /// Proventos do mês só de ativos internacionais, em US$.
+  double get monthlyDividendsInternationalUsd => dividendsThisMonthDetailed()
+      .where(_isInternationalDividend)
+      .fold(0.0, (sum, payment) => sum + payment.amount);
+
   double monthlyDividendsFor(MarketPreference preference) {
-    final target = preference.isBrazil ? HoldingCurrency.brl : HoldingCurrency.usd;
-    final now = DateTime.now();
-    return dividends
-        .where((d) => d.date.year == now.year && d.date.month == now.month)
-        .fold(0.0, (sum, d) => sum + _dividendInCurrency(d, target));
+    return dividendsThisMonthDetailed().fold(
+      0.0,
+      (sum, payment) => sum + _dividendInCurrency(payment, HoldingCurrency.usd),
+    );
   }
 
-  double previousMonthDividendsFor(MarketPreference preference) {
-    final target = preference.isBrazil ? HoldingCurrency.brl : HoldingCurrency.usd;
+  double previousMonthDividendsTotalBrl() {
     final now = DateTime.now();
     final prev = DateTime(now.year, now.month - 1);
     return dividends
-        .where((d) => d.date.year == prev.year && d.date.month == prev.month)
-        .fold(0.0, (sum, d) => sum + _dividendInCurrency(d, target));
+        .where(
+          (d) =>
+              _inCurrentMonth(d.date, prev) ||
+              (d.comDate != null && _inCurrentMonth(d.comDate!, prev)),
+        )
+        .fold(0.0, (sum, d) => sum + _dividendInCurrency(d, HoldingCurrency.brl));
+  }
+
+  double previousMonthDividendsFor(MarketPreference preference) {
+    final now = DateTime.now();
+    final prev = DateTime(now.year, now.month - 1);
+    return dividends
+        .where(
+          (d) =>
+              _inCurrentMonth(d.date, prev) ||
+              (d.comDate != null && _inCurrentMonth(d.comDate!, prev)),
+        )
+        .fold(0.0, (sum, d) => sum + _dividendInCurrency(d, HoldingCurrency.usd));
+  }
+
+  bool _isInternationalDividend(DividendPayment payment) {
+    for (final holding in holdings) {
+      if (holding.symbol != payment.symbol) continue;
+      return isInternationalUsdHolding(holding, category: categoryForHolding(holding));
+    }
+    return holdingCurrencyForSymbol(payment.symbol) == HoldingCurrency.usd;
   }
 
   PortfolioSummary buildSummary(MarketPreference preference) {
@@ -73,11 +153,11 @@ class PortfolioState {
     final divChange = prev == 0 ? (current > 0 ? 100.0 : 0.0) : ((current - prev) / prev) * 100;
 
     return PortfolioSummary(
-      totalBalance: breakdown.primaryTotal(preference),
+      totalBalance: breakdown.totalUsd,
       monthlyDividends: current,
-      portfolioChangePercent: breakdown.primaryProfitPercent(preference),
+      portfolioChangePercent: breakdown.combinedProfitPercent,
       dividendsVsLastMonthPercent: divChange,
-      displayCurrency: preference.isBrazil ? HoldingCurrency.brl : HoldingCurrency.usd,
+      displayCurrency: HoldingCurrency.usd,
     );
   }
 
@@ -89,7 +169,7 @@ class PortfolioState {
     var outros = 0.0;
 
     for (final holding in holdings) {
-      final category = searchService.categoryForSymbol(holding.symbol);
+      final category = categoryForHolding(holding);
       final value = breakdown.allocationWeight(
         holding,
         preference: preference,
@@ -102,7 +182,11 @@ class PortfolioState {
       }
     }
 
-    final total = breakdown.primaryTotal(preference);
+    final total = breakdown.allocationTotal(
+      holdings,
+      preference: preference,
+      categoryResolver: categoryForHolding,
+    );
     if (total <= 0) return const [];
 
     final slices = <PortfolioAllocationSlice>[];
@@ -148,8 +232,12 @@ class PortfolioState {
   }) {
     final resolvedPrice = currentPrice ?? averagePrice;
     final resolvedChange = changePercent ?? 0;
-    final resolvedCurrency = currency ??
-        (category != null ? holdingCurrencyForCategory(category) : holdingCurrencyForSymbol(symbol));
+    final resolvedCategory = resolveMarketCategory(
+      symbol: symbol,
+      stored: category,
+      inferred: searchService.categoryForSymbol(symbol),
+    );
+    final resolvedCurrency = currency ?? holdingCurrencyForCategory(resolvedCategory);
 
     final existingIndex = holdings.indexWhere((h) => h.symbol == symbol);
     if (existingIndex >= 0) {
@@ -162,6 +250,8 @@ class PortfolioState {
         averagePrice: avg,
         currentPrice: resolvedPrice,
         changePercent: resolvedChange,
+        currency: resolvedCurrency,
+        category: resolvedCategory,
       );
     } else {
       holdings.add(
@@ -174,6 +264,7 @@ class PortfolioState {
           currentPrice: resolvedPrice,
           changePercent: resolvedChange,
           currency: resolvedCurrency,
+          category: resolvedCategory,
         ),
       );
     }
@@ -236,12 +327,28 @@ class PortfolioState {
       ..sort((a, b) => b.date.compareTo(a.date));
   }
 
+  /// Proventos com pagamento ou data com no mês corrente (inclui previstos).
+  List<DividendPayment> dividendsThisMonthDetailed() {
+    final now = DateTime.now();
+    return dividends
+        .where((d) => _inCurrentMonth(d.date, now) || (d.comDate != null && _inCurrentMonth(d.comDate!, now)))
+        .toList()
+      ..sort((a, b) {
+        final aKey = a.comDate ?? a.date;
+        final bKey = b.comDate ?? b.date;
+        return aKey.compareTo(bKey);
+      });
+  }
+
+  static bool _inCurrentMonth(DateTime date, DateTime now) =>
+      date.year == now.year && date.month == now.month;
+
   /// Gráfico Mês — total de proventos em cada mês do ano corrente.
   List<DividendChartPoint> chartPointsFor(
     DividendChartGranularity granularity,
     MarketPreference preference,
   ) {
-    final target = preference.isBrazil ? HoldingCurrency.brl : HoldingCurrency.usd;
+    final target = HoldingCurrency.usd;
     final now = DateTime.now();
     return switch (granularity) {
       DividendChartGranularity.month => _aggregateMonthsOfYear(now, target),
@@ -303,26 +410,7 @@ class PortfolioState {
 PortfolioState createInitialPortfolioState({AssetSearchService? searchService}) {
   return PortfolioState(
     searchService: searchService,
-    holdings: const [
-      PortfolioHolding(
-        id: 'h-1',
-        symbol: 'PETR4',
-        name: 'Petrobras PN',
-        quantity: 100,
-        averagePrice: 36.50,
-        currentPrice: 38.42,
-        currency: HoldingCurrency.brl,
-      ),
-      PortfolioHolding(
-        id: 'h-2',
-        symbol: 'HGLG11',
-        name: 'CSHG Logística',
-        quantity: 30,
-        averagePrice: 158.00,
-        currentPrice: 162.80,
-        currency: HoldingCurrency.brl,
-      ),
-    ],
+    holdings: const [],
     dividends: const [],
-  ).._idCounter = 2;
+  );
 }

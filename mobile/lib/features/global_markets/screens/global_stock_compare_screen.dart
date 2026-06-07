@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:rico_investidor/core/utils/quote_refresh_timer.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
 import 'package:rico_investidor/features/quotes/models/stock_compare.dart';
@@ -24,26 +27,42 @@ class _GlobalStockCompareScreenState extends State<GlobalStockCompareScreen> {
   List<StockCompareItemDto> _items = [];
   bool _loading = false;
   String? _error;
+  QuoteRefreshTimer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
     _tickers.addAll(widget.initialTickers.take(3).map((t) => t.toUpperCase()));
     if (_tickers.isNotEmpty) _load();
+    _configureAutoRefresh();
   }
 
   @override
   void dispose() {
+    _refreshTimer?.stop();
     _controller.dispose();
     super.dispose();
   }
 
-  Future<void> _load() async {
+  Future<void> _configureAutoRefresh() async {
+    try {
+      final caps = await widget.repository.getCapabilities();
+      if (!caps.realtimeEnabled) return;
+      _refreshTimer = QuoteRefreshTimer(onTick: () => _load(silent: true))..start(
+            refreshSeconds: caps.refreshSeconds ?? 60,
+            enabled: true,
+          );
+    } catch (_) {}
+  }
+
+  Future<void> _load({bool silent = false}) async {
     if (_tickers.isEmpty) return;
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
 
     try {
       final response = await widget.repository.compareStocks(_tickers);
@@ -54,10 +73,12 @@ class _GlobalStockCompareScreenState extends State<GlobalStockCompareScreen> {
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _error = e.toString();
-        _loading = false;
-      });
+      if (!silent) {
+        setState(() {
+          _error = e.toString();
+          _loading = false;
+        });
+      }
     }
   }
 
@@ -82,7 +103,7 @@ class _GlobalStockCompareScreenState extends State<GlobalStockCompareScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Comparar ações EUA'),
+        title: const Text('Comparar ações americanas'),
         actions: const [ShellHomeButton()],
       ),
       body: ListView(

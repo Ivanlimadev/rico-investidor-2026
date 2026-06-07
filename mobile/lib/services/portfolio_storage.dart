@@ -33,6 +33,16 @@ class PortfolioStorage {
     );
   }
 
+  Future<void> clear() async {
+    if (_memoryStore != null) {
+      _memoryStore!.remove(_holdingsKey);
+      _memoryStore!.remove(_dividendsKey);
+      return;
+    }
+    await _storage.delete(key: _holdingsKey);
+    await _storage.delete(key: _dividendsKey);
+  }
+
   Future<({List<PortfolioHolding> holdings, List<DividendPayment> dividends})?> load() async {
     final secureHoldings = await _readSecure(_holdingsKey);
     if (secureHoldings != null) {

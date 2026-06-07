@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rico_investidor/core/utils/asset_magic_number.dart';
 import 'package:rico_investidor/models/asset_item.dart';
-import 'package:rico_investidor/models/fii_models.dart';
+import 'package:rico_investidor/models/market_series_models.dart';
 import 'package:rico_investidor/models/market_category.dart';
 
 void main() {
@@ -10,11 +10,11 @@ void main() {
       final result = computeAssetMagicNumber(
         price: 100,
         payments: [
-          const FiiDistributionPayment(
+          const DistributionPayment(
             referenceDate: '2025-01',
             valuePerShare: 1,
           ),
-          const FiiDistributionPayment(
+          const DistributionPayment(
             referenceDate: '2025-02',
             valuePerShare: 1.5,
           ),
@@ -62,9 +62,9 @@ void main() {
   group('magicNumberFromAssetItem', () {
     test('computes from dividend yield on asset item', () {
       const asset = AssetItem(
-        symbol: 'PETR4',
-        name: 'Petrobras',
-        category: MarketCategory.acoesBr,
+        symbol: 'AAPL',
+        name: 'Apple',
+        category: MarketCategory.stocks,
         price: 100,
         changePercent: 1,
         dividendYield12m: 12,
@@ -78,9 +78,9 @@ void main() {
   });
 
   group('magicNumberUnitLabel', () {
-    test('uses cota for fiis and ação for stocks', () {
-      expect(magicNumberUnitLabel(MarketCategory.fiis), 'cota');
-      expect(magicNumberUnitLabel(MarketCategory.acoesBr), 'ação');
+    test('uses cota for reits and ação for stocks', () {
+      expect(magicNumberUnitLabel(MarketCategory.reits), 'cota');
+      expect(magicNumberUnitLabel(MarketCategory.stocks), 'ação');
       expect(magicNumberUnitPlural(MarketCategory.stocks), 'ações');
     });
   });

@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:rico_investidor/core/markets/market_visibility.dart';
 import 'package:rico_investidor/core/search/asset_search_config.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/market_category.dart';
+import 'package:rico_investidor/services/portfolio_data_migration.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const _recentAssetsKey = 'recent_searched_assets_v1';
@@ -23,10 +25,11 @@ class RecentSearchedAssetsStorage {
 
     try {
       final decoded = jsonDecode(raw) as List<dynamic>;
-      return decoded
+      final items = decoded
           .map((item) => _assetFromJson(item as Map<String, dynamic>))
           .whereType<AssetItem>()
           .toList();
+      return PortfolioDataMigration.migrateAssets(items);
     } catch (_) {
       return [];
     }
@@ -104,7 +107,7 @@ class RecentSearchedAssetsStorage {
     return AssetItem(
       symbol: symbol,
       name: json['name'] as String? ?? symbol,
-      category: category ?? MarketCategory.acoesBr,
+      category: resolveMarketCategory(symbol: symbol, stored: category),
       price: (json['price'] as num?)?.toDouble() ?? 0,
       changePercent: (json['change_percent'] as num?)?.toDouble() ?? 0,
       logoUrl: json['logo_url'] as String?,

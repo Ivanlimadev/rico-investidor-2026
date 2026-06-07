@@ -1,6 +1,6 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
-import 'package:rico_investidor/models/fii_models.dart';
+import 'package:rico_investidor/models/market_series_models.dart';
 
 /// Gráfico de linha minimalista (estilo Twelve Data): sem eixo Y, curva suave, destaque no último ponto.
 class SimpleQuoteLineChart extends StatelessWidget {
@@ -14,7 +14,7 @@ class SimpleQuoteLineChart extends StatelessWidget {
     this.onSelectedIndex,
   });
 
-  final List<FiiCandleBar> bars;
+  final List<QuoteCandleBar> bars;
   final double height;
   final Color? lineColor;
   final String Function(double value) formatPrice;

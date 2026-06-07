@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
-import 'package:rico_investidor/core/markets/supported_market_countries.dart';
+import 'package:rico_investidor/features/dividends/screens/portfolio_month_dividends_screen.dart';
 import 'package:rico_investidor/features/dividends/widgets/dividend_compact_card.dart';
 import 'package:rico_investidor/features/dividends/widgets/dividend_period_chart.dart';
 import 'package:rico_investidor/models/dividend_payment.dart';
-import 'package:rico_investidor/models/holding_currency.dart';
 import 'package:rico_investidor/services/market_preference_storage.dart';
 import 'package:rico_investidor/services/portfolio_dividend_service.dart';
 import 'package:rico_investidor/services/portfolio_storage.dart';
@@ -105,13 +104,9 @@ class _PortfolioDividendsSectionState extends State<PortfolioDividendsSection> {
 
   @override
   Widget build(BuildContext context) {
-    final currency = widget.preferredMarket.isBrazil
-        ? HoldingCurrency.brl
-        : HoldingCurrency.usd;
     final monthTotal = widget.portfolio.monthlyDividendsFor(widget.preferredMarket);
-    final monthItems = widget.portfolio.dividendsThisMonth();
+    final monthItems = widget.portfolio.dividendsThisMonthDetailed();
     final chartPoints = widget.portfolio.chartPointsFor(_granularity, widget.preferredMarket);
-    final breakdown = widget.portfolio.computeBalanceBreakdown();
     final chartTitle = _granularity == DividendChartGranularity.month
         ? 'Total por mês'
         : 'Total por ano';
@@ -153,7 +148,7 @@ class _PortfolioDividendsSectionState extends State<PortfolioDividendsSection> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  currency.format(monthTotal),
+                  formatUsd(monthTotal),
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                         fontWeight: FontWeight.w700,
                         color: AppColors.primary,
@@ -161,25 +156,11 @@ class _PortfolioDividendsSectionState extends State<PortfolioDividendsSection> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  widget.preferredMarket.isBrazil
-                      ? 'Total de proventos × quantidade na carteira. BDRs e B3 em reais; '
-                          'ativos EUA convertidos pelo USD/BRL.'
-                      : 'Dividend totals × shares held. US assets in US\$; '
-                          'Brazil holdings converted at USD/BRL.',
+                  'Total estimado em dólares: provento por ação × quantidade na carteira.',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
                       ),
                 ),
-                if (breakdown.hasInternational && widget.preferredMarket.isBrazil) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    'Internacional (US\$): ${formatUsd(widget.portfolio.monthlyDividendsFor(defaultMarketPreference))}',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: const Color(0xFF1565C0),
-                        ),
-                  ),
-                ],
               ],
             ),
           ),
@@ -225,9 +206,23 @@ class _PortfolioDividendsSectionState extends State<PortfolioDividendsSection> {
           ),
         ),
         const SizedBox(height: 20),
-        Text(
-          'Proventos deste mês',
-          style: Theme.of(context).textTheme.titleSmall,
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Proventos deste mês',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+            ),
+            TextButton(
+              onPressed: () => openPortfolioMonthDividendsScreen(
+                context,
+                portfolio: widget.portfolio,
+                onPortfolioChanged: widget.onPortfolioChanged,
+              ),
+              child: const Text('Ver detalhes'),
+            ),
+          ],
         ),
         const SizedBox(height: 10),
         if (monthItems.isEmpty)

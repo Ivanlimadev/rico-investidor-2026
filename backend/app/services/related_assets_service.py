@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from app.clients.brapi.models import MarketQuote
 from app.clients.marketstack.client import MarketstackClient
 from app.clients.marketstack.stock_mapper import map_eod_quotes_with_change
 from app.core.exceptions import UpstreamError
@@ -9,7 +8,6 @@ from app.domain.related_assets.models import RelatedAssetItem, RelatedAssetsResp
 from app.domain.related_assets.resolver import normalize_ticker, resolve_peer_candidates
 from app.services.crypto_service import crypto_service
 from app.services.global_market_service import global_market_service
-from app.services.quote_service import quote_service
 
 
 class RelatedAssetsService:
@@ -47,11 +45,9 @@ class RelatedAssetsService:
 
         if market_slug == "cripto":
             items = await self._fetch_crypto(symbols, reason_by_symbol, category="cripto")
-        elif market_slug in {"stocks", "reits"}:
+        else:
             category = "reits" if market_slug == "reits" else "stocks"
             items = await self._fetch_us(symbols, reason_by_symbol, category=category)
-        else:
-            items = await self._fetch_br(symbols, reason_by_symbol, market=market_slug)
 
         return RelatedAssetsResponse(
             ticker=normalized,
@@ -60,24 +56,6 @@ class RelatedAssetsService:
             count=min(len(items), safe_limit),
             market=market,
         )
-
-    async def _fetch_br(
-        self,
-        symbols: list[str],
-        reason_by_symbol: dict[str, str],
-        *,
-        market: str,
-    ) -> list[RelatedAssetItem]:
-        try:
-            batch = await quote_service.get_quotes_batch(symbols)
-        except UpstreamError:
-            return []
-
-        category = market if market in {"acoes_br", "bdr", "etf", "etf_br", "fiis"} else "acoes_br"
-        items: list[RelatedAssetItem] = []
-        for quote in batch.items:
-            items.append(_quote_to_related(quote, reason_by_symbol.get(quote.symbol, ""), category=category))
-        return _order_by_symbols(symbols, items)
 
     async def _fetch_us(
         self,
@@ -145,20 +123,6 @@ class RelatedAssetsService:
                 )
             )
         return items
-
-
-def _quote_to_related(quote: MarketQuote, reason: str, *, category: str) -> RelatedAssetItem:
-    return RelatedAssetItem(
-        symbol=quote.symbol,
-        name=quote.name,
-        price=quote.price,
-        change_percent=quote.change_percent,
-        category=category,
-        reason=reason,
-        logo_url=quote.logo_url,
-        exchange_mic=quote.exchange,
-        provider=quote.provider or "brapi",
-    )
 
 
 def _order_by_symbols(symbols: list[str], items: list[RelatedAssetItem]) -> list[RelatedAssetItem]:

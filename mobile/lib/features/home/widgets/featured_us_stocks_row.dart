@@ -1,9 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:rico_investidor/core/utils/quote_refresh_timer.dart';
 import 'package:rico_investidor/core/widgets/featured_card_skeleton.dart';
-import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
 import 'package:rico_investidor/features/home/widgets/featured_asset_card.dart';
-import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/navigation/open_asset_detail.dart';
 
@@ -11,8 +12,6 @@ class FeaturedUsStocksRow extends StatefulWidget {
   const FeaturedUsStocksRow({
     super.key,
     required this.repository,
-    required this.fiiRepository,
-    required this.quoteRepository,
     this.initialItems,
     this.loading = false,
     this.error,
@@ -20,8 +19,6 @@ class FeaturedUsStocksRow extends StatefulWidget {
   });
 
   final GlobalMarketRepository repository;
-  final FiiRepository fiiRepository;
-  final QuoteRepository quoteRepository;
   final List<AssetItem>? initialItems;
   final bool loading;
   final Object? error;
@@ -33,11 +30,20 @@ class FeaturedUsStocksRow extends StatefulWidget {
 
 class _FeaturedUsStocksRowState extends State<FeaturedUsStocksRow> {
   late Future<List<AssetItem>>? _loadFuture;
+  QuoteRefreshTimer? _refreshTimer;
+  List<AssetItem> _liveItems = const [];
 
   @override
   void initState() {
     super.initState();
     _loadFuture = widget.initialItems == null ? widget.repository.listFeaturedUsAssets() : null;
+    _configureAutoRefresh();
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.stop();
+    super.dispose();
   }
 
   @override
@@ -46,6 +52,23 @@ class _FeaturedUsStocksRowState extends State<FeaturedUsStocksRow> {
     if (widget.initialItems != null && oldWidget.initialItems == null) {
       _loadFuture = null;
     }
+  }
+
+  Future<void> _configureAutoRefresh() async {
+    _refreshTimer?.stop();
+    if (widget.initialItems != null) return;
+    try {
+      final caps = await widget.repository.getCapabilities();
+      if (!caps.realtimeEnabled) return;
+      _refreshTimer = QuoteRefreshTimer(
+        onTick: () async {
+          widget.repository.invalidateFeaturedCache();
+          final items = await widget.repository.listFeaturedUsAssets();
+          if (!mounted) return;
+          setState(() => _liveItems = items);
+        },
+      )..start(refreshSeconds: caps.refreshSeconds ?? 60, enabled: true);
+    } catch (_) {}
   }
 
   Future<void> _retry() async {
@@ -73,15 +96,25 @@ class _FeaturedUsStocksRowState extends State<FeaturedUsStocksRow> {
       return _buildContent(context, widget.initialItems!, widget.error);
     }
 
+    if (_liveItems.isNotEmpty) {
+      return _buildContent(context, _liveItems, null);
+    }
+
     return FutureBuilder<List<AssetItem>>(
       future: _loadFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const FeaturedRowSkeleton();
         }
+        final items = snapshot.data ?? const <AssetItem>[];
+        if (items.isNotEmpty && _liveItems.isEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() => _liveItems = items);
+          });
+        }
         return _buildContent(
           context,
-          snapshot.data ?? const <AssetItem>[],
+          _liveItems.isNotEmpty ? _liveItems : items,
           snapshot.hasError ? snapshot.error : null,
         );
       },
@@ -94,7 +127,7 @@ class _FeaturedUsStocksRowState extends State<FeaturedUsStocksRow> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const DataUnavailableBanner(
-            message: 'Não foi possível carregar as ações dos EUA.',
+            message: 'Não foi possível carregar as ações americanas.',
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -126,8 +159,6 @@ class _FeaturedUsStocksRowState extends State<FeaturedUsStocksRow> {
           onTap: () => openAssetDetail(
             context,
             asset: items[index],
-            fiiRepository: widget.fiiRepository,
-            quoteRepository: widget.quoteRepository,
           ),
         ),
       ),

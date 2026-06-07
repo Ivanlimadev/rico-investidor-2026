@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:rico_investidor/core/markets/market_visibility.dart';
+import 'package:rico_investidor/core/widgets/vector_country_flag.dart';
 import 'package:rico_investidor/core/search/asset_search_config.dart';
 import 'package:rico_investidor/core/widgets/asset_card_header.dart';
 import 'package:rico_investidor/core/widgets/asset_logo.dart';
@@ -55,22 +57,12 @@ const _usIndexSymbols = {
 
 /// País de origem/listagem principal do ativo para exibição na busca.
 String? countryCodeForAsset(AssetItem asset) {
-  switch (asset.category) {
-    case MarketCategory.acoesBr:
-    case MarketCategory.fiis:
-    case MarketCategory.etf:
-    case MarketCategory.tesouroDireto:
-      return 'BR';
-    case MarketCategory.bdr:
-      return _countryCodeForBdr(asset.symbol);
+  final category = resolveMarketCategory(symbol: asset.symbol, stored: asset.category);
+
+  switch (category) {
     case MarketCategory.stocks:
     case MarketCategory.reits:
-    case MarketCategory.etfInternacional:
       return _countryCodeForExchange(asset.exchangeMic) ?? 'US';
-    case MarketCategory.moeda:
-      return _countryCodeForCurrencyPair(asset.symbol);
-    case MarketCategory.indices:
-      return _countryCodeForIndex(asset.symbol);
     case MarketCategory.cripto:
       return null;
   }
@@ -113,12 +105,78 @@ String _countryCodeForIndex(String symbol) {
   return 'BR';
 }
 
+const _emojiFlags = <String, String>{
+  'BR': '🇧🇷',
+  'US': '🇺🇸',
+  'GB': '🇬🇧',
+  'EU': '🇪🇺',
+  'JP': '🇯🇵',
+  'CH': '🇨🇭',
+  'CA': '🇨🇦',
+  'AU': '🇦🇺',
+  'CN': '🇨🇳',
+  'AR': '🇦🇷',
+  'MX': '🇲🇽',
+  'NZ': '🇳🇿',
+  'SE': '🇸🇪',
+  'NO': '🇳🇴',
+  'DK': '🇩🇰',
+  'ZA': '🇿🇦',
+  'TR': '🇹🇷',
+  'RU': '🇷🇺',
+  'HK': '🇭🇰',
+  'SG': '🇸🇬',
+  'KR': '🇰🇷',
+  'IN': '🇮🇳',
+};
+
+String? normalizeCountryCode(String? countryCode) {
+  final raw = countryCode?.trim().toUpperCase();
+  if (raw == null || raw.isEmpty) return null;
+  if (raw.length >= 2) return raw.substring(0, 2);
+  return null;
+}
+
+String? emojiFlagForCountryCode(String? countryCode) {
+  final code = normalizeCountryCode(countryCode);
+  if (code == null) return null;
+  return _emojiFlags[code];
+}
+
 String? flagImageUrlForCountryCode(String? countryCode) {
-  var code = countryCode?.trim().toLowerCase();
-  if (code == null || code.isEmpty) return null;
-  if (code.length > 2) code = code.substring(0, 2);
-  if (code.length != 2) return null;
+  final code = normalizeCountryCode(countryCode)?.toLowerCase();
+  if (code == null) return null;
   return 'https://flagcdn.com/w40/$code.png';
+}
+
+class _EmojiFlag extends StatelessWidget {
+  const _EmojiFlag({
+    required this.emoji,
+    required this.size,
+    required this.borderRadius,
+  });
+
+  final String emoji;
+  final double size;
+  final double borderRadius;
+
+  @override
+  Widget build(BuildContext context) {
+    final width = size * 1.45;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(borderRadius),
+      child: SizedBox(
+        width: width,
+        height: size,
+        child: Center(
+          child: Text(
+            emoji,
+            style: TextStyle(fontSize: size * 0.92, height: 1),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// Bandeira PNG por código ISO-3166 alpha-2 (ex.: BR, US).
@@ -136,52 +194,24 @@ class CountryFlagImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final normalized = countryCode.trim().toUpperCase();
-    final url = flagImageUrlForCountryCode(normalized);
-
-    if (url == null) {
-      return Icon(
-        Icons.public,
-        size: size,
-        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55),
+    final normalized = normalizeCountryCode(countryCode);
+    if (hasVectorCountryFlag(normalized)) {
+      return vectorCountryFlagForCode(
+        normalized,
+        height: size,
+        borderRadius: borderRadius,
       );
     }
 
-    final width = size * 1.45;
-    final cacheWidth = (width * 2).round().clamp(24, 120);
+    final emoji = emojiFlagForCountryCode(normalized);
+    if (emoji != null) {
+      return _EmojiFlag(emoji: emoji, size: size, borderRadius: borderRadius);
+    }
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(borderRadius),
-      child: Image.network(
-        url,
-        width: width,
-        height: size,
-        fit: BoxFit.cover,
-        cacheWidth: cacheWidth,
-        cacheHeight: (size * 2).round().clamp(20, 80),
-        filterQuality: FilterQuality.medium,
-        gaplessPlayback: true,
-        errorBuilder: (context, error, stackTrace) {
-          return CountryCodeBadge(code: normalized, height: size);
-        },
-        loadingBuilder: (context, child, loadingProgress) {
-          if (loadingProgress == null) return child;
-          return SizedBox(
-            width: width,
-            height: size,
-            child: Center(
-              child: SizedBox(
-                width: size * 0.45,
-                height: size * 0.45,
-                child: CircularProgressIndicator(
-                  strokeWidth: 1.4,
-                  color: Theme.of(context).colorScheme.outline,
-                ),
-              ),
-            ),
-          );
-        },
-      ),
+    return CountryCodeBadge(
+      code: normalized ?? countryCode,
+      height: size,
+      borderRadius: borderRadius,
     );
   }
 }
@@ -200,9 +230,20 @@ class AssetCountryFlag extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final countryCode = countryCodeForAsset(asset);
-    final url = flagImageUrlForCountryCode(countryCode);
+    if (hasVectorCountryFlag(countryCode)) {
+      return vectorCountryFlagForCode(
+        countryCode,
+        height: size,
+        borderRadius: 2,
+      );
+    }
 
-    if (url == null) {
+    final emoji = emojiFlagForCountryCode(countryCode);
+    if (emoji != null) {
+      return _EmojiFlag(emoji: emoji, size: size, borderRadius: 2);
+    }
+
+    if (countryCode == null) {
       return Icon(
         Icons.public,
         size: size,
@@ -210,42 +251,7 @@ class AssetCountryFlag extends StatelessWidget {
       );
     }
 
-    final width = size * 1.45;
-    final cacheWidth = (width * 2).round().clamp(20, 80);
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(2),
-      child: Image.network(
-        url,
-        width: width,
-        height: size,
-        fit: BoxFit.cover,
-        cacheWidth: cacheWidth,
-        cacheHeight: (size * 2).round().clamp(16, 60),
-        filterQuality: FilterQuality.medium,
-        gaplessPlayback: true,
-        errorBuilder: (context, error, stackTrace) {
-          return CountryCodeBadge(code: countryCode!, height: size);
-        },
-        loadingBuilder: (context, child, loadingProgress) {
-          if (loadingProgress == null) return child;
-          return SizedBox(
-            width: width,
-            height: size,
-            child: Center(
-              child: SizedBox(
-                width: size * 0.55,
-                height: size * 0.55,
-                child: CircularProgressIndicator(
-                  strokeWidth: 1.2,
-                  color: Theme.of(context).colorScheme.outline,
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
+    return CountryCodeBadge(code: countryCode, height: size, borderRadius: 2);
   }
 }
 
@@ -254,10 +260,12 @@ class CountryCodeBadge extends StatelessWidget {
     super.key,
     required this.code,
     required this.height,
+    this.borderRadius = 2,
   });
 
   final String code;
   final double height;
+  final double borderRadius;
 
   @override
   Widget build(BuildContext context) {
@@ -267,7 +275,7 @@ class CountryCodeBadge extends StatelessWidget {
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(2),
+        borderRadius: BorderRadius.circular(borderRadius),
         border: Border.all(
           color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.35),
         ),

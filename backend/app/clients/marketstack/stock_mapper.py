@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from app.clients.brapi.models import MarketQuote
 from app.domain.global_markets.models import (
@@ -234,6 +235,62 @@ def map_splits(items: Iterable[dict]) -> list[GlobalStockSplit]:
             continue
         rows.append(GlobalStockSplit(date=date, split_factor=factor))
     return rows
+
+
+def filter_today_intraday_rows(
+    items: Iterable[dict],
+    *,
+    today: str | None = None,
+) -> list[dict]:
+    """Descarta barras intraday de sessões anteriores (ex.: sexta no domingo)."""
+    if today is None:
+        today = datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+    return [item for item in items if _session_date(item) == today]
+
+
+def overlay_intraday_prices(
+    quotes: list[MarketQuote],
+    intraday_items: Iterable[dict],
+) -> list[MarketQuote]:
+    """Atualiza preço ao vivo mantendo previous_close e variação do pregão EOD."""
+    live_by_key: dict[str, dict] = {}
+    for item in intraday_items:
+        symbol = str(item.get("symbol") or "").upper().strip()
+        if not symbol:
+            continue
+        price = _effective_eod_close(item)
+        if price is None:
+            continue
+        live_by_key[symbol] = item
+        live_by_key[normalize_marketstack_symbol(symbol)] = item
+
+    updated: list[MarketQuote] = []
+    for quote in quotes:
+        item = live_by_key.get(quote.symbol.upper()) or live_by_key.get(
+            normalize_marketstack_symbol(quote.symbol)
+        )
+        if item is None:
+            updated.append(quote)
+            continue
+        price = _effective_eod_close(item)
+        if price is None:
+            updated.append(quote)
+            continue
+        prev = quote.previous_close
+        updated.append(
+            quote.model_copy(
+                update={
+                    "price": price,
+                    "change_percent": _change_percent(price, prev),
+                    "open": _eod_session_open(item) or quote.open,
+                    "high": _eod_session_high(item) or quote.high,
+                    "low": _eod_session_low(item) or quote.low,
+                    "volume": _eod_session_volume(item) or quote.volume,
+                    "session_date": _session_date(item) or quote.session_date,
+                }
+            )
+        )
+    return updated
 
 
 def map_eod_quotes_with_change(

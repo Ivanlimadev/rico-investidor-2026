@@ -1,17 +1,17 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rico_investidor/core/utils/asset_returns.dart';
-import 'package:rico_investidor/models/fii_models.dart';
+import 'package:rico_investidor/models/market_series_models.dart';
 
-List<FiiCandleBar> _dailySeries({
+List<QuoteCandleBar> _dailySeries({
   required int count,
   required double startPrice,
   required double endPrice,
   required DateTime startDate,
 }) {
-  return List<FiiCandleBar>.generate(count, (index) {
+  return List<QuoteCandleBar>.generate(count, (index) {
     final day = startDate.add(Duration(days: index));
     final price = startPrice + ((endPrice - startPrice) * index / (count - 1));
-    return FiiCandleBar(
+    return QuoteCandleBar(
       tradeDate: day.toIso8601String().substring(0, 10),
       open: price,
       high: price,
@@ -50,7 +50,7 @@ void main() {
         startDate: DateTime(2024, 1, 2),
       );
       final payments = [
-        FiiDistributionPayment(
+        DistributionPayment(
           paymentDate: '2025-06-01',
           valuePerShare: 5,
         ),

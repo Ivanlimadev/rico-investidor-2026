@@ -1,13 +1,13 @@
 import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
 import 'package:rico_investidor/features/global_markets/utils/global_stock_chart_prices.dart';
-import 'package:rico_investidor/models/fii_models.dart';
+import 'package:rico_investidor/models/market_series_models.dart';
 
-List<FiiCandleBar> candleBarsFromGlobal(List<GlobalStockCandleDto> candles) {
+List<QuoteCandleBar> candleBarsFromGlobal(List<GlobalStockCandleDto> candles) {
   return candles
       .map((candle) {
         final close = returnCloseForGlobalStockCandle(candle, candles);
         if (close <= 0) return null;
-        return FiiCandleBar(
+        return QuoteCandleBar(
           tradeDate: candle.date,
           open: candle.open ?? close,
           high: candle.high ?? close,
@@ -16,17 +16,18 @@ List<FiiCandleBar> candleBarsFromGlobal(List<GlobalStockCandleDto> candles) {
           volume: candle.volume,
         );
       })
-      .whereType<FiiCandleBar>()
+      .whereType<QuoteCandleBar>()
       .toList();
 }
 
-List<FiiDistributionPayment> paymentsFromGlobalDividends(
-  List<GlobalStockDividendDto> dividends,
-) {
+List<DistributionPayment> paymentsFromGlobalDividends(
+  List<GlobalStockDividendDto> dividends, {
+  bool includeProjected = false,
+}) {
   return dividends
-      .where((item) => !item.isProjected && item.amount > 0)
+      .where((item) => item.amount > 0 && (includeProjected || !item.isProjected))
       .map(
-        (item) => FiiDistributionPayment(
+        (item) => DistributionPayment(
           referenceDate: item.effectiveComDate ?? item.effectiveExDate,
           paymentDate: item.effectivePaymentDate ?? item.effectiveExDate,
           valuePerShare: item.amount,

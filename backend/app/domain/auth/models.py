@@ -35,3 +35,7 @@ class UserResponse(BaseModel):
     email: str
     name: str
     is_anonymous: bool = False
+
+
+class UpdateProfileRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=80)

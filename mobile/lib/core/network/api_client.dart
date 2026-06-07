@@ -77,6 +77,49 @@ class ApiClient {
     );
   }
 
+  Future<T> putJson<T>(
+    String path, {
+    Map<String, dynamic>? body,
+    required T Function(Map<String, dynamic>) fromJson,
+  }) async {
+    return _execute(
+      path: path,
+      fromJson: fromJson,
+      send: () => _client.put(
+        uri(path),
+        headers: _headers(json: true),
+        body: body == null ? null : jsonEncode(body),
+      ),
+    );
+  }
+
+  Future<T> patchJson<T>(
+    String path, {
+    Map<String, dynamic>? body,
+    required T Function(Map<String, dynamic>) fromJson,
+  }) async {
+    return _execute(
+      path: path,
+      fromJson: fromJson,
+      send: () => _client.patch(
+        uri(path),
+        headers: _headers(json: true),
+        body: body == null ? null : jsonEncode(body),
+      ),
+    );
+  }
+
+  Future<T> deleteJson<T>(
+    String path, {
+    required T Function(Map<String, dynamic>) fromJson,
+  }) async {
+    return _execute(
+      path: path,
+      fromJson: fromJson,
+      send: () => _client.delete(uri(path), headers: _headers()),
+    );
+  }
+
   Future<bool> checkHealth() async {
     final response = await _client.get(uri('/health'), headers: _headers()).timeout(_timeout);
     return response.statusCode == 200;

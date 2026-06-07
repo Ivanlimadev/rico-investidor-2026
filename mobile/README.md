@@ -1,17 +1,28 @@
-# rico_investidor
+# Rico Investidor (Flutter)
 
-A new Flutter project.
+## Desenvolvimento
 
-## Getting Started
+**Recomendado no Mac:** app desktop (`flutter run -d macos`). Suba o backend **antes** de abrir o app.
 
-This project is a starting point for a Flutter application.
+API local (debug):
 
-A few resources to get you started if this is your first Flutter project:
+- iOS/macOS: `http://127.0.0.1:8000`
+- Web (Chrome): `http://127.0.0.1:8000` (exige backend com CORS; reinicie o uvicorn após mudanças)
+- Android emulador: `http://10.0.2.2:8000`
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+```bash
+cd mobile
+flutter pub get
+flutter run -d macos
+```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Build de produção
+
+Release **exige** URL HTTPS da API:
+
+```bash
+flutter build apk --dart-define=API_BASE_URL=https://api.seudominio.com
+flutter build ios --dart-define=API_BASE_URL=https://api.seudominio.com
+```
+
+Sem `API_BASE_URL`, o app falha no startup em modo release (`ApiConfigError`).

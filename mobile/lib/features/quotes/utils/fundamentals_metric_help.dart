@@ -24,6 +24,7 @@ const fundamentalsDictionaryKeys = <String, List<String>>{
   'EV': ['enterpriseValue'],
   'EV/EBITDA': ['enterpriseToEbitda'],
   'Receita': ['totalRevenue'],
+  'Receita líq.': ['totalRevenue'],
   'EBITDA': ['ebitda'],
   'FCF': ['freeCashflow'],
   'LPA': ['earningsPerShare'],
@@ -43,6 +44,19 @@ const fundamentalsDictionaryKeys = <String, List<String>>{
   'Payout': ['payoutRatio'],
   'Beta': ['beta'],
 };
+
+const _receitaLiquidaHelp = FundamentalsMetricHelp(
+  title: 'Receita líquida de vendas',
+  description:
+      'Quanto a empresa vendeu no período, já descontando devoluções, abatimentos '
+      'e impostos sobre a venda (ICMS, PIS/COFINS na DRE). '
+      'É o topo da demonstração de resultados — ainda antes de CPV, despesas, juros e IR.',
+  calculation: 'Receita líquida = receita bruta − deduções da receita',
+  interpretation:
+      'Não é o que “fica” no bolso da empresa. O que sobra após custos, dívidas (juros) '
+      'e impostos sobre o lucro é o lucro líquido (última linha da DRE). '
+      'Receita bruta é o faturamento antes dessas deduções de venda.',
+);
 
 const _localHelp = <String, FundamentalsMetricHelp>{
   'DY 12m': FundamentalsMetricHelp(
@@ -101,13 +115,8 @@ const _localHelp = <String, FundamentalsMetricHelp>{
         'Muito usado em comparações entre empresas do mesmo setor. '
         'Múltiplos menores podem indicar valuation mais atrativo.',
   ),
-  'Receita': FundamentalsMetricHelp(
-    title: 'Receita líquida',
-    description: 'Faturamento total da empresa no período, antes de custos e despesas.',
-    interpretation:
-        'Crescimento consistente de receita é base para expansão de lucro. '
-        'Analise junto com margens e rentabilidade.',
-  ),
+  'Receita': _receitaLiquidaHelp,
+  'Receita líq.': _receitaLiquidaHelp,
   'EBITDA': FundamentalsMetricHelp(
     title: 'EBITDA',
     description:

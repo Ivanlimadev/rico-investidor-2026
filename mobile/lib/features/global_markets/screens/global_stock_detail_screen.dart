@@ -1,6 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
+import 'package:rico_investidor/core/utils/quote_refresh_timer.dart';
+import 'package:rico_investidor/core/utils/us_market_capabilities_labels.dart';
+import 'package:rico_investidor/core/widgets/us_intraday_delay_chip.dart';
+import 'package:rico_investidor/core/widgets/us_market_session_chip.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
 import 'package:rico_investidor/core/widgets/asset_card_header.dart';
 import 'package:rico_investidor/core/widgets/asset_logo.dart';
@@ -11,24 +17,22 @@ import 'package:rico_investidor/core/widgets/asset_magic_number_card.dart';
 import 'package:rico_investidor/core/widgets/last_dividend_card.dart';
 import 'package:rico_investidor/models/holding_currency.dart';
 import 'package:rico_investidor/core/widgets/what_if_investment_card.dart';
-import 'package:rico_investidor/features/fii/utils/fii_format.dart';
+import 'package:rico_investidor/core/utils/percent_format.dart';
 import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
 import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
 import 'package:rico_investidor/features/global_markets/utils/marketstack_errors.dart';
 import 'package:rico_investidor/features/global_markets/screens/global_stock_compare_screen.dart';
-import 'package:rico_investidor/features/assets/models/related_assets.dart';
-import 'package:rico_investidor/features/assets/widgets/related_assets_card.dart';
 import 'package:rico_investidor/features/global_markets/widgets/global_stock_about_card.dart';
 import 'package:rico_investidor/features/global_markets/widgets/global_stock_dividends_section.dart';
 import 'package:rico_investidor/features/global_markets/widgets/global_stock_quote_chart.dart';
 import 'package:rico_investidor/features/quotes/widgets/stock_market_stats_card.dart';
 import 'package:rico_investidor/features/global_markets/widgets/global_stock_returns_card.dart';
 import 'package:rico_investidor/features/global_markets/widgets/global_stock_splits_card.dart';
-import 'package:rico_investidor/features/quotes/data/quote_api_client.dart';
 import 'package:rico_investidor/features/quotes/models/stock_quote_detail.dart';
-import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/quotes/widgets/stock_fundamentals_card.dart';
 import 'package:rico_investidor/models/asset_item.dart';
+import 'package:rico_investidor/models/market_category.dart';
+import 'package:rico_investidor/features/quotes/models/market_quote_dto.dart';
 
 class GlobalStockDetailScreen extends StatefulWidget {
   const GlobalStockDetailScreen({
@@ -49,30 +53,100 @@ class GlobalStockDetailScreen extends StatefulWidget {
 class _GlobalStockDetailScreenState extends State<GlobalStockDetailScreen> {
   late Future<GlobalStockDetailDto> _future;
   AssetItem? _actionAsset;
+  AssetItem? _liveQuote;
+  MarketQuoteDto? _liveQuoteMeta;
+  bool _quoteLive = false;
+  late final QuoteRefreshTimer _quoteRefreshTimer;
+  List<GlobalStockCandleDto> _intradayCandles = const [];
+  GlobalMarketCapabilitiesDto? _capabilities;
 
   @override
   void initState() {
     super.initState();
+    _quoteRefreshTimer = QuoteRefreshTimer(onTick: _pollQuote);
     _future = _fetchDetail();
   }
 
-  Future<GlobalStockDetailDto> _fetchDetail() {
-    return widget.repository
-        .getDetail(
+  @override
+  void dispose() {
+    _quoteRefreshTimer.stop();
+    super.dispose();
+  }
+
+  Future<GlobalStockDetailDto> _fetchDetail() async {
+    final detail = await widget.repository.getDetail(
+      widget.symbol,
+      exchange: widget.exchange,
+      candleLimit: GlobalMarketRepository.extendedCandleLimit,
+      dividendLimit: GlobalMarketRepository.extendedDividendLimit,
+    );
+    final caps = await widget.repository.getCapabilities();
+    var intraday = const <GlobalStockCandleDto>[];
+    if (detail.dataMode == 'realtime') {
+      try {
+        final response = await widget.repository.getIntradayCandles(
           widget.symbol,
           exchange: widget.exchange,
-          candleLimit: GlobalMarketRepository.extendedCandleLimit,
-          dividendLimit: GlobalMarketRepository.extendedDividendLimit,
-        )
-        .then((detail) {
-      if (mounted) setState(() => _actionAsset = detail.quote);
-      return detail;
+        );
+        intraday = response.candles;
+      } catch (_) {}
+    }
+    if (mounted) {
+      setState(() {
+        _actionAsset = detail.quote;
+        _capabilities = caps;
+        _intradayCandles = intraday;
+      });
+      _startQuotePolling(detail);
+    }
+    return detail;
+  }
+
+  void _startQuotePolling(GlobalStockDetailDto detail) {
+    _quoteRefreshTimer.stop();
+    _liveQuote = null;
+    _liveQuoteMeta = null;
+    _quoteLive = false;
+    if (detail.dataMode != 'realtime') return;
+    _quoteRefreshTimer.start(
+      refreshSeconds: detail.refreshSeconds ?? 60,
+      enabled: true,
+    );
+  }
+
+  Future<void> _pollQuote() async {
+    final meta = await widget.repository.refreshQuote(
+      widget.symbol,
+      exchange: widget.exchange,
+    );
+    if (!mounted) return;
+    final category = meta.category == 'reits' ? MarketCategory.reits : MarketCategory.stocks;
+    var intraday = _intradayCandles;
+    if (_capabilities?.usMarketOpen == true) {
+      try {
+        intraday = (await widget.repository.getIntradayCandles(
+          widget.symbol,
+          exchange: widget.exchange,
+        ))
+            .candles;
+      } catch (_) {}
+    }
+    setState(() {
+      _liveQuoteMeta = meta;
+      _liveQuote = meta.toUsAssetItem(category: category);
+      _quoteLive = true;
+      _actionAsset = _liveQuote;
+      _intradayCandles = intraday;
     });
   }
 
   void _retry() {
+    _quoteRefreshTimer.stop();
     setState(() {
       _actionAsset = null;
+      _liveQuote = null;
+      _liveQuoteMeta = null;
+      _quoteLive = false;
       _future = _fetchDetail();
     });
   }
@@ -130,8 +204,8 @@ class _GlobalStockDetailScreenState extends State<GlobalStockDetailScreen> {
           }
 
           final detail = snapshot.data!;
-          final quote = detail.quote;
-          final meta = detail.quoteMeta;
+          final quote = _liveQuote ?? detail.quote;
+          final meta = _liveQuoteMeta ?? detail.quoteMeta;
           final dy = detail.dividendsSummary.dividendYieldTtm ?? detail.fundamentals.dividendYield12m;
           final positive = quote.changePercent >= 0;
           final changeColor = positive ? AppColors.positive : AppColors.negative;
@@ -139,14 +213,28 @@ class _GlobalStockDetailScreenState extends State<GlobalStockDetailScreen> {
           return ListView(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
             children: [
+              if (_capabilities != null) ...[
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    UsMarketSessionChip(capabilities: _capabilities!),
+                    UsIntradayDelayChip(capabilities: _capabilities!),
+                  ],
+                ),
+                const SizedBox(height: 8),
+              ],
               _HeroQuoteCard(
                 quote: quote,
                 meta: meta,
                 detail: detail,
+                capabilities: _capabilities,
                 changeColor: changeColor,
                 positive: positive,
                 dy: dy,
                 onSurface: onSurface,
+                quoteLive: _quoteLive,
               ),
               if (detail.dividends.isNotEmpty) ...[
                 const SizedBox(height: 12),
@@ -186,7 +274,6 @@ class _GlobalStockDetailScreenState extends State<GlobalStockDetailScreen> {
               const SizedBox(height: 16),
               StockFundamentalsCard(
                 fundamentals: detail.fundamentals,
-                repository: quoteRepository,
                 currency: FundamentalsDisplayCurrency.usd,
               ),
               if (_isFundamentalsSparse(detail.fundamentals)) ...[
@@ -196,7 +283,13 @@ class _GlobalStockDetailScreenState extends State<GlobalStockDetailScreen> {
                 ),
               ],
               const SizedBox(height: 16),
-              GlobalStockQuoteChart(candles: detail.candles),
+              GlobalStockQuoteChart(
+                candles: detail.candles,
+                intradayCandles: _intradayCandles,
+                intradayInterval: detail.intradayInterval ?? '5min',
+                maxHistoryDays: detail.maxHistoryDays,
+                realtimeEnabled: detail.realtimeEnabled || detail.dataMode == 'realtime',
+              ),
               const SizedBox(height: 16),
               GlobalStockAboutCard(company: detail.company),
               const SizedBox(height: 16),
@@ -222,13 +315,6 @@ class _GlobalStockDetailScreenState extends State<GlobalStockDetailScreen> {
                 const SizedBox(height: 16),
                 GlobalStockSplitsCard(splits: detail.splits, total: detail.splitsTotal),
               ],
-              const SizedBox(height: 16),
-              RelatedAssetsCard(
-                ticker: widget.symbol,
-                market: relatedMarketSlug(detail.quote.category),
-                sector: detail.company.sector,
-                industry: detail.company.industry,
-              ),
             ],
           );
         },
@@ -294,19 +380,23 @@ class _HeroQuoteCard extends StatelessWidget {
     required this.quote,
     required this.meta,
     required this.detail,
+    required this.capabilities,
     required this.changeColor,
     required this.positive,
     required this.dy,
     required this.onSurface,
+    required this.quoteLive,
   });
 
   final AssetItem quote;
   final MarketQuoteDto meta;
   final GlobalStockDetailDto detail;
+  final GlobalMarketCapabilitiesDto? capabilities;
   final Color changeColor;
   final bool positive;
   final double? dy;
   final Color onSurface;
+  final bool quoteLive;
 
   @override
   Widget build(BuildContext context) {
@@ -370,7 +460,12 @@ class _HeroQuoteCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 16),
-            Text('Cotação EOD', style: Theme.of(context).textTheme.labelLarge?.copyWith(color: onSurface)),
+            Text(
+              detail.dataMode == 'realtime'
+                  ? usRealtimeQuoteCaption(capabilities, quoteLive: quoteLive)
+                  : 'Cotação de fechamento',
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(color: onSurface),
+            ),
             const SizedBox(height: 4),
             Text(
               formatUsd(quote.price),
@@ -420,9 +515,11 @@ class _HeroQuoteCard extends StatelessWidget {
                 if (dy != null && dy! > 0) _HeroMetricChip(label: 'DY 12m', value: formatPct(dy!)),
                 if (_isValidRatio(pe)) _HeroMetricChip(label: 'P/L', value: pe!.toStringAsFixed(2)),
                 if (_isValidRatio(pb)) _HeroMetricChip(label: 'P/VP', value: pb!.toStringAsFixed(2)),
-                if (detail.ticker.hasIntraday)
+                if (detail.dataMode == 'realtime' || detail.ticker.hasIntraday)
                   Chip(
-                    label: Text(detail.dataMode == 'realtime' ? 'Tempo real' : 'Intraday'),
+                    label: Text(
+                      usRealtimeQuoteChipLabel(capabilities, quoteLive: quoteLive),
+                    ),
                     visualDensity: VisualDensity.compact,
                     materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),

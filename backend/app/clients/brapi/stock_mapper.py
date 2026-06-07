@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import UTC, datetime
 
-from app.domain.fii.models import (
+from app.clients.brapi.models import (
     FiiCandleBar,
     FiiCandlesResponse,
     FiiDistributionPayment,
@@ -54,8 +54,39 @@ SCREENER_FUNDAMENTAL_SORT = frozenset(
     {"dividend_yield", "price_earnings", "return_on_equity", "price_to_book"}
 )
 VALID_SORT_BY = frozenset({"name", "close", "change", "change_abs", "volume", "market_cap_basic"})
-from app.domain.quotes.category_map import category_to_slug, infer_category
-from app.providers.registry import AssetClass
+from enum import Enum
+
+
+class _Brapi_BrapiAssetClass(str, Enum):
+    STOCK_BR = "stock_br"
+    BDR = "bdr"
+    ETF_BR = "etf_br"
+    FII = "fii"
+
+
+def _looks_like_fii(symbol: str) -> bool:
+    return len(symbol) == 6 and symbol.endswith("11") and symbol[:4].isalpha()
+
+
+def infer_category(symbol: str, brapi_type: str | None) -> _Brapi_BrapiAssetClass:
+    normalized = symbol.upper().strip()
+    kind = (brapi_type or "").lower()
+    if kind == "fund" or (normalized.endswith("11") and _looks_like_fii(normalized)):
+        return _Brapi_BrapiAssetClass.FII
+    if kind == "bdr" or normalized.endswith("34"):
+        return _Brapi_BrapiAssetClass.BDR
+    if normalized.endswith("11") and kind == "stock":
+        return _Brapi_BrapiAssetClass.ETF_BR
+    return _Brapi_BrapiAssetClass.STOCK_BR
+
+
+def category_to_slug(asset_class: _Brapi_BrapiAssetClass) -> str:
+    return {
+        _Brapi_BrapiAssetClass.STOCK_BR: "acoes_br",
+        _Brapi_BrapiAssetClass.BDR: "bdr",
+        _Brapi_BrapiAssetClass.ETF_BR: "etf",
+        _Brapi_BrapiAssetClass.FII: "fiis",
+    }.get(asset_class, "acoes_br")
 
 
 def normalize_sort_by(sort_by: str) -> str:
@@ -67,13 +98,13 @@ def normalize_sort_by(sort_by: str) -> str:
     return "volume"
 
 
-def map_catalog_item(item: dict, *, target_class: AssetClass | None = None) -> StockCatalogItem | None:
+def map_catalog_item(item: dict, *, target_class: _BrapiAssetClass | None = None) -> StockCatalogItem | None:
     symbol = str(item.get("stock") or "").upper().strip()
     if not symbol:
         return None
 
     asset_class = infer_category(symbol, item.get("type"))
-    if asset_class == AssetClass.FII:
+    if asset_class == _BrapiAssetClass.FII:
         return None
     if target_class is not None and asset_class != target_class:
         return None

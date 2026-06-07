@@ -1,6 +1,6 @@
 import 'package:rico_investidor/core/utils/dividend_payment_mappers.dart';
 import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
-import 'package:rico_investidor/models/fii_models.dart';
+import 'package:rico_investidor/models/market_series_models.dart';
 
 int? dividendPaymentBucketYear(String? paymentDate, String? referenceDate) {
   for (final raw in [paymentDate, referenceDate]) {
@@ -14,8 +14,8 @@ int? dividendPaymentBucketYear(String? paymentDate, String? referenceDate) {
 double _roundPerShareTotal(double value) => double.parse(value.toStringAsFixed(4));
 
 /// Soma dos proventos por ação/cota em cada ano (ano do pagamento, ou referência).
-List<FiiDistributionYear> buildAnnualDividendSummaryFromPayments(
-  List<FiiDistributionPayment> payments,
+List<DistributionYear> buildAnnualDividendSummaryFromPayments(
+  List<DistributionPayment> payments,
 ) {
   final byYear = <int, List<double>>{};
 
@@ -29,7 +29,7 @@ List<FiiDistributionYear> buildAnnualDividendSummaryFromPayments(
 
   return byYear.entries
       .map(
-        (entry) => FiiDistributionYear(
+        (entry) => DistributionYear(
           year: entry.key,
           totalPerShare: _roundPerShareTotal(entry.value.fold(0.0, (sum, v) => sum + v)),
           payments: entry.value.length,
@@ -38,16 +38,16 @@ List<FiiDistributionYear> buildAnnualDividendSummaryFromPayments(
       .toList();
 }
 
-List<FiiDistributionYear> buildAnnualDividendSummaryFromGlobal(
+List<DistributionYear> buildAnnualDividendSummaryFromGlobal(
   List<GlobalStockDividendDto> dividends,
 ) {
   return buildAnnualDividendSummaryFromPayments(paymentsFromGlobalDividends(dividends));
 }
 
 /// Recalcula a partir dos pagamentos quando disponível; senão usa o resumo da API.
-List<FiiDistributionYear> resolveAnnualDividendSummary({
-  required List<FiiDistributionYear> annualSummary,
-  List<FiiDistributionPayment> payments = const [],
+List<DistributionYear> resolveAnnualDividendSummary({
+  required List<DistributionYear> annualSummary,
+  List<DistributionPayment> payments = const [],
   List<GlobalStockDividendDto> globalDividends = const [],
 }) {
   if (globalDividends.isNotEmpty) {

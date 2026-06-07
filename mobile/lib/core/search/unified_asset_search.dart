@@ -5,8 +5,6 @@ import 'package:rico_investidor/core/utils/currency_format.dart';
 import 'package:rico_investidor/core/widgets/asset_country_flag.dart';
 import 'package:rico_investidor/core/widgets/asset_card_header.dart';
 import 'package:rico_investidor/features/crypto/models/crypto_models.dart';
-import 'package:rico_investidor/features/fii/data/fii_repository.dart';
-import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/models/market_category.dart';
 import 'package:rico_investidor/navigation/open_asset_detail.dart';
@@ -89,14 +87,10 @@ class UnifiedAssetResultsBody extends StatelessWidget {
   const UnifiedAssetResultsBody({
     super.key,
     required this.snapshot,
-    required this.fiiRepository,
-    required this.quoteRepository,
     this.padding = const EdgeInsets.fromLTRB(16, 0, 16, 24),
   });
 
   final UnifiedAssetSearchSnapshot snapshot;
-  final FiiRepository fiiRepository;
-  final QuoteRepository quoteRepository;
   final EdgeInsets padding;
 
   @override
@@ -129,8 +123,6 @@ class UnifiedAssetResultsBody extends StatelessWidget {
           onTap: () => openAssetDetail(
             context,
             asset: asset,
-            fiiRepository: fiiRepository,
-            quoteRepository: quoteRepository,
           ),
         );
       },
@@ -215,8 +207,6 @@ class UnifiedAssetResultTile extends StatelessWidget {
     return switch (asset.category) {
       MarketCategory.stocks || MarketCategory.reits => formatUsd(asset.price),
       MarketCategory.cripto => formatCryptoPrice(asset.price),
-      MarketCategory.moeda => asset.price.toStringAsFixed(4),
-      _ => formatBrl(asset.price),
     };
   }
 }

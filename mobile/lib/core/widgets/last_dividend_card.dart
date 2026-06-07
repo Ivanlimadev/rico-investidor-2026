@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
-import 'package:rico_investidor/features/fii/utils/fii_payments.dart';
+import 'package:rico_investidor/core/utils/dividend_payment_format.dart';
 import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
 import 'package:rico_investidor/features/global_markets/utils/global_stock_dividend_utils.dart';
 import 'package:rico_investidor/features/quotes/utils/stock_payments.dart';
-import 'package:rico_investidor/models/fii_models.dart';
+import 'package:rico_investidor/models/market_series_models.dart';
 
 enum LastDividendCurrency { brl, usd }
 
@@ -32,7 +32,7 @@ class LastDividendCard extends StatelessWidget {
         perShareLabel = 'ação',
         _globalDividends = dividends;
 
-  final List<FiiDistributionPayment> payments;
+  final List<DistributionPayment> payments;
   final LastDividendCurrency currency;
   final LastDividendDateStyle dateStyle;
   final double? dividendYield12m;
@@ -163,7 +163,7 @@ class _LastDividendInfo {
 }
 
 _LastDividendInfo? _infoFromPayments(
-  List<FiiDistributionPayment> payments,
+  List<DistributionPayment> payments,
   LastDividendDateStyle style,
 ) {
   final payment = lastPaidPayment(payments);
@@ -209,7 +209,7 @@ _LastDividendInfo? _infoFromGlobal(List<GlobalStockDividendDto> dividends) {
   );
 }
 
-FiiDistributionPayment? lastPaidPayment(List<FiiDistributionPayment> payments) {
+DistributionPayment? lastPaidPayment(List<DistributionPayment> payments) {
   for (final payment in sortPaymentsNewestFirst(payments)) {
     final value = payment.valuePerShare;
     if (value != null && value > 0) return payment;

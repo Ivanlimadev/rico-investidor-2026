@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:rico_investidor/features/home/widgets/market_category_icon.dart';
 import 'package:rico_investidor/models/market_category_icon_kind.dart';
 
-/// Card para escolher mercado Brasil ou EUA.
+/// Card de entrada para o mercado americano.
 class WorldExchangesHubCard extends StatelessWidget {
   const WorldExchangesHubCard({
     super.key,
@@ -15,7 +15,7 @@ class WorldExchangesHubCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const countLabel = 'Brasil e Estados Unidos';
+    const countLabel = 'Mercado Americano';
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
@@ -49,7 +49,7 @@ class WorldExchangesHubCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Mercados',
+                          'Mercado Americano',
                           style: Theme.of(context).textTheme.titleLarge?.copyWith(
                                 fontWeight: FontWeight.w800,
                                 color: const Color(0xFFF8F5FF),
@@ -57,7 +57,7 @@ class WorldExchangesHubCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Acompanhe ações na B3 ou nas bolsas dos EUA',
+                          'Ações e REITs na NYSE e NASDAQ',
                           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                 color: const Color(0xFFCFC4FF),
                                 height: 1.35,

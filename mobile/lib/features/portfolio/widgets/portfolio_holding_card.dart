@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/widgets/asset_card_header.dart';
+import 'package:rico_investidor/models/holding_currency.dart';
 import 'package:rico_investidor/models/portfolio_holding.dart';
 
 class PortfolioHoldingCard extends StatelessWidget {
@@ -27,7 +28,7 @@ class PortfolioHoldingCard extends StatelessWidget {
       holding.quantity.truncateToDouble() == holding.quantity ? 0 : 2,
     );
 
-    final currency = holding.currency;
+    final currency = resolvedHoldingCurrency(holding, category: holding.category);
 
     final content = Padding(
       padding: EdgeInsets.fromLTRB(12, 10, onDelete != null ? 4 : 12, 10),
@@ -39,6 +40,7 @@ class PortfolioHoldingCard extends StatelessWidget {
             name: holding.name,
             logoSize: _logoSize,
             nameMaxLines: 1,
+            useTickerBadge: true,
             trailing: _HeaderTrailing(
               marketValue: currency.format(holding.marketValue),
               dayChange: showDayChange && holding.changePercent != 0
@@ -110,6 +112,13 @@ class _HeaderTrailing extends StatelessWidget {
         Column(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
+            Text(
+              'Posição',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55),
+                    fontSize: 10,
+                  ),
+            ),
             Text(
               marketValue,
               style: Theme.of(context).textTheme.titleSmall?.copyWith(

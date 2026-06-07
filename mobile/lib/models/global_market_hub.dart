@@ -6,10 +6,9 @@ const usMarketCategories = <MarketCategory>[
   MarketCategory.reits,
 ];
 
-/// Mercados secundários exibidos fora dos hubs EUA e Brasil.
+/// Mercados secundários exibidos fora do hub EUA.
 const secondaryMarketCategories = <MarketCategory>[
   MarketCategory.cripto,
-  MarketCategory.etfInternacional,
 ];
 
 bool isUsMarketCategory(MarketCategory category) {

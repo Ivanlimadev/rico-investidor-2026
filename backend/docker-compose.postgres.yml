@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ricoapp1-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: rico
+      POSTGRES_PASSWORD: rico
+      POSTGRES_DB: ricoapp
+    ports:
+      - "5432:5432"
+    volumes:
+      - rico_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rico -d ricoapp"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  rico_pg_data:

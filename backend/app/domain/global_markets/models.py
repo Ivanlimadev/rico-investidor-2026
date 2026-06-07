@@ -19,6 +19,12 @@ class GlobalMarketCapabilitiesResponse(BaseModel):
     provider: str = "marketstack"
     enabled_country_codes: list[str] = Field(default_factory=lambda: ["US", "BR"])
     global_markets_expanded: bool = False
+    us_market_status: str = "closed"
+    us_market_open: bool = False
+    us_market_label: str = "Mercado fechado"
+    us_market_timezone: str = "America/New_York"
+    us_market_holiday: bool = False
+    intraday_delay_minutes: int | None = None
 
 
 class ExchangeInfo(BaseModel):
@@ -67,6 +73,16 @@ class GlobalStockCandlesResponse(BaseModel):
     history_limited: bool = False
     max_history_days: int
     data_mode: str = "eod"
+    provider: str = "marketstack"
+
+
+class GlobalStockIntradayCandlesResponse(BaseModel):
+    symbol: str
+    exchange: str | None = None
+    candles: list[GlobalStockCandle] = Field(default_factory=list)
+    count: int = 0
+    interval: str = "5min"
+    data_mode: str = "realtime"
     provider: str = "marketstack"
 
 
@@ -202,4 +218,7 @@ class GlobalStockDetailResponse(BaseModel):
     data_mode: str = "eod"
     max_history_days: int = 365
     history_limited: bool = False
+    realtime_enabled: bool = False
+    intraday_interval: str | None = None
+    refresh_seconds: int | None = None
     provider: str = "marketstack"

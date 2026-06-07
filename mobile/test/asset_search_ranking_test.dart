@@ -28,55 +28,42 @@ void main() {
 
   test('prefix symbol ranks before substring match', () {
     final items = [
-      _asset('PETR3', category: MarketCategory.acoesBr),
-      _asset('PETR4', category: MarketCategory.acoesBr),
+      _asset('AAP', category: MarketCategory.stocks),
+      _asset('AAPL', category: MarketCategory.stocks),
     ];
 
-    final ranked = rankAndDedupeSearchResults(items, 'PETR');
+    final ranked = rankAndDedupeSearchResults(items, 'AAP');
 
-    expect(ranked.first.symbol, 'PETR3');
-    expect(ranked.last.symbol, 'PETR4');
+    expect(ranked.first.symbol, 'AAP');
+    expect(ranked.last.symbol, 'AAPL');
   });
 
   test('looksLikeObviousCryptoTicker accepts BTC', () {
     expect(looksLikeObviousCryptoTicker('BTC'), isTrue);
-    expect(looksLikeObviousCryptoTicker('PETR4'), isFalse);
-    expect(looksLikeObviousCryptoTicker('KLBN'), isTrue);
+    expect(looksLikeObviousCryptoTicker('AAPL'), isFalse);
+    expect(looksLikeObviousCryptoTicker('MSFT'), isFalse);
   });
 
-  test('B3 prefix enables quote search and root extraction', () {
-    expect(looksLikeB3FourLetterPrefix('KLBN'), isTrue);
-    expect(b3TickerRoot('KLBN4'), 'KLBN');
-    expect(b3TickerRoot('KLBN11'), 'KLBN');
-    expect(shouldRunB3QuoteSearch('KLBN'), isTrue);
-    expect(shouldTryExactSymbolLookup('KLBN'), isTrue);
-  });
-
-  test('preferred market country ranks before foreign match for PETR', () {
+  test('preferred market country ranks before foreign match for AAPL', () {
     final items = [
-      _asset('PETR', name: 'Petra Capital', category: MarketCategory.stocks),
-      _asset('PETR4', name: 'Petrobras', category: MarketCategory.acoesBr),
-      _asset('PETR3', name: 'Petrobras PN', category: MarketCategory.acoesBr),
+      _asset('AAP', name: 'Other AAP', category: MarketCategory.stocks),
+      _asset('AAPL', name: 'Apple', category: MarketCategory.stocks),
+      _asset('AAPLW', name: 'Apple Warrant', category: MarketCategory.stocks),
     ];
 
-    final rankedBr = rankAndDedupeSearchResults(items, 'PETR', preferredCountryCode: 'BR');
-    expect(rankedBr.first.symbol, 'PETR3');
-    expect(rankedBr.map((a) => a.symbol), contains('PETR'));
-
-    final rankedUs = rankAndDedupeSearchResults(items, 'PETR', preferredCountryCode: 'US');
-    expect(rankedUs.first.symbol, 'PETR');
+    final rankedUs = rankAndDedupeSearchResults(items, 'AAPL', preferredCountryCode: 'US');
+    expect(rankedUs.first.symbol, 'AAPL');
   });
 
-  test('same B3 root ranks related tickers for KLBN4', () {
+  test('exact query ranks first among related tickers', () {
     final items = [
-      _asset('KLBN11', category: MarketCategory.fiis),
-      _asset('KLBN4', category: MarketCategory.acoesBr),
-      _asset('KLBN3', category: MarketCategory.acoesBr),
+      _asset('O', category: MarketCategory.reits),
+      _asset('ORCL', category: MarketCategory.stocks),
+      _asset('ON', category: MarketCategory.stocks),
     ];
 
-    final ranked = rankAndDedupeSearchResults(items, 'KLBN4');
+    final ranked = rankAndDedupeSearchResults(items, 'O');
 
-    expect(ranked.map((a) => a.symbol), containsAll(['KLBN4', 'KLBN11', 'KLBN3']));
-    expect(ranked.first.symbol, 'KLBN4');
+    expect(ranked.first.symbol, 'O');
   });
 }

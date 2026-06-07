@@ -3,45 +3,19 @@ import 'package:rico_investidor/core/network/repository_timeouts.dart';
 import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
 import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
 import 'package:rico_investidor/features/global_markets/widgets/market_hub_section_grid.dart';
-import 'package:rico_investidor/features/home/data/brazilian_hub_sections.dart';
-import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/models/market_category.dart';
 import 'package:rico_investidor/services/market_preference_storage.dart';
 
-/// Cache de seções do mercado preferido — compartilhado entre intro, home e hub BR.
 class PreferredMarketPreloader {
   PreferredMarketPreloader._();
   static final PreferredMarketPreloader instance = PreferredMarketPreloader._();
-
-  static const brazilPreference = MarketPreference(code: 'BR', name: 'Brasil');
 
   final _cache = SessionCache<List<MarketHubSectionData>>(ttl: const Duration(minutes: 5));
   String? _cachedCode;
   Future<List<MarketHubSectionData>>? _inFlight;
 
-  /// Hub brasileiro — reutiliza o mesmo cache da home quando o mercado preferido é BR.
-  Future<List<MarketHubSectionData>> loadBrazilianHub({
-    required QuoteRepository quoteRepository,
-    required GlobalMarketRepository globalMarketRepository,
-    bool forceRefresh = false,
-  }) {
-    if (forceRefresh) {
-      if (_cachedCode == brazilPreference.code) {
-        _cache.clear();
-        _cachedCode = null;
-      }
-      _inFlight = null;
-    }
-    return load(
-      preference: brazilPreference,
-      quoteRepository: quoteRepository,
-      globalMarketRepository: globalMarketRepository,
-    );
-  }
-
   Future<List<MarketHubSectionData>> load({
     required MarketPreference preference,
-    required QuoteRepository quoteRepository,
     required GlobalMarketRepository globalMarketRepository,
   }) {
     final code = preference.code.toUpperCase();
@@ -52,7 +26,6 @@ class PreferredMarketPreloader {
 
     return _inFlight ??= _fetch(
       preference: preference,
-      quoteRepository: quoteRepository,
       globalMarketRepository: globalMarketRepository,
     )
         .timeout(kRepositoryFetchTimeout)
@@ -61,12 +34,9 @@ class PreferredMarketPreloader {
 
   Future<List<MarketHubSectionData>> _fetch({
     required MarketPreference preference,
-    required QuoteRepository quoteRepository,
     required GlobalMarketRepository globalMarketRepository,
   }) async {
-    final sections = preference.isBrazil
-        ? await loadBrazilianHubSections(quoteRepository)
-        : await _loadGlobalSections(preference.code, globalMarketRepository);
+    final sections = await _loadGlobalSections(preference.code, globalMarketRepository);
 
     _cachedCode = preference.code.toUpperCase();
     _cache.set(sections);

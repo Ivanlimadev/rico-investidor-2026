@@ -5,17 +5,8 @@ import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/app/main_shell_screen.dart';
 import 'package:rico_investidor/core/search/asset_search_config.dart';
 import 'package:rico_investidor/core/search/unified_asset_search.dart';
-import 'package:rico_investidor/features/fii/data/fii_repository.dart';
-import 'package:rico_investidor/features/fii/screens/fii_compare_screen.dart';
-import 'package:rico_investidor/features/fii/screens/fii_explore_screen.dart';
-import 'package:rico_investidor/features/fii/screens/fii_list_screen.dart';
-import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
-import 'package:rico_investidor/features/quotes/screens/stock_compare_screen.dart';
-import 'package:rico_investidor/features/quotes/screens/stock_explore_screen.dart';
 import 'package:rico_investidor/models/asset_item.dart';
-import 'package:rico_investidor/models/market_category.dart';
 import 'package:rico_investidor/navigation/open_asset_detail.dart';
-import 'package:rico_investidor/core/utils/asset_logo_url.dart';
 import 'package:rico_investidor/core/widgets/asset_logo.dart';
 import 'package:rico_investidor/features/search/widgets/search_asset_grid.dart';
 import 'package:rico_investidor/services/asset_search_service.dart';
@@ -28,15 +19,11 @@ class SearchTabScreen extends StatefulWidget {
   const SearchTabScreen({
     super.key,
     required this.portfolio,
-    required this.fiiRepository,
-    required this.quoteRepository,
     this.initialQuery,
     this.onInitialQueryApplied,
   });
 
   final PortfolioState portfolio;
-  final FiiRepository fiiRepository;
-  final QuoteRepository quoteRepository;
   final String? initialQuery;
   final VoidCallback? onInitialQueryApplied;
 
@@ -113,11 +100,7 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
           category: item.category,
           price: item.price,
           changePercent: item.changePercent,
-          logoUrl: resolveAssetLogoUrl(
-            item.symbol,
-            item.logoUrl,
-            isFii: looksLikeFiiTicker(item.symbol),
-          ),
+          logoUrl: item.logoUrl,
           dividendYield12m: item.dividendYield12m,
           priceToBook: item.priceToBook,
           exchangeMic: item.exchangeMic,
@@ -162,8 +145,6 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
     openAssetDetail(
       context,
       asset: asset,
-      fiiRepository: widget.fiiRepository,
-      quoteRepository: widget.quoteRepository,
     );
   }
 
@@ -259,77 +240,11 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
               ),
               const SizedBox(height: 20),
             ],
-            Text('Atalhos ações', style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _ShortcutChip(
-                  icon: Icons.travel_explore,
-                  label: 'Explorar',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => StockExploreScreen(
-                        repository: widget.quoteRepository,
-                        fiiRepository: widget.fiiRepository,
-                        category: MarketCategory.acoesBr,
-                      ),
-                    ),
-                  ),
-                ),
-                _ShortcutChip(
-                  icon: Icons.compare_arrows,
-                  label: 'Comparar',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => StockCompareScreen(repository: widget.quoteRepository),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Text('Atalhos FIIs', style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _ShortcutChip(
-                  icon: Icons.list_alt,
-                  label: 'Lista completa',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => FiiListScreen(repository: widget.fiiRepository),
-                    ),
-                  ),
-                ),
-                _ShortcutChip(
-                  icon: Icons.travel_explore,
-                  label: 'Explorar',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => FiiExploreScreen(repository: widget.fiiRepository),
-                    ),
-                  ),
-                ),
-                _ShortcutChip(
-                  icon: Icons.compare_arrows,
-                  label: 'Comparar',
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => FiiCompareScreen(repository: widget.fiiRepository),
-                    ),
-                  ),
-                ),
-              ],
-            ),
             if (_favorites.isEmpty && _recentQueries.isEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 12),
                 child: Text(
-                  'Digite pelo menos 2 caracteres para buscar ações, FIIs, cripto, EUA e outros ativos.',
+'Digite pelo menos 2 caracteres para buscar ações americanas, REITs ou cripto.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
@@ -358,23 +273,3 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-class _ShortcutChip extends StatelessWidget {
-  const _ShortcutChip({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return ActionChip(
-      avatar: Icon(icon, size: 18),
-      label: Text(label),
-      onPressed: onTap,
-    );
-  }
-}

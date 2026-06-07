@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:rico_investidor/core/markets/market_visibility.dart';
 import 'package:rico_investidor/features/menu/account_menu_items.dart';
 import 'package:rico_investidor/features/settings/settings_screen.dart';
 import 'package:rico_investidor/models/market_category.dart';
@@ -61,7 +62,7 @@ class MainMenuDrawer extends StatelessWidget {
               child: ListView(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 children: [
-                  for (final category in MarketCategory.values)
+                  for (final category in navigableMarketCategories)
                     ListTile(
                       leading: SizedBox(
                         width: 40,

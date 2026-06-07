@@ -1,6 +1,6 @@
-import 'package:rico_investidor/features/fii/utils/fii_quote_chart.dart';
-import 'package:rico_investidor/features/fii/utils/fii_simulation.dart';
-import 'package:rico_investidor/models/fii_models.dart';
+import 'package:rico_investidor/core/utils/quote_chart.dart';
+import 'package:rico_investidor/core/utils/parse_market_date.dart';
+import 'package:rico_investidor/models/market_series_models.dart';
 
 class AssetReturnItem {
   const AssetReturnItem({
@@ -65,8 +65,8 @@ class AssetPriceTimeline {
   final List<({DateTime date, double price})> _points;
 
   factory AssetPriceTimeline.from({
-    List<FiiCandleBar> candles = const [],
-    List<FiiHistoryPoint> history = const [],
+    List<QuoteCandleBar> candles = const [],
+    List<HistoryPricePoint> history = const [],
   }) {
     final byDay = <String, ({DateTime date, double price, bool fromCandle})>{};
 
@@ -84,13 +84,13 @@ class AssetPriceTimeline {
 
     for (final bar in candles) {
       if (bar.close <= 0) continue;
-      final date = parseFiiDate(bar.tradeDate);
+      final date = parseMarketDate(bar.tradeDate);
       if (date == null) continue;
       add(date, bar.close, fromCandle: true);
     }
 
     for (final point in history) {
-      final date = parseFiiDate(point.referenceDate);
+      final date = parseMarketDate(point.referenceDate);
       final price = point.closePrice;
       if (date == null || price == null || price <= 0) continue;
       add(date, price, fromCandle: false);
@@ -132,8 +132,8 @@ class AssetPriceTimeline {
 
 ({DateTime date, double price})? pricePointAtDate({
   required DateTime target,
-  List<FiiHistoryPoint> history = const [],
-  List<FiiCandleBar> candles = const [],
+  List<HistoryPricePoint> history = const [],
+  List<QuoteCandleBar> candles = const [],
   AssetPriceTimeline? timeline,
 }) {
   if (timeline != null) {
@@ -153,18 +153,18 @@ class AssetPriceTimeline {
 }
 
 ({DateTime date, double price})? _pricePointFromCandles(
-  List<FiiCandleBar> candles,
+  List<QuoteCandleBar> candles,
   DateTime target,
 ) {
   if (candles.isEmpty) return null;
 
-  final sorted = List<FiiCandleBar>.from(candles)
+  final sorted = List<QuoteCandleBar>.from(candles)
     ..sort((a, b) => a.tradeDate.compareTo(b.tradeDate));
 
   ({DateTime date, double price})? last;
   for (final bar in sorted) {
     if (bar.close <= 0) continue;
-    final date = parseFiiDate(bar.tradeDate);
+    final date = parseMarketDate(bar.tradeDate);
     if (date == null) continue;
     if (date.isAfter(target)) break;
     last = (date: date, price: bar.close);
@@ -173,13 +173,13 @@ class AssetPriceTimeline {
 }
 
 ({DateTime date, double price})? _pricePointFromHistory(
-  List<FiiHistoryPoint> history,
+  List<HistoryPricePoint> history,
   DateTime target,
 ) {
   if (history.isEmpty) return null;
 
   final sorted = history
-      .map((p) => (date: parseFiiDate(p.referenceDate), price: p.closePrice))
+      .map((p) => (date: parseMarketDate(p.referenceDate), price: p.closePrice))
       .where((e) => e.date != null && e.price != null && e.price! > 0)
       .toList()
     ..sort((a, b) => a.date!.compareTo(b.date!));
@@ -193,12 +193,12 @@ class AssetPriceTimeline {
 }
 
 double dividendsPerShareSince(
-  List<FiiDistributionPayment> payments,
+  List<DistributionPayment> payments,
   DateTime since,
 ) {
   var total = 0.0;
   for (final payment in payments) {
-    final date = parseFiiDate(payment.paymentDate ?? payment.referenceDate);
+    final date = parseMarketDate(payment.paymentDate ?? payment.referenceDate);
     final value = payment.valuePerShare;
     if (date == null || value == null || value <= 0) continue;
     if (date.isBefore(since)) continue;
@@ -209,16 +209,16 @@ double dividendsPerShareSince(
 
 List<AssetReturnItem> computeAssetReturns({
   required double? currentPrice,
-  List<FiiHistoryPoint> history = const [],
-  List<FiiCandleBar> candles = const [],
-  List<FiiDistributionPayment> payments = const [],
+  List<HistoryPricePoint> history = const [],
+  List<QuoteCandleBar> candles = const [],
+  List<DistributionPayment> payments = const [],
 }) {
   final sorted = dedupeQuoteBarsByDate([
     ...candles,
     if (history.isNotEmpty)
       for (final point in history)
         if (point.referenceDate != null && (point.closePrice ?? 0) > 0)
-          FiiCandleBar(
+          QuoteCandleBar(
             tradeDate: point.referenceDate!,
             open: point.closePrice!,
             high: point.closePrice!,
@@ -254,8 +254,8 @@ List<AssetReturnItem> computeAssetReturns({
 
 ({double totalPct, double pricePct, double dividendPct})? _returnForSessions({
   required double endPrice,
-  required List<FiiCandleBar> sorted,
-  required List<FiiDistributionPayment> payments,
+  required List<QuoteCandleBar> sorted,
+  required List<DistributionPayment> payments,
   required int sessionsBack,
 }) {
   if (sorted.length <= sessionsBack) return null;

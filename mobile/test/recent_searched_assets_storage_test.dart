@@ -7,7 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 AssetItem _asset(String symbol) => AssetItem(
       symbol: symbol,
       name: symbol,
-      category: MarketCategory.acoesBr,
+      category: MarketCategory.stocks,
       price: 10,
       changePercent: 0,
     );

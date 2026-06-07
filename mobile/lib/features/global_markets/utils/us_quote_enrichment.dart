@@ -1,7 +1,7 @@
 import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
 import 'package:rico_investidor/features/global_markets/utils/global_stock_chart_prices.dart';
-import 'package:rico_investidor/features/quotes/data/quote_api_client.dart';
 import 'package:rico_investidor/features/quotes/models/stock_quote_detail.dart';
+import 'package:rico_investidor/features/quotes/models/market_quote_dto.dart';
 
 /// Enriquece detalhe lite (só cotação + candles) com stats e rentabilidade reais.
 class UsQuoteEnrichment {

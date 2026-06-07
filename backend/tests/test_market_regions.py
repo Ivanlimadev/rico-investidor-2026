@@ -14,16 +14,16 @@ from app.domain.global_markets.models import ExchangeInfo
 from app.services.global_market_service import GlobalMarketService
 
 
-def test_enabled_countries_are_us_and_br_only():
+def test_enabled_countries_are_us_only():
     assert is_market_country_enabled("US")
-    assert is_market_country_enabled("br")
+    assert not is_market_country_enabled("BR")
     assert not is_market_country_enabled("DE")
     assert not is_market_country_enabled("JP")
 
 
 def test_enabled_exchange_mics():
     assert is_exchange_mic_enabled("XNAS")
-    assert is_exchange_mic_enabled("BVMF")
+    assert not is_exchange_mic_enabled("BVMF")
     assert not is_exchange_mic_enabled("XETRA")
 
 
@@ -33,7 +33,7 @@ def test_require_market_country_rejects_disabled():
     assert exc.value.status_code == 404
 
 
-def test_list_world_exchanges_filters_to_us_br():
+def test_list_world_exchanges_filters_to_us_only():
     client = AsyncMock()
     client.map_exchanges.return_value = [
         ExchangeInfo(mic="XNAS", name="NASDAQ", country="USA", country_code="US"),
@@ -45,8 +45,8 @@ def test_list_world_exchanges_filters_to_us_br():
     result = asyncio.run(service.list_world_exchanges())
 
     codes = {group.country_code for group in result.priority_countries + result.other_countries}
-    assert codes == {"US", "BR"}
-    assert result.total_countries == 2
+    assert codes == {"US"}
+    assert result.total_countries == 1
 
 
 def test_get_country_hub_rejects_disabled_country():

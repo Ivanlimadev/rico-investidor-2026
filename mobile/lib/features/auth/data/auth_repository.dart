@@ -41,6 +41,23 @@ class AuthRepository {
     await authSession.setAccessToken(token, registered: true);
   }
 
+  Future<UserProfile> updateProfile({required String name}) async {
+    final json = await _client.patchJson(
+      '/v1/auth/me',
+      body: {'name': name},
+      fromJson: (value) => value,
+    );
+    return UserProfile(
+      displayName: (json['name'] as String?)?.trim().isNotEmpty == true
+          ? json['name'] as String
+          : 'Investidor',
+      plan: SubscriptionPlan.free,
+      email: json['email'] as String?,
+      userId: json['id'] as String?,
+      isAnonymous: json['is_anonymous'] as bool? ?? false,
+    );
+  }
+
   Future<void> register({
     required String email,
     required String password,

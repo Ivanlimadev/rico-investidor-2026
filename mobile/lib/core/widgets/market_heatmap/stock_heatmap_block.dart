@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:rico_investidor/core/utils/quote_refresh_timer.dart';
 import 'package:rico_investidor/core/auth/auth_session.dart';
 import 'package:rico_investidor/core/widgets/market_heatmap/heatmap_layout.dart';
 import 'package:rico_investidor/core/widgets/market_heatmap/market_heatmap_section.dart';
-import 'package:rico_investidor/features/quotes/data/quote_api_client.dart';
 import 'package:rico_investidor/models/asset_item.dart';
+import 'package:rico_investidor/features/quotes/models/market_quote_dto.dart';
 
 typedef HeatmapLoader = Future<QuoteListResponse?> Function();
+typedef RefreshSecondsResolver = Future<int?> Function();
 
 /// Carrega e exibe mapa de calor de ações (BR ou EUA).
 ///
@@ -21,6 +23,8 @@ class StockHeatmapBlock extends StatefulWidget {
     this.title = 'Mapa de calor · 24h',
     this.mapAsset,
     this.reloadKey,
+    this.autoRefreshSeconds,
+    this.resolveRefreshSeconds,
   });
 
   final HeatmapLoader load;
@@ -32,17 +36,29 @@ class StockHeatmapBlock extends StatefulWidget {
   /// Identificador do mercado/fonte — muda → recarrega dados.
   final String? reloadKey;
 
+  /// Quando definido, recarrega o heatmap periodicamente (Professional).
+  final int? autoRefreshSeconds;
+  final RefreshSecondsResolver? resolveRefreshSeconds;
+
   @override
   State<StockHeatmapBlock> createState() => _StockHeatmapBlockState();
 }
 
 class _StockHeatmapBlockState extends State<StockHeatmapBlock> {
   late Future<QuoteListResponse?> _future;
+  QuoteRefreshTimer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
     _future = _load();
+    _configureAutoRefresh();
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.stop();
+    super.dispose();
   }
 
   @override
@@ -52,6 +68,25 @@ class _StockHeatmapBlockState extends State<StockHeatmapBlock> {
         oldWidget.volumeLabel != widget.volumeLabel) {
       setState(() => _future = _load());
     }
+    if (oldWidget.autoRefreshSeconds != widget.autoRefreshSeconds) {
+      _configureAutoRefresh();
+    }
+  }
+
+  Future<void> _configureAutoRefresh() async {
+    _refreshTimer?.stop();
+    var seconds = widget.autoRefreshSeconds;
+    if ((seconds == null || seconds <= 0) && widget.resolveRefreshSeconds != null) {
+      seconds = await widget.resolveRefreshSeconds!();
+    }
+    if (seconds == null || seconds <= 0) return;
+    _refreshTimer = QuoteRefreshTimer(
+      onTick: () async {
+        if (!mounted) return;
+        setState(() => _future = _load());
+        await _future;
+      },
+    )..start(refreshSeconds: seconds, enabled: true);
   }
 
   Future<QuoteListResponse?> _load() async {

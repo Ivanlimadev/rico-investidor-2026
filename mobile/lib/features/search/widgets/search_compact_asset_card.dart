@@ -28,15 +28,6 @@ class SearchCompactAssetCard extends StatelessWidget {
     return switch (asset.category) {
       MarketCategory.stocks || MarketCategory.reits => _formatUsd(asset.price),
       MarketCategory.cripto => formatCryptoPrice(asset.price),
-      MarketCategory.moeda => asset.price.toStringAsFixed(4),
-      MarketCategory.acoesBr ||
-      MarketCategory.bdr ||
-      MarketCategory.etf ||
-      MarketCategory.fiis ||
-      MarketCategory.tesouroDireto ||
-      MarketCategory.etfInternacional ||
-      MarketCategory.indices =>
-        asset.price >= 1000 ? 'R\$ ${asset.price.toStringAsFixed(0)}' : formatBrl(asset.price),
     };
   }
 

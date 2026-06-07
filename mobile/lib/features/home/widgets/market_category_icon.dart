@@ -1,6 +1,5 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
+import 'package:rico_investidor/core/widgets/vector_country_flag.dart';
 import 'package:rico_investidor/models/market_category_icon_kind.dart';
 
 /// Ícones vetoriais — bandeira BR com losango amarelo (proporção correta).
@@ -27,12 +26,20 @@ class MarketCategoryIcon extends StatelessWidget {
         MarketCategoryIconKind.brazilFlag => _FlagFrame(
             size: size,
             accent: accentColor ?? const Color(0xFFFF6B35),
-            child: _BrazilFlag(size: size * 0.88),
+            child: VectorBrazilFlag(
+              width: size * 0.88,
+              height: size * 0.88 * 0.7,
+              borderRadius: size * 0.1,
+            ),
           ),
         MarketCategoryIconKind.usFlag => _FlagFrame(
             size: size,
             accent: accentColor ?? const Color(0xFFFF5C5C),
-            child: _UsFlag(size: size * 0.88),
+            child: VectorUsFlag(
+              width: size * 0.88,
+              height: size * 0.88 * 0.7,
+              borderRadius: size * 0.1,
+            ),
           ),
         MarketCategoryIconKind.bitcoin => _BitcoinMark(
           size: size,
@@ -43,7 +50,11 @@ class MarketCategoryIcon extends StatelessWidget {
           color: iconColor ?? const Color(0xFFFFD180),
           accent: accentColor ?? const Color(0xFFFFB347),
           size: size,
-          badge: _BrazilFlag(size: size * 0.34),
+          badge: VectorBrazilFlag(
+            width: size * 0.34,
+            height: size * 0.34 * 0.7,
+            borderRadius: size * 0.04,
+          ),
         ),
         MarketCategoryIconKind.globe => _WarmGlyphIcon(
           icon: Icons.public_rounded,
@@ -56,21 +67,33 @@ class MarketCategoryIcon extends StatelessWidget {
           color: iconColor ?? const Color(0xFFFFD166),
           accent: accentColor ?? const Color(0xFFE8A838),
           size: size,
-          badge: _BrazilFlag(size: size * 0.34),
+          badge: VectorBrazilFlag(
+            width: size * 0.34,
+            height: size * 0.34 * 0.7,
+            borderRadius: size * 0.04,
+          ),
         ),
         MarketCategoryIconKind.chartGlobal => _WarmGlyphIcon(
           icon: Icons.candlestick_chart_rounded,
           color: iconColor ?? const Color(0xFFFF9EB6),
           accent: accentColor ?? const Color(0xFFFF6F91),
           size: size,
-          badge: _UsFlag(size: size * 0.34),
+          badge: VectorUsFlag(
+            width: size * 0.34,
+            height: size * 0.34 * 0.7,
+            borderRadius: size * 0.04,
+          ),
         ),
         MarketCategoryIconKind.reits => _WarmGlyphIcon(
           icon: Icons.home_work_rounded,
           color: iconColor ?? const Color(0xFFFFB3D0),
           accent: accentColor ?? const Color(0xFFFF7EB3),
           size: size,
-          badge: _UsFlag(size: size * 0.34),
+          badge: VectorUsFlag(
+            width: size * 0.34,
+            height: size * 0.34 * 0.7,
+            borderRadius: size * 0.04,
+          ),
         ),
         MarketCategoryIconKind.forex => _WarmGlyphIcon(
           icon: Icons.currency_exchange_rounded,
@@ -89,7 +112,11 @@ class MarketCategoryIcon extends StatelessWidget {
           color: iconColor ?? const Color(0xFF9AE4C8),
           accent: accentColor ?? const Color(0xFF5EC4A8),
           size: size,
-          badge: _BrazilFlag(size: size * 0.34),
+          badge: VectorBrazilFlag(
+            width: size * 0.34,
+            height: size * 0.34 * 0.7,
+            borderRadius: size * 0.04,
+          ),
         ),
       },
     );
@@ -202,142 +229,6 @@ class _WarmGlyphIcon extends StatelessWidget {
       ],
     );
   }
-}
-
-class _BrazilFlag extends StatelessWidget {
-  const _BrazilFlag({required this.size});
-
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(size * 0.12),
-      child: RepaintBoundary(
-        child: CustomPaint(
-          size: Size(size, size * 0.7),
-          painter: const _BrazilFlagPainter(),
-        ),
-      ),
-    );
-  }
-}
-
-class _BrazilFlagPainter extends CustomPainter {
-  const _BrazilFlagPainter();
-
-  static const _green = Color(0xFF009739);
-  static const _yellow = Color(0xFFFFDF00);
-  static const _blue = Color(0xFF002776);
-  static const _white = Color(0xFFFFFFFF);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-
-    canvas.drawRect(Offset.zero & size, Paint()..color = _green);
-
-    final diamond = Path()
-      ..moveTo(w * 0.5, h * 0.06)
-      ..lineTo(w * 0.94, h * 0.5)
-      ..lineTo(w * 0.5, h * 0.94)
-      ..lineTo(w * 0.06, h * 0.5)
-      ..close();
-    canvas.drawPath(diamond, Paint()..color = _yellow);
-
-    final center = Offset(w * 0.5, h * 0.5);
-    canvas.drawCircle(center, w * 0.22, Paint()..color = _blue);
-
-    final band = Paint()
-      ..color = _white
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = w * 0.035
-      ..strokeCap = StrokeCap.round;
-    canvas.drawArc(
-      Rect.fromCenter(center: center, width: w * 0.38, height: h * 0.26),
-      math.pi * 0.55,
-      math.pi * 1.35,
-      false,
-      band,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _UsFlag extends StatelessWidget {
-  const _UsFlag({required this.size});
-
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(size * 0.12),
-      child: RepaintBoundary(
-        child: CustomPaint(
-          size: Size(size, size * 0.7),
-          painter: const _UsFlagPainter(),
-        ),
-      ),
-    );
-  }
-}
-
-class _UsFlagPainter extends CustomPainter {
-  const _UsFlagPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const stripes = 9;
-    final stripeH = size.height / stripes;
-
-    for (var i = 0; i < stripes; i++) {
-      canvas.drawRect(
-        Rect.fromLTWH(0, stripeH * i, size.width, stripeH),
-        Paint()..color = i.isEven ? const Color(0xFFB31942) : const Color(0xFFFFFFFF),
-      );
-    }
-
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, size.width * 0.42, size.height * 0.54),
-      Paint()..color = const Color(0xFF0A3161),
-    );
-
-    final star = Paint()..color = Colors.white;
-    const cols = 5;
-    const rows = 4;
-    for (var r = 0; r < rows; r++) {
-      for (var c = 0; c < cols; c++) {
-        final dx = (c + (r.isOdd ? 0.5 : 0)) * size.width * 0.075 + size.width * 0.03;
-        final dy = r * size.height * 0.11 + size.height * 0.05;
-        _drawStar(canvas, Offset(dx, dy), size.width * 0.022, star);
-      }
-    }
-  }
-
-  void _drawStar(Canvas canvas, Offset center, double radius, Paint paint) {
-    const points = 5;
-    final path = Path();
-    for (var i = 0; i < points * 2; i++) {
-      final r = i.isEven ? radius : radius * 0.42;
-      final angle = (math.pi / points) * i - math.pi / 2;
-      final x = center.dx + r * math.cos(angle);
-      final y = center.dy + r * math.sin(angle);
-      if (i == 0) {
-        path.moveTo(x, y);
-      } else {
-        path.lineTo(x, y);
-      }
-    }
-    path.close();
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _BitcoinMark extends StatelessWidget {

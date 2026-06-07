@@ -138,6 +138,11 @@ def _is_trading_day(day: date, holidays: frozenset[date]) -> bool:
     return day.weekday() < 5 and day not in holidays
 
 
+def is_us_trading_day(day: date) -> bool:
+    """Dia útil NYSE (sem fim de semana nem feriado listado)."""
+    return _is_trading_day(day, US_NYSE_HOLIDAYS)
+
+
 def previous_trading_day(day: date, *, market: str) -> date:
     holidays = BR_B3_HOLIDAYS if market == "br" else US_NYSE_HOLIDAYS
     candidate = day - timedelta(days=1)

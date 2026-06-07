@@ -1,6 +1,6 @@
 import 'package:rico_investidor/core/utils/asset_returns.dart';
-import 'package:rico_investidor/features/fii/utils/fii_simulation.dart';
-import 'package:rico_investidor/models/fii_models.dart';
+import 'package:rico_investidor/core/utils/parse_market_date.dart';
+import 'package:rico_investidor/models/market_series_models.dart';
 
 /// Períodos anuais do card "Se você tivesse investido".
 const whatIfInvestmentPeriodYears = [1, 2, 5, 10];
@@ -109,8 +109,8 @@ class AssetInvestmentSimulationResult {
 }
 
 int maxSimulatableYearsFromSeries({
-  List<FiiCandleBar> candles = const [],
-  List<FiiHistoryPoint> history = const [],
+  List<QuoteCandleBar> candles = const [],
+  List<HistoryPricePoint> history = const [],
 }) {
   final timeline = AssetPriceTimeline.from(candles: candles, history: history);
   final earliest = timeline.earliest;
@@ -119,7 +119,7 @@ int maxSimulatableYearsFromSeries({
   return (months / 12).floor().clamp(0, 10);
 }
 
-bool hasDividendPayments(List<FiiDistributionPayment> payments) {
+bool hasDividendPayments(List<DistributionPayment> payments) {
   return payments.any((payment) => (payment.valuePerShare ?? 0) > 0);
 }
 
@@ -128,9 +128,9 @@ AssetInvestmentSimulationResult? simulateAssetInvestment({
   int years = 0,
   int months = 0,
   required double currentPrice,
-  List<FiiCandleBar> candles = const [],
-  List<FiiHistoryPoint> history = const [],
-  List<FiiDistributionPayment> payments = const [],
+  List<QuoteCandleBar> candles = const [],
+  List<HistoryPricePoint> history = const [],
+  List<DistributionPayment> payments = const [],
   bool reinvestDividends = false,
   AssetPriceTimeline? timeline,
 }) {
@@ -162,10 +162,10 @@ AssetInvestmentSimulationResult? simulateAssetInvestment({
   var totalDividends = 0.0;
   var paymentCount = 0;
 
-  final sortedPayments = List<FiiDistributionPayment>.from(payments)
+  final sortedPayments = List<DistributionPayment>.from(payments)
     ..sort((a, b) {
-      final da = parseFiiDate(a.paymentDate ?? a.referenceDate);
-      final db = parseFiiDate(b.paymentDate ?? b.referenceDate);
+      final da = parseMarketDate(a.paymentDate ?? a.referenceDate);
+      final db = parseMarketDate(b.paymentDate ?? b.referenceDate);
       if (da == null && db == null) return 0;
       if (da == null) return -1;
       if (db == null) return 1;
@@ -173,7 +173,7 @@ AssetInvestmentSimulationResult? simulateAssetInvestment({
     });
 
   for (final payment in sortedPayments) {
-    final date = parseFiiDate(payment.paymentDate ?? payment.referenceDate);
+    final date = parseMarketDate(payment.paymentDate ?? payment.referenceDate);
     final value = payment.valuePerShare;
     if (date == null || value == null || value <= 0) continue;
     if (date.isBefore(startDate)) continue;
@@ -230,9 +230,9 @@ AssetInvestmentSimulationResult? simulateAssetInvestmentForPeriod({
   required WhatIfInvestmentPeriod period,
   required double initialAmount,
   required double currentPrice,
-  List<FiiCandleBar> candles = const [],
-  List<FiiHistoryPoint> history = const [],
-  List<FiiDistributionPayment> payments = const [],
+  List<QuoteCandleBar> candles = const [],
+  List<HistoryPricePoint> history = const [],
+  List<DistributionPayment> payments = const [],
   bool reinvestDividends = false,
   AssetPriceTimeline? timeline,
 }) {
@@ -253,9 +253,9 @@ AssetInvestmentSimulationResult? simulateAssetInvestmentForPeriod({
 List<WhatIfInvestmentPeriod> simulatableWhatIfPeriods({
   required double initialAmount,
   required double currentPrice,
-  List<FiiCandleBar> candles = const [],
-  List<FiiHistoryPoint> history = const [],
-  List<FiiDistributionPayment> payments = const [],
+  List<QuoteCandleBar> candles = const [],
+  List<HistoryPricePoint> history = const [],
+  List<DistributionPayment> payments = const [],
   bool reinvestDividends = false,
   List<WhatIfInvestmentPeriod> candidates = whatIfInvestmentPeriodOptions,
 }) {
@@ -286,9 +286,9 @@ List<WhatIfInvestmentPeriod> simulatableWhatIfPeriods({
 List<int> simulatableWhatIfPeriodYears({
   required double initialAmount,
   required double currentPrice,
-  List<FiiCandleBar> candles = const [],
-  List<FiiHistoryPoint> history = const [],
-  List<FiiDistributionPayment> payments = const [],
+  List<QuoteCandleBar> candles = const [],
+  List<HistoryPricePoint> history = const [],
+  List<DistributionPayment> payments = const [],
   bool reinvestDividends = false,
   List<int> candidates = whatIfInvestmentPeriodYears,
 }) {
@@ -325,9 +325,9 @@ int defaultWhatIfPeriod(List<int> periods) {
 Map<int, AssetInvestmentSimulationResult?> simulateWhatIfGrid({
   required double initialAmount,
   required double currentPrice,
-  List<FiiCandleBar> candles = const [],
-  List<FiiHistoryPoint> history = const [],
-  List<FiiDistributionPayment> payments = const [],
+  List<QuoteCandleBar> candles = const [],
+  List<HistoryPricePoint> history = const [],
+  List<DistributionPayment> payments = const [],
   required bool reinvestDividends,
   List<int> years = whatIfInvestmentPeriodYears,
 }) {

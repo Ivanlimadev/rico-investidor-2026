@@ -3,10 +3,8 @@ import 'package:rico_investidor/app/app_bottom_nav_bar.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/app/tab_root_navigator.dart';
 import 'package:rico_investidor/features/community/community_tab_screen.dart';
-import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/home/data/home_repository.dart';
 import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
-import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/finances/finances_tab_screen.dart';
 import 'package:rico_investidor/features/home/home_screen.dart';
 import 'package:rico_investidor/features/menu/account_menu_items.dart';
@@ -34,8 +32,6 @@ class MainShellScreen extends StatefulWidget {
     required this.portfolio,
     required this.onPortfolioChanged,
     required this.homeRepository,
-    required this.fiiRepository,
-    required this.quoteRepository,
     required this.globalMarketRepository,
     required this.isDarkMode,
     required this.onToggleTheme,
@@ -44,6 +40,7 @@ class MainShellScreen extends StatefulWidget {
     required this.onLogin,
     required this.onRegister,
     required this.onLogout,
+    this.onPortfolioAccountReady,
   });
 
   final UserProfile profile;
@@ -51,8 +48,6 @@ class MainShellScreen extends StatefulWidget {
   final PortfolioState portfolio;
   final VoidCallback onPortfolioChanged;
   final HomeRepository homeRepository;
-  final FiiRepository fiiRepository;
-  final QuoteRepository quoteRepository;
   final GlobalMarketRepository globalMarketRepository;
   final bool isDarkMode;
   final VoidCallback onToggleTheme;
@@ -61,6 +56,7 @@ class MainShellScreen extends StatefulWidget {
   final VoidCallback onLogin;
   final VoidCallback onRegister;
   final LogoutCallback onLogout;
+  final Future<void> Function()? onPortfolioAccountReady;
 
   @override
   State<MainShellScreen> createState() => _MainShellScreenState();
@@ -71,8 +67,6 @@ class _MainShellScreenState extends State<MainShellScreen> {
   final Set<AppTab> _loadedTabs = {AppTab.home};
   String? _pendingSearchQuery;
 
-  // Abas exibidas na barra inferior. Comunidade e Finanças ficam ocultas
-  // (código preservado) para acelerar o lançamento; basta reincluí-las aqui.
   static const List<AppTab> _visibleTabs = [
     AppTab.home,
     AppTab.portfolio,
@@ -161,8 +155,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
                 portfolio: widget.portfolio,
                 onPortfolioChanged: widget.onPortfolioChanged,
                 homeRepository: widget.homeRepository,
-                fiiRepository: widget.fiiRepository,
-                quoteRepository: widget.quoteRepository,
+                globalMarketRepository: widget.globalMarketRepository,
                 isDarkMode: widget.isDarkMode,
                 onToggleTheme: widget.onToggleTheme,
                 preferredMarket: widget.preferredMarket,
@@ -177,17 +170,14 @@ class _MainShellScreenState extends State<MainShellScreen> {
               PortfolioTabScreen(
                 portfolio: widget.portfolio,
                 onPortfolioChanged: widget.onPortfolioChanged,
-                fiiRepository: widget.fiiRepository,
-                quoteRepository: widget.quoteRepository,
                 preferredMarket: widget.preferredMarket,
+                onPortfolioAccountReady: widget.onPortfolioAccountReady,
               ),
             ),
             _tabRoot(
               AppTab.search,
               SearchTabScreen(
                 portfolio: widget.portfolio,
-                fiiRepository: widget.fiiRepository,
-                quoteRepository: widget.quoteRepository,
                 initialQuery: _pendingSearchQuery,
                 onInitialQueryApplied: _consumePendingSearchQuery,
               ),
@@ -201,8 +191,6 @@ class _MainShellScreenState extends State<MainShellScreen> {
                 onProfileChanged: widget.onProfileChanged,
                 portfolio: widget.portfolio,
                 onPortfolioChanged: widget.onPortfolioChanged,
-                fiiRepository: widget.fiiRepository,
-                quoteRepository: widget.quoteRepository,
                 globalMarketRepository: widget.globalMarketRepository,
                 isDarkMode: widget.isDarkMode,
                 onToggleTheme: widget.onToggleTheme,
@@ -245,8 +233,5 @@ class _MainShellScreenState extends State<MainShellScreen> {
   }
 }
 
-/// Espaço extra no rodapé — barra inferior fixa + FAB nas abas com botão flutuante.
 const kBottomNavContentPadding = 96.0;
-
-/// Eleva o FAB acima da barra inferior do shell.
 const kBottomNavFabPadding = 72.0;

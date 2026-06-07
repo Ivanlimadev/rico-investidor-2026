@@ -3,15 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/main_shell_screen.dart';
 import 'package:rico_investidor/core/auth/auth_session.dart';
+import 'package:rico_investidor/core/network/api_client.dart';
 import 'package:rico_investidor/core/theme/app_theme.dart';
 import 'package:rico_investidor/features/auth/data/auth_repository.dart';
 import 'package:rico_investidor/features/auth/screens/auth_welcome_screen.dart';
 import 'package:rico_investidor/features/auth/screens/login_screen.dart';
 import 'package:rico_investidor/features/auth/screens/register_screen.dart';
-import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
 import 'package:rico_investidor/features/home/data/home_repository.dart';
-import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/home/home_screen.dart';
 import 'package:rico_investidor/features/onboarding/market_onboarding_screen.dart';
 import 'package:rico_investidor/features/onboarding/premium_intro_screen.dart';
@@ -20,9 +19,13 @@ import 'package:rico_investidor/services/account_onboarding_storage.dart';
 import 'package:rico_investidor/services/asset_search_service.dart';
 import 'package:rico_investidor/features/home/data/preferred_market_preloader.dart';
 import 'package:rico_investidor/services/app_bootstrap_service.dart';
+import 'package:rico_investidor/core/markets/supported_market_countries.dart';
+import 'package:rico_investidor/services/portfolio_data_migration.dart';
 import 'package:rico_investidor/services/market_preference_storage.dart';
+import 'package:rico_investidor/services/portfolio_dividend_service.dart';
 import 'package:rico_investidor/services/portfolio_fx_service.dart';
 import 'package:rico_investidor/services/portfolio_price_service.dart';
+import 'package:rico_investidor/features/portfolio/data/portfolio_repository.dart';
 import 'package:rico_investidor/services/portfolio_storage.dart';
 import 'package:rico_investidor/state/portfolio_state.dart';
 
@@ -37,8 +40,6 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
   ThemeMode _themeMode = ThemeMode.dark;
   late UserProfile _profile = createDefaultProfile();
   final HomeRepository _homeRepository = homeRepository;
-  final FiiRepository _fiiRepository = fiiRepository;
-  final QuoteRepository _quoteRepository = quoteRepository;
   final GlobalMarketRepository _globalMarketRepository = globalMarketRepository;
   final PortfolioStorage _portfolioStorage = PortfolioStorage();
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
@@ -49,6 +50,7 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
   bool _accountLoaded = false;
   bool _accountOnboardingCompleted = false;
   bool _introCompleted = false;
+  bool _portfolioBootstrapped = false;
   late PortfolioState _portfolio = createInitialPortfolioState(
     searchService: assetSearchService,
   );
@@ -71,18 +73,140 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
         dividends: _portfolio.dividends,
       ),
     );
+    if (!_portfolioBootstrapped && _portfolio.holdings.isNotEmpty) {
+      unawaited(_bootstrapPortfolioData());
+    }
   }
 
   Future<void> _loadPortfolio() async {
+    try {
+      await authSession.ensureAuthenticated();
+    } catch (_) {}
+
+    if (authSession.isRegisteredSession) {
+      final loadedRemote = await _loadPortfolioFromServer();
+      if (loadedRemote) {
+        unawaited(_bootstrapPortfolioData());
+        return;
+      }
+    }
+
     final saved = await _portfolioStorage.load();
-    if (!mounted || saved == null) return;
-    setState(() {
-      _portfolio = PortfolioState(
+    if (!mounted) return;
+
+    if (saved != null) {
+      final migrated = PortfolioDataMigration.migrateHoldings(saved.holdings);
+      final repairedHoldings = PortfolioState.repairHoldingsCurrencies(
+        PortfolioDataMigration.dropOrphanBrazilHoldings(migrated),
         searchService: assetSearchService,
-        holdings: saved.holdings,
-        dividends: saved.dividends,
-        usdBrlRate: _portfolio.usdBrlRate,
       );
+      setState(() {
+        _portfolio = PortfolioState(
+          searchService: assetSearchService,
+          holdings: repairedHoldings,
+          dividends: saved.dividends,
+          usdBrlRate: _portfolio.usdBrlRate,
+        );
+      });
+    }
+
+    unawaited(_bootstrapPortfolioData());
+  }
+
+  Future<bool> _loadPortfolioFromServer() async {
+    if (!portfolioRepository.canSync) return false;
+    try {
+      final remote = await portfolioRepository.fetchRemoteHoldings();
+      if (!mounted) return false;
+      final repaired = PortfolioState.repairHoldingsCurrencies(
+        remote,
+        searchService: assetSearchService,
+      );
+      setState(() {
+        _portfolio = PortfolioState(
+          searchService: assetSearchService,
+          holdings: repaired,
+          dividends: _portfolio.dividends,
+          usdBrlRate: _portfolio.usdBrlRate,
+        );
+      });
+      await _portfolioStorage.save(
+        holdings: _portfolio.holdings,
+        dividends: _portfolio.dividends,
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _migratePortfolioAfterRegistration() async {
+    if (!authSession.isRegisteredSession) return;
+
+    final messenger = _scaffoldMessengerKey.currentState;
+    messenger?.showSnackBar(
+      const SnackBar(content: Text('Carregando carteira da conta…')),
+    );
+
+    try {
+      final local = await _portfolioStorage.load();
+      final localHoldings = local?.holdings ?? _portfolio.holdings;
+
+      // Servidor (Postgres) primeiro — não sobrescrever com cache local zerado.
+      var loadedRemote = await _loadPortfolioFromServer();
+      if (!loadedRemote && localHoldings.isNotEmpty) {
+        final synced = await portfolioRepository.syncLocalHoldings(localHoldings);
+        if (!mounted) return;
+        setState(() {
+          _portfolio = PortfolioState(
+            searchService: assetSearchService,
+            holdings: PortfolioState.repairHoldingsCurrencies(
+              synced,
+              searchService: assetSearchService,
+            ),
+            dividends: local?.dividends ?? _portfolio.dividends,
+            usdBrlRate: _portfolio.usdBrlRate,
+          );
+        });
+        loadedRemote = _portfolio.holdings.isNotEmpty;
+      }
+
+      if (!loadedRemote) {
+        messenger?.showSnackBar(
+          const SnackBar(content: Text('Não foi possível carregar a carteira agora')),
+        );
+        return;
+      }
+
+      await _loadPortfolioFx();
+      final priceResult = await PortfolioPriceService().refreshAllDetailed(_portfolio);
+      if (!mounted) return;
+      if (priceResult.updated > 0) {
+        setState(() {});
+      }
+
+      await _portfolioStorage.save(
+        holdings: _portfolio.holdings,
+        dividends: _portfolio.dividends,
+      );
+      _portfolioBootstrapped = false;
+      unawaited(_bootstrapPortfolioData());
+      messenger?.showSnackBar(
+        const SnackBar(content: Text('Carteira vinculada à sua conta')),
+      );
+    } catch (_) {
+      messenger?.showSnackBar(
+        const SnackBar(content: Text('Não foi possível salvar a carteira agora')),
+      );
+    }
+  }
+
+  Future<void> _clearPortfolioState() async {
+    await _portfolioStorage.clear();
+    if (!mounted) return;
+    setState(() {
+      _portfolio = createInitialPortfolioState(searchService: assetSearchService);
+      _portfolioBootstrapped = false;
     });
   }
 
@@ -103,8 +227,29 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
     unawaited(_loadPortfolioFx());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_warmIntroData());
-      Future<void>.delayed(const Duration(seconds: 2), _refreshPortfolioPrices);
+      unawaited(_warnIfBackendOffline());
     });
+  }
+
+  Future<void> _warnIfBackendOffline() async {
+    final backendOk = await apiClient.checkHealth();
+    if (!backendOk) {
+      _scaffoldMessengerKey.currentState?.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Backend offline. Suba a API: uvicorn app.main:app --reload --host 127.0.0.1 --port 8000',
+          ),
+          duration: Duration(seconds: 10),
+        ),
+      );
+      return;
+    }
+
+    if (authSession.accessToken == null || authSession.accessToken!.isEmpty) {
+      try {
+        await authSession.ensureAuthenticated();
+      } catch (_) {}
+    }
   }
 
   @override
@@ -121,6 +266,54 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
   void _onAuthSessionRefreshed() {
     if (!mounted) return;
     unawaited(_loadAccountState());
+    unawaited(_refreshPortfolioPrices(showErrorOnFailure: false));
+  }
+
+  Future<void> _bootstrapPortfolioData() async {
+    if (_portfolioBootstrapped || _portfolio.holdings.isEmpty) return;
+    _portfolioBootstrapped = true;
+
+    for (var i = 0; i < 40; i++) {
+      if (!mounted) return;
+      if (_accountLoaded && _preferenceLoaded) break;
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+
+    try {
+      await authSession.ensureAuthenticated();
+    } catch (_) {}
+
+    if (!mounted || _portfolio.holdings.isEmpty) return;
+
+    await _loadPortfolioFx();
+    final priceResult = await PortfolioPriceService().refreshAllDetailed(_portfolio);
+
+    var dividendsSynced = false;
+    try {
+      final divResult = await portfolioDividendService.syncPortfolioDividends(_portfolio);
+      dividendsSynced = divResult.completed;
+    } catch (_) {}
+
+    if (!mounted) return;
+
+    setState(() {});
+    if (dividendsSynced || priceResult.updated > 0) {
+      await _portfolioStorage.save(
+        holdings: _portfolio.holdings,
+        dividends: _portfolio.dividends,
+      );
+    }
+
+    if (!priceResult.isSuccess && !(priceResult.updated > 0 || dividendsSynced)) {
+      _scaffoldMessengerKey.currentState?.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Não foi possível sincronizar a carteira. Confirme o backend em http://127.0.0.1:8000/health',
+          ),
+          duration: Duration(seconds: 5),
+        ),
+      );
+    }
   }
 
   void _onSessionExpired() {
@@ -176,13 +369,15 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
     final preference = await marketPreferenceStorage.load();
     await appBootstrapService.warmIntro(
       preferredMarket: preference,
-      quoteRepository: _quoteRepository,
       globalMarketRepository: _globalMarketRepository,
-      fiiRepository: _fiiRepository,
     );
   }
 
   Future<void> _loadAccountState() async {
+    try {
+      await authSession.ensureAuthenticated();
+    } catch (_) {}
+
     final onboardingDone = await accountOnboardingStorage.isCompleted();
     var profile = createDefaultProfile();
 
@@ -211,6 +406,8 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
     try {
       profile = await authRepository.fetchProfile();
     } catch (_) {}
+    await _migratePortfolioAfterRegistration();
+    await _loadPortfolio();
     if (!mounted) return;
     setState(() {
       _accountOnboardingCompleted = true;
@@ -253,6 +450,7 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
 
   Future<void> _logout() async {
     await authRepository.logout();
+    await _clearPortfolioState();
     UserProfile profile = createDefaultProfile();
     try {
       profile = await authRepository.fetchProfile();
@@ -264,8 +462,15 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
   Future<void> _loadPreference() async {
     final saved = await marketPreferenceStorage.load();
     if (!mounted) return;
+
+    MarketPreference? preference = saved;
+    if (preference == null) {
+      preference = defaultMarketPreference;
+      unawaited(marketPreferenceStorage.save(preference));
+    }
+
     setState(() {
-      _preferredMarket = saved;
+      _preferredMarket = preference;
       _preferenceLoaded = true;
     });
   }
@@ -278,43 +483,44 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
     unawaited(
       appBootstrapService.warmIntro(
         preferredMarket: preference,
-        quoteRepository: _quoteRepository,
-        globalMarketRepository: _globalMarketRepository,
-        fiiRepository: _fiiRepository,
+          globalMarketRepository: _globalMarketRepository,
       ),
     );
   }
 
   void _changePreferredMarket() {
+    final preference = _preferredMarket;
+    if (preference == null) return;
     _navigatorKey.currentState?.push(
       MaterialPageRoute<void>(
-        builder: (context) => MarketOnboardingScreen(
+        builder: (_) => MarketOnboardingScreen(
           repository: _globalMarketRepository,
-          currentCode: _preferredMarket?.code,
+          currentCode: preference.code,
           allowBack: true,
-          onConfirm: (preference) {
-            Navigator.of(context).pop();
-            _confirmPreference(preference);
-          },
+          onConfirm: _confirmPreference,
         ),
       ),
     );
   }
 
-  Future<void> _refreshPortfolioPrices() async {
-    if (!mounted) return;
-    final before = _portfolio.totalBalance;
+  Future<void> _refreshPortfolioPrices({bool showErrorOnFailure = true}) async {
+    if (!mounted || _portfolio.holdings.isEmpty) return;
+    final before = _portfolio.patrimonioTotalUsd;
     await _loadPortfolioFx();
     final ok = await PortfolioPriceService(
-      quoteRepository: _quoteRepository,
     ).refreshAll(_portfolio);
     if (!mounted) return;
-    if (!ok && mounted) {
+    final hasCachedPrices = _portfolio.holdings.any((holding) => holding.currentPrice > 0);
+    if (!ok && showErrorOnFailure && !hasCachedPrices) {
       _scaffoldMessengerKey.currentState?.showSnackBar(
-        const SnackBar(content: Text('Não foi possível atualizar os preços da carteira.')),
+        const SnackBar(
+          content: Text(
+            'Não foi possível atualizar os preços. Verifique se o backend está rodando e puxe para atualizar na aba Carteira.',
+          ),
+        ),
       );
     }
-    if ((_portfolio.totalBalance - before).abs() > 0.009) {
+    if ((_portfolio.patrimonioTotalUsd - before).abs() > 0.009 || ok) {
       setState(() {});
     }
   }
@@ -365,8 +571,6 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
       portfolio: _portfolio,
       onPortfolioChanged: _onPortfolioChanged,
       homeRepository: _homeRepository,
-      fiiRepository: _fiiRepository,
-      quoteRepository: _quoteRepository,
       globalMarketRepository: _globalMarketRepository,
       isDarkMode: _themeMode == ThemeMode.dark,
       onToggleTheme: _toggleTheme,
@@ -375,6 +579,7 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
       onLogin: _openLogin,
       onRegister: _openRegister,
       onLogout: _logout,
+      onPortfolioAccountReady: _migratePortfolioAfterRegistration,
     );
   }
 }

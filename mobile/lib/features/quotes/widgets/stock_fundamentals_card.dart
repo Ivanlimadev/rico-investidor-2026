@@ -1,54 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
-import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/features/quotes/models/stock_macro.dart';
 import 'package:rico_investidor/features/quotes/models/stock_quote_detail.dart';
 import 'package:rico_investidor/features/quotes/utils/fundamentals_metric_help.dart';
 
 enum FundamentalsDisplayCurrency { brl, usd }
 
-class StockFundamentalsCard extends StatefulWidget {
+class StockFundamentalsCard extends StatelessWidget {
   const StockFundamentalsCard({
     super.key,
     required this.fundamentals,
-    required this.repository,
     this.currency = FundamentalsDisplayCurrency.brl,
   });
 
   final StockFundamentalsDto fundamentals;
-  final QuoteRepository repository;
   final FundamentalsDisplayCurrency currency;
-
-  @override
-  State<StockFundamentalsCard> createState() => _StockFundamentalsCardState();
-}
-
-class _StockFundamentalsCardState extends State<StockFundamentalsCard> {
-  late final Future<Map<String, DictionaryFieldDto>> _dictionaryFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _dictionaryFuture = _loadDictionary();
-  }
-
-  Future<Map<String, DictionaryFieldDto>> _loadDictionary() async {
-    try {
-      final response = await widget.repository.getFundamentalsDictionary();
-      return {for (final field in response.fields) field.key: field};
-    } catch (_) {
-      return const {};
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<Map<String, DictionaryFieldDto>>(
-      future: _dictionaryFuture,
+      future: Future.value(const <String, DictionaryFieldDto>{}),
       builder: (context, snapshot) {
         final dictionary = snapshot.data ?? const {};
-        final sections = _buildSections(widget.fundamentals);
+        final sections = _buildSections(fundamentals);
         if (sections.isEmpty) return const SizedBox.shrink();
 
         return Card(
@@ -102,7 +77,7 @@ class _StockFundamentalsCardState extends State<StockFundamentalsCard> {
     );
   }
 
-  bool get _isUsd => widget.currency == FundamentalsDisplayCurrency.usd;
+  bool get _isUsd => currency == FundamentalsDisplayCurrency.usd;
 
   List<_FundSection> _buildSections(StockFundamentalsDto fundamentals) {
     return <_FundSection>[
@@ -120,7 +95,7 @@ class _StockFundamentalsCardState extends State<StockFundamentalsCard> {
       _FundSection(
         title: 'Resultado',
         items: [
-          _FundItem('Receita', _compact(fundamentals.totalRevenue)),
+          _FundItem('Receita líq.', _compact(fundamentals.totalRevenue)),
           _FundItem('EBITDA', _compact(fundamentals.ebitda)),
           _FundItem('FCF', _compact(fundamentals.freeCashflow)),
           if (_isUsd)

@@ -1,21 +1,21 @@
-import 'package:rico_investidor/features/fii/utils/fii_payments.dart';
-import 'package:rico_investidor/models/fii_models.dart';
+import 'package:rico_investidor/core/utils/dividend_payment_format.dart';
+import 'package:rico_investidor/models/market_series_models.dart';
 
-List<FiiDistributionPayment> sortStockPaymentsNewestFirst(List<FiiDistributionPayment> payments) {
+List<DistributionPayment> sortStockPaymentsNewestFirst(List<DistributionPayment> payments) {
   return sortPaymentsNewestFirst(payments);
 }
 
-String stockPaymentDisplayType(FiiDistributionPayment payment) {
+String stockPaymentDisplayType(DistributionPayment payment) {
   final label = payment.label?.trim();
   if (label != null && label.isNotEmpty) return label;
   return 'Provento';
 }
 
-String stockPaymentComDate(FiiDistributionPayment payment) {
+String stockPaymentComDate(DistributionPayment payment) {
   return formatPaymentDate(payment.referenceDate);
 }
 
-PaymentDateInfo stockPaymentDateInfo(FiiDistributionPayment payment) {
+PaymentDateInfo stockPaymentDateInfo(DistributionPayment payment) {
   if (payment.paymentDate != null && payment.paymentDate!.isNotEmpty) {
     return PaymentDateInfo(
       label: formatPaymentDate(payment.paymentDate),

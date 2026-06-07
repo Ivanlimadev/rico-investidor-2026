@@ -14,14 +14,13 @@ from app.core.cors_config import build_cors_origin_regex
 from app.core.production_guard import validate_production_settings
 from app.core.rate_limit import RateLimitMiddleware
 from app.core.security_headers import SecurityHeadersMiddleware
+from app.db.init_db import init_database
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     validate_production_settings()
-    from app.services.dividend_calendar_service import dividend_calendar_service
-
-    asyncio.create_task(dividend_calendar_service.warm_br_snapshot())
+    init_database()
     yield
     await close_http_client()
 
@@ -35,7 +34,7 @@ def create_app(*, docs_enabled: bool | None = None) -> FastAPI:
 
     application = FastAPI(
         title="Rico Investidor API",
-        description="Backend API. FIIs e ações BR: Brapi.",
+        description="Backend API — mercado americano (Marketstack) e cripto.",
         version="0.1.0",
         lifespan=lifespan,
         docs_url=docs_url,
@@ -56,7 +55,7 @@ def create_app(*, docs_enabled: bool | None = None) -> FastAPI:
         CORSMiddleware,
         allow_origin_regex=build_cors_origin_regex(),
         allow_credentials=False,
-        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "X-Open-Finance-Key"],
     )
     application.add_middleware(AuthMiddleware)
@@ -69,15 +68,10 @@ def create_app(*, docs_enabled: bool | None = None) -> FastAPI:
 
     @application.get("/health")
     async def health():
-        from app.services.br_proventos_service import br_proventos_service
-
-        bolsai = br_proventos_service.uses_bolsai
         return {
             "status": "ok",
-            "br_data_mode": "hybrid_bolsai_brapi" if bolsai else "brapi_only",
-            "bolsai_configured": bolsai,
-            "quote_provider": "hybrid" if bolsai else "brapi",
-            "fii_provider": "hybrid" if bolsai else "brapi",
+            "markets": ["US", "crypto"],
+            "quote_provider": "marketstack",
         }
 
     return application

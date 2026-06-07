@@ -168,6 +168,20 @@ async def get_global_candles(
     return await global_market_service.get_candles(symbol, exchange=exchange, limit=limit)
 
 
+@router.get("/{symbol}/intraday")
+async def get_global_intraday_candles(
+    symbol: str,
+    exchange: str | None = Query(default=None, min_length=3, max_length=8),
+    limit: int = Query(default=500, ge=10, le=1000),
+):
+    """Candles intraday do dia (5min no Professional)."""
+    return await global_market_service.get_intraday_candles(
+        symbol,
+        exchange=exchange,
+        limit=limit,
+    )
+
+
 @router.get("/{symbol}")
 async def get_global_quote(
     symbol: str,

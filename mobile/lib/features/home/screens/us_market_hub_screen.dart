@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
+import 'package:rico_investidor/features/global_markets/screens/us_market_list_screen.dart';
 import 'package:rico_investidor/features/home/models/home_feed.dart';
 import 'package:rico_investidor/features/home/widgets/market_category_card.dart';
-import 'package:rico_investidor/features/market/market_list_screen.dart';
 import 'package:rico_investidor/core/widgets/market_heatmap/stock_heatmap_block.dart';
 import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
-import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/models/global_market_hub.dart';
 import 'package:rico_investidor/models/market_category.dart';
 import 'package:rico_investidor/navigation/open_asset_detail.dart';
@@ -14,14 +12,10 @@ import 'package:rico_investidor/navigation/open_asset_detail.dart';
 class UsMarketHubScreen extends StatelessWidget {
   const UsMarketHubScreen({
     super.key,
-    required this.fiiRepository,
-    required this.quoteRepository,
     required this.globalMarketRepository,
     this.marketCount,
   });
 
-  final FiiRepository fiiRepository;
-  final QuoteRepository quoteRepository;
   final GlobalMarketRepository globalMarketRepository;
   final int? Function(MarketCategory category)? marketCount;
 
@@ -37,7 +31,7 @@ class UsMarketHubScreen extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
               child: Text(
-                'Mercado dos EUA — ações e REITs negociados na NYSE e NASDAQ.',
+                'Mercado americano — ações e REITs negociados na NYSE e NASDAQ.',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
                     ),
@@ -53,9 +47,11 @@ class UsMarketHubScreen extends StatelessWidget {
               onTap: (asset) => openAssetDetail(
                 context,
                 asset: asset,
-                fiiRepository: fiiRepository,
-                quoteRepository: quoteRepository,
               ),
+              resolveRefreshSeconds: () async {
+                final caps = await globalMarketRepository.getCapabilities();
+                return caps.realtimeEnabled ? (caps.refreshSeconds ?? 60) : null;
+              },
             ),
           ),
           SliverPadding(
@@ -75,11 +71,9 @@ class UsMarketHubScreen extends StatelessWidget {
                     assetCount: marketCount?.call(category),
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute<void>(
-                        builder: (_) => MarketListScreen(
+                        builder: (_) => UsMarketListScreen(
                           category: category,
-                          fiiRepository: fiiRepository,
-                          quoteRepository: quoteRepository,
-                          globalMarketRepository: globalMarketRepository,
+                          repository: globalMarketRepository,
                         ),
                       ),
                     ),

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
-import 'package:rico_investidor/core/utils/currency_format.dart';
 import 'package:rico_investidor/core/widgets/asset_logo.dart';
 import 'package:rico_investidor/features/portfolio/utils/portfolio_dividend_mapper.dart';
 import 'package:rico_investidor/models/dividend_payment.dart';
@@ -36,7 +35,6 @@ class DividendCompactCard extends StatelessWidget {
                 symbol: payment.symbol,
                 size: 24,
                 borderRadius: 7,
-                style: AssetLogoStyle.vibrant,
               ),
               const SizedBox(height: 5),
               Text(

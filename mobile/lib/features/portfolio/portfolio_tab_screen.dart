@@ -1,12 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:rico_investidor/core/utils/quote_refresh_timer.dart';
+import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/app/main_shell_screen.dart';
 import 'package:rico_investidor/features/dividends/widgets/portfolio_dividends_section.dart';
-import 'package:rico_investidor/features/fii/data/fii_repository.dart';
 import 'package:rico_investidor/features/home/widgets/portfolio_allocation_card.dart';
 import 'package:rico_investidor/features/home/widgets/portfolio_summary_row.dart';
-import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
-import 'package:rico_investidor/features/fii/utils/fii_ticker.dart';
+import 'package:rico_investidor/features/portfolio/data/portfolio_repository.dart';
 import 'package:rico_investidor/features/portfolio/portfolio_screen.dart';
 import 'package:rico_investidor/features/portfolio/widgets/portfolio_favorites_gadget.dart';
 import 'package:rico_investidor/features/portfolio/widgets/confirm_remove_holding_dialog.dart';
@@ -25,16 +27,14 @@ class PortfolioTabScreen extends StatefulWidget {
     super.key,
     required this.portfolio,
     required this.onPortfolioChanged,
-    required this.fiiRepository,
-    required this.quoteRepository,
     required this.preferredMarket,
+    this.onPortfolioAccountReady,
   });
 
   final PortfolioState portfolio;
   final VoidCallback onPortfolioChanged;
-  final FiiRepository fiiRepository;
-  final QuoteRepository quoteRepository;
   final MarketPreference preferredMarket;
+  final Future<void> Function()? onPortfolioAccountReady;
 
   @override
   State<PortfolioTabScreen> createState() => _PortfolioTabScreenState();
@@ -43,10 +43,49 @@ class PortfolioTabScreen extends StatefulWidget {
 class _PortfolioTabScreenState extends State<PortfolioTabScreen> {
   bool _refreshing = false;
   final _favoritesKey = GlobalKey<PortfolioFavoritesGadgetState>();
+  QuoteRefreshTimer? _priceRefreshTimer;
 
-  late final PortfolioPriceService _priceService = PortfolioPriceService(
-    quoteRepository: widget.quoteRepository,
-  );
+  late final PortfolioPriceService _priceService = PortfolioPriceService();
+  final GlobalMarketRepository _globalMarketRepository = globalMarketRepository;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_refreshPricesQuietly());
+    });
+    _configureAutoPriceRefresh();
+  }
+
+  Future<void> _refreshPricesQuietly() async {
+    if (widget.portfolio.holdings.isEmpty) return;
+    await _priceService.refreshAllDetailed(widget.portfolio);
+    if (!mounted) return;
+    setState(() {});
+    widget.onPortfolioChanged();
+  }
+
+  @override
+  void dispose() {
+    _priceRefreshTimer?.stop();
+    super.dispose();
+  }
+
+  Future<void> _configureAutoPriceRefresh() async {
+    try {
+      final caps = await _globalMarketRepository.getCapabilities();
+      if (!caps.realtimeEnabled || widget.portfolio.holdings.isEmpty) return;
+      _priceRefreshTimer = QuoteRefreshTimer(
+        onTick: () async {
+          if (_refreshing || widget.portfolio.holdings.isEmpty) return;
+          await _priceService.refreshAllDetailed(widget.portfolio);
+          if (!mounted) return;
+          setState(() {});
+          widget.onPortfolioChanged();
+        },
+      )..start(refreshSeconds: caps.refreshSeconds ?? 60, enabled: true);
+    } catch (_) {}
+  }
 
   Future<void> _refreshPrices() async {
     setState(() => _refreshing = true);
@@ -54,19 +93,31 @@ class _PortfolioTabScreenState extends State<PortfolioTabScreen> {
     if (rate != null) {
       widget.portfolio.usdBrlRate = rate;
     }
+    PortfolioPriceRefreshResult? priceResult;
     if (widget.portfolio.holdings.isNotEmpty) {
-      await _priceService.refreshAll(widget.portfolio);
+      priceResult = await _priceService.refreshAllDetailed(widget.portfolio);
     }
     await _favoritesKey.currentState?.reload();
     if (!mounted) return;
     setState(() => _refreshing = false);
     widget.onPortfolioChanged();
+    if (priceResult != null && !priceResult.isSuccess && priceResult.updated == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Não foi possível atualizar os preços. Verifique sua conexão e tente novamente.',
+          ),
+          duration: Duration(seconds: 5),
+        ),
+      );
+    }
   }
 
   Future<void> _openAddAsset() => openAddAssetScreen(
         context,
         portfolio: widget.portfolio,
         onPortfolioChanged: widget.onPortfolioChanged,
+        onAccountReady: widget.onPortfolioAccountReady ?? () async {},
       );
 
   Future<void> _confirmRemoveHolding(PortfolioHolding holding) async {
@@ -75,6 +126,11 @@ class _PortfolioTabScreenState extends State<PortfolioTabScreen> {
 
     widget.portfolio.removeHolding(holding.id);
     widget.onPortfolioChanged();
+    if (portfolioRepository.canSync) {
+      try {
+        await portfolioRepository.removeRemoteHolding(holding.id);
+      } catch (_) {}
+    }
   }
 
   @override
@@ -123,8 +179,6 @@ class _PortfolioTabScreenState extends State<PortfolioTabScreen> {
             PortfolioFavoritesGadget(
               key: _favoritesKey,
               searchService: widget.portfolio.searchService,
-              fiiRepository: widget.fiiRepository,
-              quoteRepository: widget.quoteRepository,
             ),
             const SizedBox(height: 12),
             if (holdings.isEmpty)
@@ -154,9 +208,7 @@ class _PortfolioTabScreenState extends State<PortfolioTabScreen> {
                     showDayChange: true,
                     onTap: () => openAssetDetail(
                       context,
-                      asset: _assetFromHolding(holding),
-                      fiiRepository: widget.fiiRepository,
-                      quoteRepository: widget.quoteRepository,
+                      asset: _assetFromHolding(holding, widget.portfolio),
                     ),
                     onDelete: () => _confirmRemoveHolding(holding),
                   ),
@@ -177,11 +229,11 @@ class _PortfolioTabScreenState extends State<PortfolioTabScreen> {
   }
 }
 
-AssetItem _assetFromHolding(PortfolioHolding holding) {
+AssetItem _assetFromHolding(PortfolioHolding holding, PortfolioState portfolio) {
   return AssetItem(
     symbol: holding.symbol,
     name: holding.name,
-    category: isFiiTicker(holding.symbol) ? MarketCategory.fiis : MarketCategory.acoesBr,
+    category: portfolio.categoryForHolding(holding) ?? MarketCategory.stocks,
     price: holding.currentPrice,
     changePercent: holding.changePercent,
   );

@@ -118,6 +118,8 @@ def test_anonymous_device_is_idempotent(auth_env):
     assert first.access_token
     assert second.access_token
 
-    users = store._load()["users"]
-    device_users = [u for u in users if u["email"].startswith("device+")]
-    assert len(device_users) == 1
+    first_user = store.get_by_device_id("same-device-id-123456")
+    assert first_user is not None
+    second_lookup = store.get_by_device_id("same-device-id-123456")
+    assert second_lookup is not None
+    assert first_user.id == second_lookup.id

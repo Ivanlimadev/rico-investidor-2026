@@ -5,4 +5,5 @@ const secureStorage = FlutterSecureStorage(
   iOptions: IOSOptions(
     accessibility: KeychainAccessibility.first_unlock_this_device,
   ),
+  mOptions: MacOsOptions(),
 );

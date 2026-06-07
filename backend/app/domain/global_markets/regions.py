@@ -8,10 +8,10 @@ from __future__ import annotations
 
 from app.core.exceptions import UpstreamError
 
-ENABLED_MARKET_COUNTRY_CODES: tuple[str, ...] = ("US", "BR")
+ENABLED_MARKET_COUNTRY_CODES: tuple[str, ...] = ("US",)
 
 # MICs Marketstack usados em listagens por bolsa.
-ENABLED_EXCHANGE_MICS: frozenset[str] = frozenset({"XNAS", "XNYS", "ARCX", "BVMF"})
+ENABLED_EXCHANGE_MICS: frozenset[str] = frozenset({"XNAS", "XNYS", "ARCX"})
 
 
 def is_market_country_enabled(country_code: str) -> bool:
@@ -27,7 +27,7 @@ def require_market_country(country_code: str) -> str:
     if not is_market_country_enabled(normalized):
         raise UpstreamError(
             f"Mercado indisponível no momento: {normalized}. "
-            "No app, apenas Estados Unidos e Brasil estão ativos.",
+            "No app, apenas o mercado americano está ativo.",
             status_code=404,
         )
     return normalized

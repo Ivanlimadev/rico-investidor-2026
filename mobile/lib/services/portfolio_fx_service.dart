@@ -1,19 +1,24 @@
-import 'package:rico_investidor/features/currency/data/currency_repository.dart';
+import 'package:rico_investidor/features/crypto/data/crypto_repository.dart';
 
 /// Cotação USD/BRL (quantos reais por 1 dólar) para converter a carteira para US$.
 class PortfolioFxService {
-  PortfolioFxService({CurrencyRepository? repository})
-      : _currencyRepository = repository ?? currencyRepository;
+  PortfolioFxService({CryptoRepository? repository})
+      : _cryptoRepository = repository ?? cryptoRepository;
 
-  final CurrencyRepository _currencyRepository;
+  final CryptoRepository _cryptoRepository;
 
   Future<double?> fetchUsdBrlRate() async {
     try {
-      final detail = await _currencyRepository.getDetail('USD-BRL');
-      return detail.quote.midPrice;
-    } catch (_) {
-      return null;
-    }
+      final macro = await _cryptoRepository.getMacro();
+      final rate = macro.usdtBrlRate;
+      if (rate != null && rate > 0) return rate;
+    } catch (_) {}
+    try {
+      final profile = await _cryptoRepository.getProfile('BTC');
+      final rate = profile.brl.usdtBrlRate;
+      if (rate != null && rate > 0) return rate;
+    } catch (_) {}
+    return null;
   }
 }
 

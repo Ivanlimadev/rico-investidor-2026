@@ -1,15 +1,15 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:rico_investidor/core/utils/asset_investment_simulation.dart';
-import 'package:rico_investidor/models/fii_models.dart';
+import 'package:rico_investidor/models/market_series_models.dart';
 
 void main() {
   test('simulateAssetInvestment compounds price and dividends without reinvest', () {
     final history = [
-      FiiHistoryPoint(referenceDate: '2024-01-15', closePrice: 100),
-      FiiHistoryPoint(referenceDate: '2025-06-15', closePrice: 110),
+      HistoryPricePoint(referenceDate: '2024-01-15', closePrice: 100),
+      HistoryPricePoint(referenceDate: '2025-06-15', closePrice: 110),
     ];
     final payments = [
-      FiiDistributionPayment(
+      DistributionPayment(
         referenceDate: '2024-06-01',
         paymentDate: '2024-06-10',
         valuePerShare: 2,
@@ -35,8 +35,8 @@ void main() {
 
   test('simulateAssetInvestment supports month-based periods', () {
     final history = [
-      FiiHistoryPoint(referenceDate: '2025-12-01', closePrice: 500),
-      FiiHistoryPoint(referenceDate: '2026-05-01', closePrice: 620),
+      HistoryPricePoint(referenceDate: '2025-12-01', closePrice: 500),
+      HistoryPricePoint(referenceDate: '2026-05-01', closePrice: 620),
     ];
 
     final result = simulateAssetInvestment(
@@ -55,8 +55,8 @@ void main() {
 
   test('simulatableWhatIfPeriodYears offers 1 2 5 10 when history allows', () {
     final candles = [
-      FiiCandleBar(tradeDate: '2021-06-10', open: 50, high: 52, low: 49, close: 50, volume: 1000),
-      FiiCandleBar(tradeDate: '2026-01-10', open: 80, high: 82, low: 79, close: 80, volume: 1000),
+      QuoteCandleBar(tradeDate: '2021-06-10', open: 50, high: 52, low: 49, close: 50, volume: 1000),
+      QuoteCandleBar(tradeDate: '2026-01-10', open: 80, high: 82, low: 79, close: 80, volume: 1000),
     ];
 
     final periods = simulatableWhatIfPeriodYears(
@@ -74,8 +74,8 @@ void main() {
 
   test('simulateWhatIfGrid returns entries per period', () {
     final candles = [
-      FiiCandleBar(tradeDate: '2023-01-10', open: 50, high: 52, low: 49, close: 50, volume: 1000),
-      FiiCandleBar(tradeDate: '2026-01-10', open: 80, high: 82, low: 79, close: 80, volume: 1000),
+      QuoteCandleBar(tradeDate: '2023-01-10', open: 50, high: 52, low: 49, close: 50, volume: 1000),
+      QuoteCandleBar(tradeDate: '2026-01-10', open: 80, high: 82, low: 79, close: 80, volume: 1000),
     ];
 
     final grid = simulateWhatIfGrid(
@@ -90,13 +90,13 @@ void main() {
   });
 
   test('simulatableWhatIfPeriods dedupes periods with same start date', () {
-    final history = <FiiHistoryPoint>[];
+    final history = <HistoryPricePoint>[];
     final now = DateTime.now();
     for (var i = 300; i >= 0; i -= 7) {
       final date = now.subtract(Duration(days: i));
       final iso =
           '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-      history.add(FiiHistoryPoint(referenceDate: iso, closePrice: 500.0 + (300 - i)));
+      history.add(HistoryPricePoint(referenceDate: iso, closePrice: 500.0 + (300 - i)));
     }
 
     final periods = simulatableWhatIfPeriods(
@@ -112,10 +112,10 @@ void main() {
   });
 
   test('different year periods produce different totals with enough history', () {
-    final candles = <FiiCandleBar>[];
+    final candles = <QuoteCandleBar>[];
     for (var y = 2016; y <= 2026; y++) {
       candles.add(
-        FiiCandleBar(
+        QuoteCandleBar(
           tradeDate: '$y-06-15',
           open: 50 + (y - 2016) * 5.0,
           high: 55 + (y - 2016) * 5.0,

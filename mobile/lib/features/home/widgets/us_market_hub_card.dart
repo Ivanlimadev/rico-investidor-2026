@@ -66,7 +66,7 @@ class UsMarketHubCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Ações e REITs dos EUA — cotações em tempo real (Business)',
+                          'Ações e REITs americanas — cotações em tempo real (Business)',
                           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                 color: const Color(0xFFB8D4F0),
                                 height: 1.35,

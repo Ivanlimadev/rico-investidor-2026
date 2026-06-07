@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/utils/asset_returns.dart';
-import 'package:rico_investidor/models/fii_models.dart';
+import 'package:rico_investidor/models/market_series_models.dart';
 
 class AssetReturnsCard extends StatelessWidget {
   const AssetReturnsCard({
@@ -13,9 +13,9 @@ class AssetReturnsCard extends StatelessWidget {
   });
 
   final double? currentPrice;
-  final List<FiiHistoryPoint> history;
-  final List<FiiCandleBar> candles;
-  final List<FiiDistributionPayment> payments;
+  final List<HistoryPricePoint> history;
+  final List<QuoteCandleBar> candles;
+  final List<DistributionPayment> payments;
 
   @override
   Widget build(BuildContext context) {

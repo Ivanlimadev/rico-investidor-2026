@@ -6,44 +6,52 @@ void main() {
     final url = resolveAssetLogoUrl(
       'BTC',
       'https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/svg/color/btc.svg',
-      isFii: false,
     );
 
     expect(url, contains('/v1/crypto/BTC/logo.png'));
   });
 
   test('resolveAssetLogoUrl builds crypto API when logoUrl is missing', () {
-    final url = resolveAssetLogoUrl('ETH', null, isFii: false);
+    final url = resolveAssetLogoUrl('ETH', null);
 
     expect(url, contains('/v1/crypto/ETH/logo.png'));
   });
 
-  test('resolveAssetLogoUrl uses quotes API proxy for b3 stocks', () {
-    final url = resolveAssetLogoUrl('PETR4', null, isFii: false);
+  test('resolveAssetLogoUrl builds US market API for AAPL', () {
+    final url = resolveAssetLogoUrl('AAPL', null);
 
-    expect(url, contains('/v1/quotes/PETR4/logo.png'));
+    expect(url, contains('/v1/global-markets/AAPL/logo.png'));
   });
 
-  test('resolveAssetLogoUrl uses fiis API proxy for fiis', () {
-    final url = resolveAssetLogoUrl('HGLG11', null, isFii: false);
-
-    expect(url, contains('/v1/fiis/HGLG11/logo.png'));
+  test('resolveAssetLogoUrl returns null for bundled offline ticker', () {
+    expect(resolveAssetLogoUrl('PETR4', null), isNull);
+    expect(hasBundledLogo('PETR4'), isTrue);
   });
 
-  test('logoDownloadCandidates tries proxy then direct b3', () {
+  test('logoDownloadCandidates includes proxy and FMP fallback', () {
     final urls = logoDownloadCandidates(
-      symbol: 'PETR4',
-      isFii: false,
-      resolvedUrl: resolveAssetLogoUrl('PETR4', null, isFii: false),
+      symbol: 'AAPL',
+      resolvedUrl: resolveAssetLogoUrl('AAPL', null),
+      originalLogoUrl: 'https://financialmodelingprep.com/image-stock/AAPL.png',
     );
 
-    expect(urls.first, contains('/v1/quotes/PETR4/logo.png'));
-    expect(urls.any((u) => u.contains('icones-b3')), isTrue);
+    expect(urls.length, greaterThanOrEqualTo(2));
+    expect(urls.any((url) => url.contains('/v1/global-markets/AAPL/logo.png')), isTrue);
+    expect(urls.any((url) => url.contains('financialmodelingprep.com/image-stock/AAPL.png')), isTrue);
   });
 
-  test('looksLikeCryptoSymbol rejects fiis and b3 tickers', () {
+  test('resolveAssetLogoUrl maps FMP url to local proxy', () {
+    final url = resolveAssetLogoUrl(
+      'MSFT',
+      'https://financialmodelingprep.com/image-stock/MSFT.png',
+    );
+
+    expect(url, contains('/v1/global-markets/MSFT/logo.png'));
+  });
+
+  test('looksLikeCryptoSymbol rejects stock tickers', () {
     expect(looksLikeCryptoSymbol('BTC'), isTrue);
-    expect(looksLikeCryptoSymbol('HGLG11'), isFalse);
-    expect(looksLikeCryptoSymbol('PETR4'), isFalse);
+    expect(looksLikeCryptoSymbol('AAPL'), isFalse);
+    expect(looksLikeCryptoSymbol('MSFT'), isFalse);
   });
 }

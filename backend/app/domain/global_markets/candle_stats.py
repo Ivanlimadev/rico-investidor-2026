@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.clients.brapi.models import StockMarketStats
-from app.domain.fii.models import FiiCandleBar
+from app.clients.brapi.models import FiiCandleBar
 from app.domain.global_markets.analytics import _parse_day
 from app.domain.global_markets.models import GlobalStockCandle
 

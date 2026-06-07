@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
+import 'package:rico_investidor/core/utils/currency_format.dart';
 import 'package:rico_investidor/features/portfolio/widgets/portfolio_balance_hero.dart';
 import 'package:rico_investidor/services/market_preference_storage.dart';
 import 'package:rico_investidor/state/portfolio_state.dart';
@@ -13,6 +14,8 @@ class PortfolioSummaryRow extends StatelessWidget {
     this.onDividendsTap,
     this.countryCode,
     this.showDividendsCard = true,
+    this.syncMessage,
+    this.syncing = false,
   });
 
   final PortfolioState portfolio;
@@ -21,6 +24,8 @@ class PortfolioSummaryRow extends StatelessWidget {
   final VoidCallback? onDividendsTap;
   final String? countryCode;
   final bool showDividendsCard;
+  final String? syncMessage;
+  final bool syncing;
 
   @override
   Widget build(BuildContext context) {
@@ -38,11 +43,9 @@ class PortfolioSummaryRow extends StatelessWidget {
 
     final dividendsCard = _SummaryCard(
       onTap: onDividendsTap,
-      icon: Icons.payments_outlined,
-      label: preferredMarket.isBrazil
-          ? 'Dividendos no mês (R\$)'
-          : 'Dividends this month (US\$)',
-      amount: summary.displayCurrency.format(summary.monthlyDividends),
+      label: 'Dividendos no mês',
+      amount: formatUsd(summary.monthlyDividends),
+      subtitle: 'Toque para ver ativos, datas e valores estimados',
       changeLabel: '${summary.isDividendsUp ? '+' : ''}'
           '${summary.dividendsVsLastMonthPercent.toStringAsFixed(1)}% '
           'vs mês anterior',
@@ -58,6 +61,40 @@ class PortfolioSummaryRow extends StatelessWidget {
           layout: PortfolioBalanceHeroLayout.compact,
           onTap: onPortfolioTap,
         ),
+        if (syncing || syncMessage != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+            child: Row(
+              children: [
+                if (syncing) ...[
+                  const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Sincronizando carteira…',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ] else
+                  Expanded(
+                    child: Text(
+                      syncMessage!,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: syncMessage!.contains('Sem conexão')
+                                ? Theme.of(context).colorScheme.error
+                                : AppColors.positive,
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
           child: dividendsCard,
@@ -70,17 +107,17 @@ class PortfolioSummaryRow extends StatelessWidget {
 class _SummaryCard extends StatelessWidget {
   const _SummaryCard({
     required this.onTap,
-    required this.icon,
     required this.label,
     required this.amount,
+    required this.subtitle,
     required this.changeLabel,
     required this.isPositive,
   });
 
   final VoidCallback? onTap;
-  final IconData icon;
   final String label;
   final String amount;
+  final String subtitle;
   final String changeLabel;
   final bool isPositive;
 
@@ -95,12 +132,23 @@ class _SummaryCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(
-                icon,
-                size: 20,
-                color: Theme.of(context).colorScheme.primary,
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: AppColors.positive.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  'DY',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.positive,
+                      ),
+                ),
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   label,
@@ -112,6 +160,12 @@ class _SummaryCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (onTap != null)
+                Icon(
+                  Icons.chevron_right,
+                  size: 20,
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
+                ),
             ],
           ),
           const SizedBox(height: 10),
@@ -121,6 +175,16 @@ class _SummaryCard extends StatelessWidget {
                   fontSize: 17,
                   fontWeight: FontWeight.w700,
                   height: 1.2,
+                ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                  fontSize: 11,
                 ),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,

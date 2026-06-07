@@ -6,8 +6,7 @@ import 'package:rico_investidor/models/portfolio_holding.dart';
 import 'package:rico_investidor/services/market_preference_storage.dart';
 
 void main() {
-  const brPreference = MarketPreference(code: 'BR', name: 'Brasil');
-  const usPreference = MarketPreference(code: 'US', name: 'Estados Unidos');
+  const usPreference = MarketPreference(code: 'US', name: 'Mercado Americano');
 
   PortfolioHolding holding({
     required String symbol,
@@ -27,45 +26,60 @@ void main() {
     );
   }
 
-  test('BDR NVDA34 conta no patrimônio brasileiro, não na dolarização', () {
+  test('patrimônio total exibido em dólares', () {
     final breakdown = computePortfolioBalanceBreakdown(
       holdings: [
-        holding(symbol: 'PETR4', currency: HoldingCurrency.brl, price: 40, avg: 35),
-        holding(symbol: 'NVDA34', currency: HoldingCurrency.brl, price: 50, avg: 45),
+        holding(symbol: 'AAPL', currency: HoldingCurrency.usd, qty: 2, price: 100, avg: 90),
+      ],
+      categoryResolver: (_) => MarketCategory.stocks,
+      usdBrlRate: 5.0,
+    );
+
+    expect(breakdown.displayTotal, 200);
+    expect(breakdown.displayCurrency, HoldingCurrency.usd);
+    expect(breakdown.internationalMarketValueUsd, 200);
+  });
+
+  test('carteira legada BRL converte para o total em dólares quando categoria é US', () {
+    final breakdown = computePortfolioBalanceBreakdown(
+      holdings: [
+        holding(symbol: 'MSFT', currency: HoldingCurrency.brl, price: 50, avg: 40),
+        holding(symbol: 'AAPL', currency: HoldingCurrency.usd, price: 100, avg: 90),
+      ],
+      categoryResolver: (_) => MarketCategory.stocks,
+      usdBrlRate: 5.0,
+    );
+
+    expect(breakdown.displayTotal, 1500);
+    expect(breakdown.internationalMarketValueUsd, 1500);
+  });
+
+  test('AAPL com categoria stocks vai para bucket internacional', () {
+    final h = holding(symbol: 'AAPL', currency: HoldingCurrency.usd, price: 100);
+    expect(
+      isInternationalUsdHolding(h, category: MarketCategory.stocks),
+      isTrue,
+    );
+  });
+
+  test('ativos US resolvem moeda em dólares', () {
+    final h = holding(symbol: 'NVDA', currency: HoldingCurrency.brl, price: 9.8);
+    expect(isInternationalUsdHolding(h, category: MarketCategory.stocks), isTrue);
+    expect(
+      resolvedHoldingCurrency(h, category: MarketCategory.stocks),
+      HoldingCurrency.usd,
+    );
+  });
+
+  test('primaryTotal usa bucket internacional em dólares', () {
+    final breakdown = computePortfolioBalanceBreakdown(
+      holdings: [
         holding(symbol: 'AAPL', currency: HoldingCurrency.usd, price: 200, avg: 180),
       ],
-      categoryResolver: (symbol) {
-        return switch (symbol) {
-          'NVDA34' => MarketCategory.bdr,
-          'AAPL' => MarketCategory.stocks,
-          _ => MarketCategory.acoesBr,
-        };
-      },
+      categoryResolver: (_) => MarketCategory.stocks,
       usdBrlRate: 5.0,
     );
 
-    expect(breakdown.domesticMarketValueBrl, 900);
-    expect(breakdown.internationalMarketValueUsd, 2000);
-    expect(breakdown.totalBrl, closeTo(10900, 0.01));
-    expect(breakdown.primaryTotal(brPreference), closeTo(10900, 0.01));
-    expect(breakdown.internationalSharePercent(brPreference), closeTo(91.74, 0.1));
-  });
-
-  test('preferência EUA exibe total em dólar', () {
-    final breakdown = computePortfolioBalanceBreakdown(
-      holdings: [
-        holding(symbol: 'PETR4', currency: HoldingCurrency.brl, price: 50, avg: 40),
-      ],
-      categoryResolver: (_) => MarketCategory.acoesBr,
-      usdBrlRate: 5.0,
-    );
-
-    expect(breakdown.primaryTotal(usPreference), 100);
-    expect(breakdown.primaryTotal(brPreference), 500);
-  });
-
-  test('isBdrSymbol reconhece sufixos B3', () {
-    expect(isBdrSymbol('NVDA34', category: MarketCategory.bdr), isTrue);
-    expect(isBdrSymbol('AAPL', category: MarketCategory.stocks), isFalse);
+    expect(breakdown.primaryTotal(usPreference), 2000);
   });
 }

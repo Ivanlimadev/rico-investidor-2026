@@ -8,8 +8,6 @@ import 'package:rico_investidor/features/crypto/models/crypto_models.dart';
 import 'package:rico_investidor/features/crypto/widgets/crypto_heatmap_block.dart';
 import 'package:rico_investidor/features/crypto/widgets/crypto_panorama_block.dart';
 import 'package:rico_investidor/features/crypto/widgets/crypto_movers_cards.dart';
-import 'package:rico_investidor/features/fii/data/fii_repository.dart';
-import 'package:rico_investidor/features/quotes/data/quote_repository.dart';
 import 'package:rico_investidor/models/asset_item.dart';
 import 'package:rico_investidor/navigation/open_asset_detail.dart';
 
@@ -17,13 +15,9 @@ class CryptoLiveMarketList extends StatefulWidget {
   const CryptoLiveMarketList({
     super.key,
     required this.assets,
-    required this.fiiRepository,
-    required this.quoteRepository,
   });
 
   final List<AssetItem> assets;
-  final FiiRepository fiiRepository;
-  final QuoteRepository quoteRepository;
 
   @override
   State<CryptoLiveMarketList> createState() => _CryptoLiveMarketListState();
@@ -62,8 +56,6 @@ class _CryptoLiveMarketListState extends State<CryptoLiveMarketList> {
     openAssetDetail(
       context,
       asset: asset,
-      fiiRepository: widget.fiiRepository,
-      quoteRepository: widget.quoteRepository,
     );
   }
 
