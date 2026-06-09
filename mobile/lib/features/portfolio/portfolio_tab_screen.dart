@@ -1,8 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:rico_investidor/core/utils/quote_refresh_timer.dart';
-import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/app/main_shell_screen.dart';
 import 'package:rico_investidor/features/dividends/widgets/portfolio_dividends_section.dart';
@@ -10,6 +8,7 @@ import 'package:rico_investidor/features/home/widgets/portfolio_allocation_card.
 import 'package:rico_investidor/features/home/widgets/portfolio_summary_row.dart';
 import 'package:rico_investidor/features/portfolio/data/portfolio_repository.dart';
 import 'package:rico_investidor/features/portfolio/portfolio_screen.dart';
+import 'package:rico_investidor/features/portfolio/screens/transaction_history_screen.dart';
 import 'package:rico_investidor/features/portfolio/widgets/portfolio_favorites_gadget.dart';
 import 'package:rico_investidor/features/portfolio/widgets/confirm_remove_holding_dialog.dart';
 import 'package:rico_investidor/features/portfolio/widgets/portfolio_holding_card.dart';
@@ -18,7 +17,6 @@ import 'package:rico_investidor/models/market_category.dart';
 import 'package:rico_investidor/models/portfolio_holding.dart';
 import 'package:rico_investidor/navigation/open_asset_detail.dart';
 import 'package:rico_investidor/services/market_preference_storage.dart';
-import 'package:rico_investidor/services/portfolio_fx_service.dart';
 import 'package:rico_investidor/services/portfolio_price_service.dart';
 import 'package:rico_investidor/state/portfolio_state.dart';
 
@@ -43,56 +41,18 @@ class PortfolioTabScreen extends StatefulWidget {
 class _PortfolioTabScreenState extends State<PortfolioTabScreen> {
   bool _refreshing = false;
   final _favoritesKey = GlobalKey<PortfolioFavoritesGadgetState>();
-  QuoteRefreshTimer? _priceRefreshTimer;
+  final _scrollController = ScrollController();
 
   late final PortfolioPriceService _priceService = PortfolioPriceService();
-  final GlobalMarketRepository _globalMarketRepository = globalMarketRepository;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_refreshPricesQuietly());
-    });
-    _configureAutoPriceRefresh();
-  }
-
-  Future<void> _refreshPricesQuietly() async {
-    if (widget.portfolio.holdings.isEmpty) return;
-    await _priceService.refreshAllDetailed(widget.portfolio);
-    if (!mounted) return;
-    setState(() {});
-    widget.onPortfolioChanged();
-  }
 
   @override
   void dispose() {
-    _priceRefreshTimer?.stop();
+    _scrollController.dispose();
     super.dispose();
-  }
-
-  Future<void> _configureAutoPriceRefresh() async {
-    try {
-      final caps = await _globalMarketRepository.getCapabilities();
-      if (!caps.realtimeEnabled || widget.portfolio.holdings.isEmpty) return;
-      _priceRefreshTimer = QuoteRefreshTimer(
-        onTick: () async {
-          if (_refreshing || widget.portfolio.holdings.isEmpty) return;
-          await _priceService.refreshAllDetailed(widget.portfolio);
-          if (!mounted) return;
-          setState(() {});
-          widget.onPortfolioChanged();
-        },
-      )..start(refreshSeconds: caps.refreshSeconds ?? 60, enabled: true);
-    } catch (_) {}
   }
 
   Future<void> _refreshPrices() async {
     setState(() => _refreshing = true);
-    final rate = await portfolioFxService.fetchUsdBrlRate();
-    if (rate != null) {
-      widget.portfolio.usdBrlRate = rate;
-    }
     PortfolioPriceRefreshResult? priceResult;
     if (widget.portfolio.holdings.isNotEmpty) {
       priceResult = await _priceService.refreshAllDetailed(widget.portfolio);
@@ -140,11 +100,11 @@ class _PortfolioTabScreenState extends State<PortfolioTabScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Carteira'),
+        title: const Text('Portfolio'),
         actions: [
           const ShellHomeButton(),
           IconButton(
-            tooltip: 'Atualizar cotações',
+            tooltip: 'Refresh prices',
             onPressed: _refreshing ? null : _refreshPrices,
             icon: _refreshing
                 ? const SizedBox(
@@ -161,14 +121,16 @@ class _PortfolioTabScreenState extends State<PortfolioTabScreen> {
         child: FloatingActionButton.extended(
           onPressed: _openAddAsset,
           icon: const Icon(Icons.add),
-          label: const Text('Adicionar'),
+          label: const Text('Add'),
         ),
       ),
       body: RefreshIndicator(
         onRefresh: _refreshPrices,
         child: ListView(
+          controller: _scrollController,
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.only(bottom: kBottomNavContentPadding),
+          cacheExtent: 1200,
           children: [
             PortfolioSummaryRow(
               portfolio: widget.portfolio,
@@ -187,15 +149,18 @@ class _PortfolioTabScreenState extends State<PortfolioTabScreen> {
                 child: _EmptyPortfolioTab(onAdd: _openAddAsset),
               )
             else ...[
-              PortfolioAllocationCard(
-                portfolio: widget.portfolio,
-                preferredMarket: widget.preferredMarket,
-                onTap: _openAddAsset,
+              RepaintBoundary(
+                child: PortfolioAllocationCard(
+                  key: const ValueKey('portfolio-allocation-card'),
+                  portfolio: widget.portfolio,
+                  preferredMarket: widget.preferredMarket,
+                  onTap: _openAddAsset,
+                ),
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
                 child: Text(
-                  'Ativos (${holdings.length})',
+                  'Assets (${holdings.length})',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
@@ -211,14 +176,33 @@ class _PortfolioTabScreenState extends State<PortfolioTabScreen> {
                       asset: _assetFromHolding(holding, widget.portfolio),
                     ),
                     onDelete: () => _confirmRemoveHolding(holding),
+                    onViewHistory: portfolioRepository.canSync
+                        ? () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => TransactionHistoryScreen(
+                                  symbol: holding.symbol,
+                                  assetName: holding.name,
+                                  onHoldingsChanged: (updatedHoldings) {
+                                    widget.portfolio.holdings
+                                      ..clear()
+                                      ..addAll(updatedHoldings);
+                                    widget.onPortfolioChanged();
+                                  },
+                                ),
+                              ),
+                            )
+                        : null,
                   ),
                 ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-                child: PortfolioDividendsSection(
-                  portfolio: widget.portfolio,
-                  preferredMarket: widget.preferredMarket,
-                  onPortfolioChanged: widget.onPortfolioChanged,
+                child: RepaintBoundary(
+                  child: PortfolioDividendsSection(
+                    key: const ValueKey('portfolio-dividends-section'),
+                    portfolio: widget.portfolio,
+                    preferredMarket: widget.preferredMarket,
+                    onPortfolioChanged: widget.onPortfolioChanged,
+                  ),
                 ),
               ),
             ],
@@ -258,14 +242,14 @@ class _EmptyPortfolioTab extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           Text(
-            'Monte sua carteira',
+            'Build your portfolio',
             style: Theme.of(context).textTheme.titleLarge,
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 8),
           Text(
-            'Use Adicionar para incluir ativos com quantidade e preço médio. '
-            'O saldo atualiza com as cotações em tempo real.',
+            'Use Add to record buy and sell transactions. '
+            'Your balance updates with live quotes.',
             style: Theme.of(context).textTheme.bodyMedium,
             textAlign: TextAlign.center,
           ),
@@ -273,7 +257,7 @@ class _EmptyPortfolioTab extends StatelessWidget {
           FilledButton.icon(
             onPressed: onAdd,
             icon: const Icon(Icons.add),
-            label: const Text('Adicionar ativo'),
+            label: const Text('Add asset'),
           ),
         ],
       ),

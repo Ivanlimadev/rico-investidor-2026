@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/markets/supported_market_countries.dart';
 import 'package:rico_investidor/models/holding_currency.dart';
 import 'package:rico_investidor/models/portfolio_allocation_slice.dart';
+import 'package:rico_investidor/l10n/app_strings.dart';
 import 'package:rico_investidor/services/market_preference_storage.dart';
 import 'package:rico_investidor/state/portfolio_state.dart';
 
@@ -35,7 +36,7 @@ class PortfolioAllocationCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Distribuição da carteira',
+                  AppStrings.portfolioAllocation,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
@@ -43,8 +44,8 @@ class PortfolioAllocationCard extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   slices.isEmpty
-                      ? 'Adicione ativos para ver o gráfico'
-                      : 'Patrimônio total: ${HoldingCurrency.usd.format(total)}',
+                      ? AppStrings.addAssetsToSeeChart
+                      : '${AppStrings.portfolioTotalLabel}: ${HoldingCurrency.usd.format(total)}',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
                   ),
@@ -53,20 +54,22 @@ class PortfolioAllocationCard extends StatelessWidget {
                 if (slices.isEmpty)
                   _EmptyAllocation(onTap: onTap)
                 else
-                  SizedBox(
-                    height: 168,
-                    child: Row(
-                      children: [
-                        Expanded(
-                          flex: 11,
-                          child: _AllocationPieChart(slices: slices),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          flex: 12,
-                          child: _AllocationLegend(slices: slices),
-                        ),
-                      ],
+                  RepaintBoundary(
+                    child: SizedBox(
+                      height: 168,
+                      child: Row(
+                        children: [
+                          Expanded(
+                            flex: 11,
+                            child: _AllocationPieChart(slices: slices),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            flex: 12,
+                            child: _AllocationLegend(slices: slices),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
               ],
@@ -98,14 +101,14 @@ class _EmptyAllocation extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Carteira sem posições',
+              AppStrings.emptyPortfolio,
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             if (onTap != null) ...[
               const SizedBox(height: 4),
               TextButton(
                 onPressed: onTap,
-                child: const Text('Adicionar ativo'),
+                child: const Text(AppStrings.addAsset),
               ),
             ],
           ],
@@ -123,6 +126,7 @@ class _AllocationPieChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PieChart(
+      duration: Duration.zero,
       PieChartData(
         sectionsSpace: 2,
         centerSpaceRadius: 36,
@@ -147,50 +151,50 @@ class _AllocationLegend extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView.separated(
-      padding: EdgeInsets.zero,
-      itemCount: slices.length,
-      separatorBuilder: (context, index) => const SizedBox(height: 6),
-      itemBuilder: (context, index) {
-        final slice = slices[index];
-        return Row(
-          children: [
-            Container(
-              width: 10,
-              height: 10,
-              decoration: BoxDecoration(
-                color: slice.color,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: slice.color.withValues(alpha: 0.5),
-                    blurRadius: 4,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                slice.label,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 11,
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        for (var index = 0; index < slices.length; index++) ...[
+          if (index > 0) const SizedBox(height: 6),
+          Row(
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: slices[index].color,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: slices[index].color.withValues(alpha: 0.5),
+                      blurRadius: 4,
+                    ),
+                  ],
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
-            ),
-            Text(
-              '${slice.percent.toStringAsFixed(1)}%',
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-                fontSize: 12,
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  slices[index].label,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 11,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-            ),
-          ],
-        );
-      },
+              Text(
+                '${slices[index].percent.toStringAsFixed(1)}%',
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
     );
   }
 }

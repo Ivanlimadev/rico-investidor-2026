@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import AppError
-from app.db.models import PortfolioHoldingRow
+from app.db.models import PortfolioHoldingRow, PortfolioTransactionRow
 from app.db.session import get_session_factory
 from app.domain.portfolio.models import (
     PortfolioHoldingCreateRequest,
@@ -14,15 +14,22 @@ from app.domain.portfolio.models import (
     PortfolioHoldingUpdateRequest,
     PortfolioHoldingsListResponse,
     PortfolioSyncRequest,
+    TransactionCreateRequest,
+    TransactionListResponse,
+    TransactionResponse,
 )
 
 
 class PortfolioService:
     def __init__(self, session_factory=None) -> None:
-        self._session_factory = session_factory or get_session_factory()
+        self._session_factory = session_factory
+
+    def _open_session(self) -> Session:
+        factory = self._session_factory or get_session_factory()
+        return factory()
 
     def list_holdings(self, user_id: str) -> PortfolioHoldingsListResponse:
-        with self._session_factory() as session:
+        with self._open_session() as session:
             rows = session.scalars(
                 select(PortfolioHoldingRow)
                 .where(PortfolioHoldingRow.user_id == user_id)
@@ -37,7 +44,7 @@ class PortfolioService:
         body: PortfolioHoldingCreateRequest,
     ) -> PortfolioHoldingResponse:
         symbol = body.symbol.upper().strip()
-        with self._session_factory() as session:
+        with self._open_session() as session:
             existing = session.scalar(
                 select(PortfolioHoldingRow).where(
                     PortfolioHoldingRow.user_id == user_id,
@@ -70,7 +77,7 @@ class PortfolioService:
         holding_id: str,
         body: PortfolioHoldingUpdateRequest,
     ) -> PortfolioHoldingResponse:
-        with self._session_factory() as session:
+        with self._open_session() as session:
             row = self._get_owned_row(session, user_id, holding_id)
             if body.name is not None:
                 row.name = body.name.strip()
@@ -91,13 +98,13 @@ class PortfolioService:
             return self._to_response(row)
 
     def delete_holding(self, user_id: str, holding_id: str) -> None:
-        with self._session_factory() as session:
+        with self._open_session() as session:
             row = self._get_owned_row(session, user_id, holding_id)
             session.delete(row)
             session.commit()
 
     def sync_holdings(self, user_id: str, body: PortfolioSyncRequest) -> PortfolioHoldingsListResponse:
-        with self._session_factory() as session:
+        with self._open_session() as session:
             existing = {
                 row.symbol: row
                 for row in session.scalars(
@@ -148,6 +155,144 @@ class PortfolioService:
             raise AppError("Posição não encontrada", status_code=404)
         return row
 
+    def add_transaction(
+        self,
+        user_id: str,
+        body: TransactionCreateRequest,
+    ) -> TransactionResponse:
+        symbol = body.symbol.upper().strip()
+        with self._open_session() as session:
+            existing = session.scalars(
+                select(PortfolioTransactionRow)
+                .where(
+                    PortfolioTransactionRow.user_id == user_id,
+                    PortfolioTransactionRow.symbol == symbol,
+                )
+                .order_by(
+                    PortfolioTransactionRow.date.asc(),
+                    PortfolioTransactionRow.created_at.asc(),
+                )
+            ).all()
+            quantity, _ = self._compute_position_from_transactions(existing)
+            if body.transaction_type == "sell" and body.quantity > quantity + 1e-9:
+                raise AppError("Quantidade de venda maior que a posição", status_code=400)
+
+            row = PortfolioTransactionRow(
+                id=str(uuid.uuid4()),
+                user_id=user_id,
+                symbol=symbol,
+                name=body.name.strip(),
+                transaction_type=body.transaction_type,
+                date=body.date,
+                quantity=body.quantity,
+                price_per_unit=body.price_per_unit,
+                fees=body.fees,
+                broker=body.broker.strip() if body.broker else None,
+                currency=body.currency.lower(),
+                category=body.category,
+            )
+            session.add(row)
+            session.flush()
+            self._recalculate_holding(session, user_id, symbol)
+            session.commit()
+            session.refresh(row)
+            return self._to_transaction_response(row)
+
+    def list_transactions(
+        self,
+        user_id: str,
+        symbol: str | None = None,
+    ) -> TransactionListResponse:
+        with self._open_session() as session:
+            stmt = select(PortfolioTransactionRow).where(PortfolioTransactionRow.user_id == user_id)
+            if symbol:
+                stmt = stmt.where(PortfolioTransactionRow.symbol == symbol.upper().strip())
+            rows = session.scalars(
+                stmt.order_by(
+                    PortfolioTransactionRow.date.desc(),
+                    PortfolioTransactionRow.created_at.desc(),
+                )
+            ).all()
+            items = [self._to_transaction_response(row) for row in rows]
+            return TransactionListResponse(items=items, count=len(items))
+
+    def delete_transaction(
+        self,
+        user_id: str,
+        transaction_id: str,
+    ) -> PortfolioHoldingsListResponse:
+        with self._open_session() as session:
+            row = session.get(PortfolioTransactionRow, transaction_id)
+            if row is None or row.user_id != user_id:
+                raise AppError("Transação não encontrada", status_code=404)
+            symbol = row.symbol
+            session.delete(row)
+            session.flush()
+            self._recalculate_holding(session, user_id, symbol)
+            session.commit()
+            rows = session.scalars(
+                select(PortfolioHoldingRow)
+                .where(PortfolioHoldingRow.user_id == user_id)
+                .order_by(PortfolioHoldingRow.symbol)
+            ).all()
+            items = [self._to_response(item) for item in rows]
+            return PortfolioHoldingsListResponse(items=items, count=len(items))
+
+    def _recalculate_holding(self, session: Session, user_id: str, symbol: str) -> None:
+        symbol = symbol.upper().strip()
+        txs = session.scalars(
+            select(PortfolioTransactionRow)
+            .where(
+                PortfolioTransactionRow.user_id == user_id,
+                PortfolioTransactionRow.symbol == symbol,
+            )
+            .order_by(
+                PortfolioTransactionRow.date.asc(),
+                PortfolioTransactionRow.created_at.asc(),
+            )
+        ).all()
+        quantity, average_price = self._compute_position_from_transactions(txs)
+        holding = session.scalar(
+            select(PortfolioHoldingRow).where(
+                PortfolioHoldingRow.user_id == user_id,
+                PortfolioHoldingRow.symbol == symbol,
+            )
+        )
+        if quantity <= 1e-9:
+            if holding is not None:
+                session.delete(holding)
+            return
+
+        meta = txs[-1]
+        if holding is None:
+            holding = PortfolioHoldingRow(
+                id=str(uuid.uuid4()),
+                user_id=user_id,
+                symbol=symbol,
+            )
+            session.add(holding)
+        holding.name = meta.name.strip()
+        holding.quantity = quantity
+        holding.average_price = average_price
+        holding.currency = meta.currency.lower()
+        holding.category = meta.category
+
+    @staticmethod
+    def _compute_position_from_transactions(
+        txs: list[PortfolioTransactionRow],
+    ) -> tuple[float, float]:
+        quantity = 0.0
+        average_price = 0.0
+        for tx in txs:
+            if tx.transaction_type == "buy":
+                buy_cost = tx.quantity * tx.price_per_unit + tx.fees
+                total_cost = quantity * average_price + buy_cost
+                quantity += tx.quantity
+                average_price = total_cost / quantity if quantity > 0 else 0.0
+            elif tx.transaction_type == "sell":
+                quantity -= tx.quantity
+        return quantity, average_price
+
     @staticmethod
     def _to_response(row: PortfolioHoldingRow) -> PortfolioHoldingResponse:
         return PortfolioHoldingResponse(
@@ -160,6 +305,24 @@ class PortfolioService:
             change_percent=row.change_percent,
             currency=row.currency,
             category=row.category,
+        )
+
+    @staticmethod
+    def _to_transaction_response(row: PortfolioTransactionRow) -> TransactionResponse:
+        return TransactionResponse(
+            id=row.id,
+            symbol=row.symbol,
+            name=row.name,
+            transaction_type=row.transaction_type,
+            date=row.date,
+            quantity=row.quantity,
+            price_per_unit=row.price_per_unit,
+            fees=row.fees,
+            broker=row.broker,
+            total_cost=(row.quantity * row.price_per_unit) + row.fees,
+            currency=row.currency,
+            category=row.category,
+            created_at=row.created_at,
         )
 
 

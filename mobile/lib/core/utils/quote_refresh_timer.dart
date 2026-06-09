@@ -11,12 +11,22 @@ class QuoteRefreshTimer {
   Timer? _timer;
   int _failures = 0;
   int _baseSeconds = 60;
+  int _minSeconds = 30;
+  int _maxSeconds = 600;
 
-  void start({required int refreshSeconds, required bool enabled}) {
+  void start({
+    required int refreshSeconds,
+    required bool enabled,
+    int minSeconds = 30,
+    int maxSeconds = 600,
+  }) {
     stop();
     if (!enabled) return;
-    _baseSeconds = refreshSeconds.clamp(30, 600);
+    _minSeconds = minSeconds;
+    _maxSeconds = maxSeconds;
+    _baseSeconds = refreshSeconds.clamp(_minSeconds, _maxSeconds);
     _failures = 0;
+    unawaited(_tick());
     _timer = Timer.periodic(Duration(seconds: _baseSeconds), (_) => _tick());
   }
 
@@ -27,8 +37,8 @@ class QuoteRefreshTimer {
     } catch (_) {
       _failures++;
       if (_failures >= 3) {
-        final slowed = (_baseSeconds * 2).clamp(60, 600);
-        start(refreshSeconds: slowed, enabled: true);
+        final slowed = (_baseSeconds * 2).clamp(_minSeconds, _maxSeconds);
+        start(refreshSeconds: slowed, enabled: true, minSeconds: _minSeconds, maxSeconds: _maxSeconds);
       }
     }
   }

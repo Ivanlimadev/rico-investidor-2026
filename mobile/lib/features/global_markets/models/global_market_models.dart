@@ -60,6 +60,7 @@ class GlobalMarketCapabilitiesDto {
     this.monthlyRequestBudget,
     this.intradayInterval,
     this.refreshSeconds,
+    this.bulkRefreshSeconds,
     this.usMarketStatus = 'closed',
     this.usMarketOpen = false,
     this.usMarketLabel = 'Mercado fechado',
@@ -77,6 +78,7 @@ class GlobalMarketCapabilitiesDto {
   final int? monthlyRequestBudget;
   final String? intradayInterval;
   final int? refreshSeconds;
+  final int? bulkRefreshSeconds;
   final String usMarketStatus;
   final bool usMarketOpen;
   final String usMarketLabel;
@@ -95,6 +97,7 @@ class GlobalMarketCapabilitiesDto {
       monthlyRequestBudget: (json['monthly_request_budget'] as num?)?.toInt(),
       intradayInterval: json['intraday_interval'] as String?,
       refreshSeconds: (json['refresh_seconds'] as num?)?.toInt(),
+      bulkRefreshSeconds: (json['bulk_refresh_seconds'] as num?)?.toInt(),
       usMarketStatus: json['us_market_status'] as String? ?? 'closed',
       usMarketOpen: json['us_market_open'] as bool? ?? false,
       usMarketLabel: json['us_market_label'] as String? ?? 'Mercado fechado',

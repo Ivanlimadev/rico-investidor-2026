@@ -13,7 +13,8 @@ import 'package:rico_investidor/features/global_markets/data/global_market_repos
 import 'package:rico_investidor/features/home/data/home_repository.dart';
 import 'package:rico_investidor/features/home/home_screen.dart';
 import 'package:rico_investidor/features/onboarding/market_onboarding_screen.dart';
-import 'package:rico_investidor/features/onboarding/premium_intro_screen.dart';
+// HIDDEN: premium intro — import kept for when subscription launches
+// import 'package:rico_investidor/features/onboarding/premium_intro_screen.dart';
 import 'package:rico_investidor/models/user_profile.dart';
 import 'package:rico_investidor/services/account_onboarding_storage.dart';
 import 'package:rico_investidor/services/asset_search_service.dart';
@@ -25,6 +26,7 @@ import 'package:rico_investidor/services/market_preference_storage.dart';
 import 'package:rico_investidor/services/portfolio_dividend_service.dart';
 import 'package:rico_investidor/services/portfolio_fx_service.dart';
 import 'package:rico_investidor/services/portfolio_price_service.dart';
+import 'package:rico_investidor/services/user_preferences_storage.dart';
 import 'package:rico_investidor/features/portfolio/data/portfolio_repository.dart';
 import 'package:rico_investidor/services/portfolio_storage.dart';
 import 'package:rico_investidor/state/portfolio_state.dart';
@@ -37,7 +39,9 @@ class RicoInvestidorApp extends StatefulWidget {
 }
 
 class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
-  ThemeMode _themeMode = ThemeMode.dark;
+  ThemeMode _themeMode = ThemeMode.system;
+  Locale _locale = const Locale(defaultLocaleCode);
+  UserPreferences? _userPreferences;
   late UserProfile _profile = createDefaultProfile();
   final HomeRepository _homeRepository = homeRepository;
   final GlobalMarketRepository _globalMarketRepository = globalMarketRepository;
@@ -49,24 +53,50 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
   bool _preferenceLoaded = false;
   bool _accountLoaded = false;
   bool _accountOnboardingCompleted = false;
-  bool _introCompleted = false;
   bool _portfolioBootstrapped = false;
   late PortfolioState _portfolio = createInitialPortfolioState(
     searchService: assetSearchService,
   );
 
   void _toggleTheme() {
+    final next = _themeMode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
+    _setThemeMode(next);
+  }
+
+  void _setThemeMode(ThemeMode mode) {
+    final current = _userPreferences ??
+        UserPreferences(
+          themeMode: _themeMode,
+          notificationsEnabled: true,
+          localeCode: defaultLocaleCode,
+        );
+    final updated = current.copyWith(themeMode: mode);
     setState(() {
-      _themeMode = _themeMode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
+      _themeMode = mode;
+      _userPreferences = updated;
     });
+    unawaited(userPreferencesStorage.save(updated));
   }
 
   void _updateProfile(UserProfile profile) {
     setState(() => _profile = profile);
   }
 
+  void _rebuildPortfolioUi() {
+    setState(() {
+      _portfolio = _portfolio.cloneForUi();
+    });
+  }
+
+  UserProfile _profileFromSession(UserProfile profile) {
+    if (authSession.isRegisteredSession && profile.isAnonymous) {
+      return profile.copyWith(isAnonymous: false);
+    }
+    return profile;
+  }
+
   void _onPortfolioChanged() {
-    setState(() {});
+    _rebuildPortfolioUi();
     unawaited(
       _portfolioStorage.save(
         holdings: _portfolio.holdings,
@@ -178,11 +208,10 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
         return;
       }
 
-      await _loadPortfolioFx();
       final priceResult = await PortfolioPriceService().refreshAllDetailed(_portfolio);
       if (!mounted) return;
       if (priceResult.updated > 0) {
-        setState(() {});
+        _rebuildPortfolioUi();
       }
 
       await _portfolioStorage.save(
@@ -224,6 +253,7 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
     _loadPortfolio();
     _loadAccountState();
     _loadPreference();
+    _loadUserPreferences();
     unawaited(_loadPortfolioFx());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_warmIntroData());
@@ -285,7 +315,6 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
 
     if (!mounted || _portfolio.holdings.isEmpty) return;
 
-    await _loadPortfolioFx();
     final priceResult = await PortfolioPriceService().refreshAllDetailed(_portfolio);
 
     var dividendsSynced = false;
@@ -296,7 +325,7 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
 
     if (!mounted) return;
 
-    setState(() {});
+    _rebuildPortfolioUi();
     if (dividendsSynced || priceResult.updated > 0) {
       await _portfolioStorage.save(
         holdings: _portfolio.holdings,
@@ -394,18 +423,24 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
 
     if (!mounted) return;
     setState(() {
-      _profile = profile;
-      _accountOnboardingCompleted = onboardingDone || profile.isRegistered;
+      _profile = _profileFromSession(profile);
+      _accountOnboardingCompleted = onboardingDone || _profile.isRegistered;
       _accountLoaded = true;
     });
   }
 
   Future<void> _completeAccountOnboarding() async {
     await accountOnboardingStorage.markCompleted();
-    UserProfile profile = createDefaultProfile();
+    UserProfile profile = createDefaultProfile().copyWith(
+      isAnonymous: !authSession.isRegisteredSession,
+    );
     try {
-      profile = await authRepository.fetchProfile();
-    } catch (_) {}
+      profile = _profileFromSession(await authRepository.fetchProfile());
+    } catch (_) {
+      if (authSession.isRegisteredSession) {
+        profile = profile.copyWith(isAnonymous: false);
+      }
+    }
     await _migratePortfolioAfterRegistration();
     await _loadPortfolio();
     if (!mounted) return;
@@ -475,6 +510,16 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
     });
   }
 
+  Future<void> _loadUserPreferences() async {
+    final preferences = await userPreferencesStorage.load();
+    if (!mounted) return;
+    setState(() {
+      _userPreferences = preferences;
+      _themeMode = preferences.themeMode;
+      _locale = preferences.locale;
+    });
+  }
+
   Future<void> _confirmPreference(MarketPreference preference) async {
     await marketPreferenceStorage.save(preference);
     preferredMarketPreloader.invalidate();
@@ -506,7 +551,6 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
   Future<void> _refreshPortfolioPrices({bool showErrorOnFailure = true}) async {
     if (!mounted || _portfolio.holdings.isEmpty) return;
     final before = _portfolio.patrimonioTotalUsd;
-    await _loadPortfolioFx();
     final ok = await PortfolioPriceService(
     ).refreshAll(_portfolio);
     if (!mounted) return;
@@ -521,7 +565,7 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
       );
     }
     if ((_portfolio.patrimonioTotalUsd - before).abs() > 0.009 || ok) {
-      setState(() {});
+      _rebuildPortfolioUi();
     }
   }
 
@@ -535,16 +579,19 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
       themeMode: _themeMode,
+      locale: _locale,
+      supportedLocales: const [Locale('en')],
       home: _buildHome(),
     );
   }
 
   Widget _buildHome() {
-    if (!_introCompleted) {
-      return PremiumIntroScreen(
-        onFinished: () => setState(() => _introCompleted = true),
-      );
-    }
+    // HIDDEN: premium intro — PremiumIntroScreen not shown until subscription launches
+    // if (!_introCompleted) {
+    //   return PremiumIntroScreen(
+    //     onFinished: () => setState(() => _introCompleted = true),
+    //   );
+    // }
 
     if (!_preferenceLoaded || !_accountLoaded) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -574,6 +621,7 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
       globalMarketRepository: _globalMarketRepository,
       isDarkMode: _themeMode == ThemeMode.dark,
       onToggleTheme: _toggleTheme,
+      onThemeModeChanged: _setThemeMode,
       preferredMarket: preference,
       onChangePreferredMarket: _changePreferredMarket,
       onLogin: _openLogin,

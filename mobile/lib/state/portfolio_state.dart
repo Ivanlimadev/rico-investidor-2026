@@ -27,6 +27,14 @@ class PortfolioState {
   final AssetSearchService searchService;
   double? usdBrlRate;
 
+  /// Nova referência para forçar rebuild após mutação in-place dos holdings.
+  PortfolioState cloneForUi() => PortfolioState(
+        holdings: List.of(holdings),
+        dividends: dividends,
+        searchService: searchService,
+        usdBrlRate: usdBrlRate,
+      );
+
   /// Corrige moeda persistida errada (ex.: ação B3 salva como US$).
   static List<PortfolioHolding> repairHoldingsCurrencies(
     List<PortfolioHolding> holdings, {

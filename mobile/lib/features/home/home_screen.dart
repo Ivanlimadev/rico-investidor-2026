@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
+import 'package:rico_investidor/core/ads/feed_ad_widget.dart';
 import 'package:rico_investidor/core/widgets/safe_network_avatar.dart';
 import 'package:rico_investidor/app/main_shell_screen.dart';
 import 'package:rico_investidor/features/crypto/screens/crypto_explore_screen.dart';
@@ -14,12 +15,14 @@ import 'package:rico_investidor/features/home/widgets/preferred_market_section.d
 import 'package:rico_investidor/features/dividends/screens/portfolio_month_dividends_screen.dart';
 import 'package:rico_investidor/core/auth/auth_session.dart';
 import 'package:rico_investidor/services/portfolio_dividend_service.dart';
-import 'package:rico_investidor/services/portfolio_fx_service.dart';
+import 'package:rico_investidor/features/home/data/preferred_market_preloader.dart';
 import 'package:rico_investidor/services/portfolio_price_service.dart';
 import 'package:rico_investidor/services/portfolio_storage.dart';
 import 'package:rico_investidor/features/portfolio/portfolio_screen.dart';
 import 'package:rico_investidor/features/menu/account_menu_items.dart';
 import 'package:rico_investidor/features/settings/settings_screen.dart';
+import 'package:rico_investidor/l10n/app_strings.dart';
+import 'package:rico_investidor/core/ads/ad_subscription_plan.dart';
 import 'package:rico_investidor/models/subscription_plan.dart';
 import 'package:rico_investidor/models/user_profile.dart';
 import 'package:rico_investidor/services/market_preference_storage.dart';
@@ -35,6 +38,7 @@ class HomeScreen extends StatefulWidget {
     required this.homeRepository,
     required this.isDarkMode,
     required this.onToggleTheme,
+    this.onThemeModeChanged,
     required this.preferredMarket,
     required this.onChangePreferredMarket,
     required this.onLogin,
@@ -51,6 +55,7 @@ class HomeScreen extends StatefulWidget {
   final GlobalMarketRepository? globalMarketRepository;
   final bool isDarkMode;
   final VoidCallback onToggleTheme;
+  final ValueChanged<ThemeMode>? onThemeModeChanged;
   final MarketPreference preferredMarket;
   final VoidCallback onChangePreferredMarket;
   final VoidCallback onLogin;
@@ -65,6 +70,7 @@ class HomeScreenState extends State<HomeScreen> {
   final ScrollController scrollController = ScrollController();
   bool _syncingPortfolio = false;
   String? _syncMessage;
+  int _marketDataGeneration = 0;
 
   GlobalMarketRepository get _globalMarketRepository =>
       widget.globalMarketRepository ?? globalMarketRepository;
@@ -73,8 +79,15 @@ class HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      refreshMarketQuotes();
       unawaited(_syncPortfolioOnHomeOpen());
     });
+  }
+
+  void refreshMarketQuotes() {
+    preferredMarketPreloader.invalidate();
+    _globalMarketRepository.invalidateHeatmapCache();
+    setState(() => _marketDataGeneration++);
   }
 
   Future<void> _syncPortfolioOnHomeOpen() async {
@@ -89,11 +102,6 @@ class HomeScreenState extends State<HomeScreen> {
       await authSession.ensureAuthenticated();
     } catch (_) {}
 
-    final rate = await portfolioFxService.fetchUsdBrlRate();
-    if (rate != null) {
-      widget.portfolio.usdBrlRate = rate;
-    }
-
     final priceResult = await PortfolioPriceService().refreshAllDetailed(widget.portfolio);
 
     var dividendsOk = false;
@@ -104,8 +112,8 @@ class HomeScreenState extends State<HomeScreen> {
 
     if (!mounted) return;
 
+    widget.onPortfolioChanged();
     if (priceResult.updated > 0 || dividendsOk) {
-      widget.onPortfolioChanged();
       await PortfolioStorage().save(
         holdings: widget.portfolio.holdings,
         dividends: widget.portfolio.dividends,
@@ -116,8 +124,8 @@ class HomeScreenState extends State<HomeScreen> {
       _syncingPortfolio = false;
       if (!priceResult.isSuccess && !(priceResult.updated > 0 || dividendsOk)) {
         _syncMessage = widget.portfolio.holdings.isNotEmpty
-            ? 'Preços desatualizados — use Atualizar na aba Carteira'
-            : 'Sem conexão com o backend (porta 8000)';
+            ? AppStrings.stalePricesMessage
+            : AppStrings.noBackendConnection;
       } else {
         _syncMessage = null;
       }
@@ -125,6 +133,7 @@ class HomeScreenState extends State<HomeScreen> {
   }
 
   void scrollToTop() {
+    refreshMarketQuotes();
     if (!scrollController.hasClients) return;
     scrollController.animateTo(
       0,
@@ -175,7 +184,7 @@ class HomeScreenState extends State<HomeScreen> {
           children: [
             const Text('Rico Investidor'),
             Text(
-              'Olá, ${widget.profile.displayName}',
+              AppStrings.homeGreeting(widget.profile.displayName),
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
                     fontWeight: FontWeight.w500,
@@ -185,7 +194,7 @@ class HomeScreenState extends State<HomeScreen> {
         ),
         actions: [
           IconButton(
-            tooltip: 'Configurações',
+            tooltip: AppStrings.settingsTooltip,
             onPressed: () => openSettingsScreen(
               context,
               profile: widget.profile,
@@ -193,6 +202,7 @@ class HomeScreenState extends State<HomeScreen> {
               onLogin: widget.onLogin,
               onRegister: widget.onRegister,
               onLogout: widget.onLogout,
+              onThemeModeChanged: widget.onThemeModeChanged,
             ),
             icon: SafeNetworkAvatar(
               radius: 14,
@@ -200,7 +210,7 @@ class HomeScreenState extends State<HomeScreen> {
             ),
           ),
           IconButton(
-            tooltip: widget.isDarkMode ? 'Tema claro' : 'Tema escuro',
+            tooltip: widget.isDarkMode ? AppStrings.lightThemeTooltip : AppStrings.darkThemeTooltip,
             onPressed: widget.onToggleTheme,
             icon: Icon(widget.isDarkMode ? Icons.light_mode_outlined : Icons.dark_mode_outlined),
           ),
@@ -243,6 +253,7 @@ class HomeScreenState extends State<HomeScreen> {
           ),
           SliverToBoxAdapter(
             child: PreferredMarketSection(
+              key: ValueKey('preferred-market-$_marketDataGeneration'),
               // Lê do AppShellScope (InheritedWidget) — atravessa o Navigator
               // aninhado das abas, que captura o HomeScreen só na 1ª montagem.
               // Sem isso, trocar de mercado não atualizava a home.
@@ -252,10 +263,13 @@ class HomeScreenState extends State<HomeScreen> {
             ),
           ),
           SliverToBoxAdapter(
+            child: RicoFeedAd(plan: kAdsSubscriptionPlan),
+          ),
+          SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
               child: Text(
-                'Cripto',
+                AppStrings.cryptoSection,
                 style: Theme.of(context).textTheme.titleMedium,
               ),
             ),
@@ -264,6 +278,9 @@ class HomeScreenState extends State<HomeScreen> {
             child: CryptoMarketHubCard(
               onTap: () => _openCrypto(context),
             ),
+          ),
+          const SliverToBoxAdapter(
+            child: SizedBox(height: 16),
           ),
           const SliverToBoxAdapter(
             child: SizedBox(height: kBottomNavContentPadding),

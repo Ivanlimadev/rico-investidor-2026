@@ -15,6 +15,7 @@ class GlobalMarketCapabilitiesResponse(BaseModel):
     monthly_request_budget: int | None = None
     intraday_interval: str | None = None
     refresh_seconds: int | None = None
+    bulk_refresh_seconds: int | None = None
     api_configured: bool = False
     provider: str = "marketstack"
     enabled_country_codes: list[str] = Field(default_factory=lambda: ["US", "BR"])

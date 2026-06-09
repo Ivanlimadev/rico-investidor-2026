@@ -4,6 +4,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 
 from app.api.v1.router import router as v1_router
 from app.config import settings
@@ -62,16 +64,34 @@ def create_app(*, docs_enabled: bool | None = None) -> FastAPI:
 
     application.include_router(v1_router)
 
+    avatars_dir = Path(__file__).resolve().parent.parent / "data" / "avatars"
+    avatars_dir.mkdir(parents=True, exist_ok=True)
+    application.mount(
+        "/static/avatars",
+        StaticFiles(directory=str(avatars_dir)),
+        name="avatars",
+    )
+
     @application.exception_handler(AppError)
     async def app_error_handler(_: Request, exc: AppError) -> JSONResponse:
         return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
 
     @application.get("/health")
     async def health():
+        from app.core.upstream_health import upstream_connectivity
+
+        upstream = await upstream_connectivity()
+        quotes_ok = bool(
+            upstream.get("marketstack_configured")
+            and isinstance(upstream.get("marketstack"), dict)
+            and upstream["marketstack"].get("ok")
+        )
+        crypto_ok = isinstance(upstream.get("binance"), dict) and upstream["binance"].get("ok")
         return {
-            "status": "ok",
+            "status": "ok" if quotes_ok and crypto_ok else "degraded",
             "markets": ["US", "crypto"],
             "quote_provider": "marketstack",
+            "upstream": upstream,
         }
 
     return application

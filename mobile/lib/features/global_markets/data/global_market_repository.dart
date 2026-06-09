@@ -37,14 +37,30 @@ class GlobalMarketRepository {
     return _detailCache.cacheFor(key);
   }
 
+  static const GlobalMarketCapabilitiesDto _defaultCapabilities = GlobalMarketCapabilitiesDto(
+    plan: 'professional',
+    dataMode: 'realtime',
+    maxHistoryDays: 365,
+    realtimeEnabled: true,
+    fundamentalsEnabled: true,
+    refreshSeconds: 60,
+    bulkRefreshSeconds: 1800,
+  );
+
   Future<GlobalMarketCapabilitiesDto> getCapabilities({bool force = false}) async {
     if (!force) {
       final cached = _capabilitiesCache.get();
       if (cached != null) return cached;
     }
-    final caps = await _api.getCapabilities();
-    _capabilitiesCache.set(caps);
-    return caps;
+    try {
+      final caps = await _api.getCapabilities();
+      _capabilitiesCache.set(caps);
+      return caps;
+    } catch (_) {
+      final cached = _capabilitiesCache.get();
+      if (cached != null) return cached;
+      return _defaultCapabilities;
+    }
   }
 
   Duration get quoteRefreshDuration {
@@ -55,7 +71,16 @@ class GlobalMarketRepository {
     return const Duration(minutes: 5);
   }
 
-  Duration get _quoteRefreshTtl => quoteRefreshDuration;
+  /// Heatmap, destaques e hubs — alinhado ao cache longo da API.
+  Duration get bulkQuoteRefreshDuration {
+    final secs = _capabilitiesCache.get()?.bulkRefreshSeconds;
+    if (secs != null && secs > 0) {
+      return Duration(seconds: secs.clamp(600, 3600));
+    }
+    return const Duration(minutes: 30);
+  }
+
+  Duration get _bulkRefreshTtl => bulkQuoteRefreshDuration;
 
   Future<GlobalStockIntradayCandlesResponseDto> getIntradayCandles(
     String symbol, {
@@ -87,7 +112,7 @@ class GlobalMarketRepository {
       fallbackMessage: 'Não foi possível carregar destaques do mercado americano.',
     );
     final items = response.items.map((e) => e.toUsAssetItem()).toList();
-    _featuredCache.set(items, ttlOverride: _quoteRefreshTtl);
+    _featuredCache.set(items, ttlOverride: _bulkRefreshTtl);
     return items;
   }
 
@@ -124,7 +149,7 @@ class GlobalMarketRepository {
         fallbackMessage: 'Não foi possível carregar o mapa de calor americano.',
       );
       await getCapabilities();
-      _heatmapCache.set(response, ttlOverride: _quoteRefreshTtl);
+      _heatmapCache.set(response, ttlOverride: _bulkRefreshTtl);
       return response;
     } finally {
       _heatmapFuture = null;

@@ -30,6 +30,11 @@ def _eod_session_close(item: dict) -> float | None:
     return _safe_float(item.get("close") or item.get("last"))
 
 
+def _intraday_last_price(item: dict) -> float | None:
+    """Último preço negociado no intraday (Marketstack: `last` > `close` da barra)."""
+    return _safe_float(item.get("last") or item.get("close") or item.get("market_price"))
+
+
 def _effective_eod_close(item: dict) -> float | None:
     """Fechamento utilizável: ignora zeros da API e cai para adj_close."""
     close = _eod_session_close(item)
@@ -132,15 +137,51 @@ def _resolve_name(symbol: str, item: dict) -> str:
     return map_ticker_name(item, symbol=symbol)
 
 
+_NY = ZoneInfo("America/New_York")
+
+
 def _session_date(item: dict) -> str | None:
     parsed = _parse_date(item.get("date"))
     if parsed:
-        return parsed.date().isoformat()
+        return parsed.astimezone(_NY).date().isoformat()
     raw = item.get("date")
     if not raw:
         return None
     text = str(raw)
     return text[:10] if len(text) >= 10 else text
+
+
+def _session_datetime(item: dict) -> datetime | None:
+    parsed = _parse_date(item.get("date"))
+    if parsed is None:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed
+
+
+def pick_latest_intraday_rows(items: Iterable[dict]) -> list[dict]:
+    """Uma barra por símbolo — a mais recente no tempo."""
+    best: dict[str, tuple[datetime, dict]] = {}
+    for item in items:
+        symbol = str(item.get("symbol") or "").upper().strip()
+        if not symbol:
+            continue
+        when = _session_datetime(item) or datetime.min.replace(tzinfo=UTC)
+        keys = (symbol, normalize_marketstack_symbol(symbol))
+        for key in keys:
+            current = best.get(key)
+            if current is None or when >= current[0]:
+                best[key] = (when, item)
+    seen: set[int] = set()
+    rows: list[dict] = []
+    for _, item in best.values():
+        item_id = id(item)
+        if item_id in seen:
+            continue
+        seen.add(item_id)
+        rows.append(item)
+    return rows
 
 
 def map_eod_quote(
@@ -242,9 +283,9 @@ def filter_today_intraday_rows(
     *,
     today: str | None = None,
 ) -> list[dict]:
-    """Descarta barras intraday de sessões anteriores (ex.: sexta no domingo)."""
+    """Descarta barras intraday de sessões anteriores (dia de Nova York)."""
     if today is None:
-        today = datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+        today = datetime.now(_NY).date().isoformat()
     return [item for item in items if _session_date(item) == today]
 
 
@@ -252,14 +293,14 @@ def overlay_intraday_prices(
     quotes: list[MarketQuote],
     intraday_items: Iterable[dict],
 ) -> list[MarketQuote]:
-    """Atualiza preço ao vivo mantendo previous_close e variação do pregão EOD."""
+    """Atualiza preço ao vivo mantendo previous_close do último fechamento EOD."""
+    live_rows = pick_latest_intraday_rows(intraday_items)
     live_by_key: dict[str, dict] = {}
-    for item in intraday_items:
+    for item in live_rows:
         symbol = str(item.get("symbol") or "").upper().strip()
         if not symbol:
             continue
-        price = _effective_eod_close(item)
-        if price is None:
+        if _intraday_last_price(item) is None:
             continue
         live_by_key[symbol] = item
         live_by_key[normalize_marketstack_symbol(symbol)] = item
@@ -272,11 +313,13 @@ def overlay_intraday_prices(
         if item is None:
             updated.append(quote)
             continue
-        price = _effective_eod_close(item)
+        price = _intraday_last_price(item)
         if price is None:
             updated.append(quote)
             continue
         prev = quote.previous_close
+        if prev is None or prev <= 0:
+            prev = quote.price
         updated.append(
             quote.model_copy(
                 update={
@@ -308,19 +351,21 @@ def map_eod_quotes_with_change(
     quotes: list[MarketQuote] = []
     for symbol, rows in grouped.items():
         rows.sort(key=lambda row: row[0] or datetime.min.replace(tzinfo=UTC), reverse=True)
-        latest_item = None
-        previous_close = None
-        for index, (_, item) in enumerate(rows):
-            if _effective_eod_close(item) is None:
+        sessions: list[tuple[str, dict, float]] = []
+        for _, item in rows:
+            close = _effective_eod_close(item)
+            session = _session_date(item)
+            if close is None or not session:
                 continue
-            if latest_item is None:
-                latest_item = item
+            if sessions and sessions[-1][0] == session:
                 continue
-            if previous_close is None:
-                previous_close = _effective_eod_close(item)
-                break
-        if latest_item is None:
+            sessions.append((session, item, close))
+
+        if not sessions:
             continue
+
+        latest_item = sessions[0][1]
+        previous_close = sessions[1][2] if len(sessions) > 1 else None
         quote = map_eod_quote(latest_item, category=category, previous_close=previous_close)
         if quote:
             quotes.append(quote)

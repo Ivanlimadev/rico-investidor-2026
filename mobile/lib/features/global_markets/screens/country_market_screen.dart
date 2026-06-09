@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
 import 'package:rico_investidor/features/global_markets/widgets/us_market_quote_list_tile.dart';
 import 'package:rico_investidor/core/widgets/asset_country_flag.dart';
@@ -224,6 +225,7 @@ class _CountryMarketScreenState extends State<CountryMarketScreen> {
                     symbol: asset.symbol,
                     repository: widget.repository,
                     exchange: asset.exchangeMic,
+                    plan: AppShellScope.of(context).subscriptionPlan,
                   ),
                 ),
               );

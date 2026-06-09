@@ -1,4 +1,5 @@
 import 'package:rico_investidor/core/utils/currency_format.dart';
+import 'package:rico_investidor/l10n/app_strings.dart';
 import 'package:rico_investidor/models/market_category.dart';
 import 'package:rico_investidor/models/portfolio_holding.dart';
 
@@ -17,8 +18,8 @@ enum HoldingCurrency {
 
   String get averagePriceLabel {
     return switch (this) {
-      HoldingCurrency.usd => 'Preço médio (US\$)',
-      HoldingCurrency.brl => 'Preço médio (R\$)',
+      HoldingCurrency.usd => AppStrings.avgPriceUsd,
+      HoldingCurrency.brl => AppStrings.avgPriceBrl,
     };
   }
 

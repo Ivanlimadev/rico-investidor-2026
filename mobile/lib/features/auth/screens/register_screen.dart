@@ -1,9 +1,13 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:rico_investidor/core/config/legal_urls.dart';
 import 'package:rico_investidor/core/network/api_exception.dart';
 import 'package:rico_investidor/core/utils/password_requirements.dart';
 import 'package:rico_investidor/features/auth/data/auth_repository.dart';
 import 'package:rico_investidor/features/auth/screens/login_screen.dart';
 import 'package:rico_investidor/features/auth/widgets/password_requirement_checklist.dart';
+import 'package:rico_investidor/features/legal/legal_document_screen.dart';
+import 'package:rico_investidor/l10n/app_strings.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({
@@ -27,16 +31,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _loading = false;
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
+  bool _acceptedTerms = false;
   String? _error;
+  late final TapGestureRecognizer _termsRecognizer;
 
   @override
   void initState() {
     super.initState();
     _passwordController.addListener(() => setState(() {}));
+    _termsRecognizer = TapGestureRecognizer()..onTap = _openTerms;
   }
 
   @override
   void dispose() {
+    _termsRecognizer.dispose();
     _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
@@ -44,7 +52,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
     super.dispose();
   }
 
+  void _openTerms() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const LegalDocumentScreen(
+          title: 'Terms of Service',
+          url: LegalUrls.termsOfService,
+        ),
+      ),
+    );
+  }
+
   Future<void> _submit() async {
+    if (!_acceptedTerms) {
+      setState(() => _error = AppStrings.acceptTermsRequired);
+      return;
+    }
     if (!_formKey.currentState!.validate()) return;
 
     setState(() {
@@ -69,7 +92,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Não foi possível criar a conta. Tente novamente.';
+        _error = AppStrings.registerFailed;
         _loading = false;
       });
     }
@@ -86,7 +109,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Criar conta')),
+      appBar: AppBar(title: const Text(AppStrings.registerTitle)),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
@@ -96,7 +119,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  'Preencha seus dados para começar.',
+                  AppStrings.registerSubtitle,
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                         color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
                       ),
@@ -107,13 +130,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   textCapitalization: TextCapitalization.words,
                   textInputAction: TextInputAction.next,
                   decoration: const InputDecoration(
-                    labelText: 'Nome',
-                    hintText: 'Como quer ser chamado',
+                    labelText: AppStrings.nameLabel,
+                    hintText: AppStrings.nameHint,
                     prefixIcon: Icon(Icons.person_outline),
                   ),
                   validator: (value) {
                     final name = value?.trim() ?? '';
-                    if (name.length < 2) return 'Informe seu nome';
+                    if (name.length < 2) return AppStrings.enterName;
                     return null;
                   },
                 ),
@@ -124,14 +147,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   autocorrect: false,
                   textInputAction: TextInputAction.next,
                   decoration: const InputDecoration(
-                    labelText: 'E-mail',
-                    hintText: 'seu@email.com',
+                    labelText: AppStrings.emailLabel,
+                    hintText: AppStrings.emailHint,
                     prefixIcon: Icon(Icons.email_outlined),
                   ),
                   validator: (value) {
                     final email = value?.trim() ?? '';
                     if (!email.contains('@') || !email.contains('.')) {
-                      return 'Informe um e-mail válido';
+                      return AppStrings.enterValidEmail;
                     }
                     return null;
                   },
@@ -142,8 +165,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   obscureText: _obscurePassword,
                   textInputAction: TextInputAction.next,
                   decoration: InputDecoration(
-                    labelText: 'Senha',
-                    hintText: 'Crie uma senha segura',
+                    labelText: AppStrings.passwordLabel,
+                    hintText: AppStrings.createSecurePasswordHint,
                     prefixIcon: const Icon(Icons.lock_outline),
                     suffixIcon: IconButton(
                       onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
@@ -161,7 +184,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   textInputAction: TextInputAction.done,
                   onFieldSubmitted: (_) => _submit(),
                   decoration: InputDecoration(
-                    labelText: 'Confirmar senha',
+                    labelText: AppStrings.confirmPasswordLabel,
                     prefixIcon: const Icon(Icons.lock_outline),
                     suffixIcon: IconButton(
                       onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
@@ -170,13 +193,38 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                   validator: (value) {
                     if (value != _passwordController.text) {
-                      return 'As senhas não coincidem';
+                      return AppStrings.passwordsDoNotMatch;
                     }
                     if (!PasswordRequirements.isValid(_passwordController.text)) {
-                      return 'A senha não atende todos os requisitos';
+                      return AppStrings.passwordRequirementsNotMet;
                     }
                     return null;
                   },
+                ),
+                const SizedBox(height: 16),
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  value: _acceptedTerms,
+                  onChanged: _loading
+                      ? null
+                      : (value) => setState(() => _acceptedTerms = value ?? false),
+                  title: RichText(
+                    text: TextSpan(
+                      style: Theme.of(context).textTheme.bodyMedium,
+                      children: [
+                        const TextSpan(text: AppStrings.acceptTermsPrefix),
+                        TextSpan(
+                          text: AppStrings.termsOfServiceLink,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.primary,
+                            decoration: TextDecoration.underline,
+                          ),
+                          recognizer: _termsRecognizer,
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 16),
@@ -194,12 +242,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           height: 22,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('Criar conta'),
+                      : const Text(AppStrings.registerButton),
                 ),
                 const SizedBox(height: 12),
                 TextButton(
                   onPressed: _loading ? null : _openLogin,
-                  child: const Text('Já tenho conta'),
+                  child: const Text(AppStrings.alreadyHaveAccount),
                 ),
               ],
             ),

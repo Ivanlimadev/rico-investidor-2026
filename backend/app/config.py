@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     # Atraso típico do feed intraday Marketstack (não é tick-by-tick de bolsa).
     marketstack_intraday_delay_minutes: int = 15
     marketstack_realtime_cache_ttl_seconds: int = 60
+    # Listas, heatmap, explore, hubs — cache longo (economiza Marketstack).
+    marketstack_aux_cache_ttl_seconds: int = 1800
+    # Candles, catálogos, detalhe estático — cache ainda mais longo.
+    marketstack_static_cache_ttl_seconds: int = 3600
     # Financial Modeling Prep — opcional. Plano grátis (250 req/dia) enriquece o
     # perfil internacional e ratios TTM (P/L, ROE, margens) quando Marketstack
     # não expõe tickerinfo (planos abaixo de Business).
@@ -69,6 +73,11 @@ class Settings(BaseSettings):
     pluggy_client_id: str = ""
     pluggy_client_secret: str = ""
     pluggy_base_url: str = "https://api.pluggy.ai"
+    plaid_client_id: str = ""
+    plaid_secret: str = ""
+    plaid_env: str = "sandbox"
+    plaid_products: str = "transactions"
+    plaid_country_codes: str = "US"
     open_finance_api_key: str = ""
     open_finance_store_path: Path = _BACKEND_ROOT / "data" / "open_finance_links.json"
     app_env: str = "development"
@@ -77,6 +86,10 @@ class Settings(BaseSettings):
     auth_rate_limit_per_minute: int = 10
     logo_rate_limit_per_minute: int = 120
     trust_proxy_headers: bool = False
+    # Quando False, httpx ignora HTTP_PROXY/HTTPS_PROXY do sistema (evita 403 em APIs externas).
+    outbound_http_trust_env: bool = False
+    # Tenta o modo oposto (direct <-> proxy) se a primeira conexão falhar.
+    outbound_http_fallback_enabled: bool = True
     cache_max_entries: int = 512
     quote_cache_ttl_seconds: int = 300
     api_host: str = "127.0.0.1"
@@ -84,6 +97,9 @@ class Settings(BaseSettings):
     auth_secret: str = ""
     auth_token_ttl_seconds: int = 60 * 60 * 24 * 30
     auth_users_path: Path = _BACKEND_ROOT / "data" / "users.json"
+    app_public_url: str = "http://127.0.0.1:8000"
+    resend_api_key: str = ""
+    resend_from_email: str = "Rico Investidor <noreply@ricoinvestidor.app>"
     database_url: str = f"sqlite:///{(_BACKEND_ROOT / 'data' / 'ricoapp.db').as_posix()}"
     database_pool_size: int = 5
     database_max_overflow: int = 10

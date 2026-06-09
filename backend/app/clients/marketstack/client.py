@@ -262,6 +262,24 @@ class MarketstackClient:
         payload = await self._get(f"tickers/{normalize_marketstack_symbol(symbol)}/eod/latest")
         return self._unwrap_ticker_payload(payload)
 
+    async def get_ticker_intraday_latest(
+        self,
+        symbol: str,
+        *,
+        interval: str = "5min",
+    ) -> dict | None:
+        """Intraday por ticker — feed IEX (não filtrar por MIC NASDAQ/NYSE)."""
+        api_symbol = normalize_marketstack_symbol(symbol)
+        payload = await self._get(
+            f"tickers/{api_symbol}/intraday/latest",
+            params={"interval": interval},
+        )
+        row = self._unwrap_ticker_payload(payload)
+        if row is not None:
+            return row
+        data = self._data(payload)
+        return data[0] if data else None
+
     async def get_ticker_dividends(
         self,
         symbol: str,
@@ -562,18 +580,67 @@ class MarketstackClient:
         quotes = map_eod_quotes_with_change(eod_rows, category=category)
 
         if use_intraday:
-            from app.clients.marketstack.stock_mapper import filter_today_intraday_rows, overlay_intraday_prices
+            from datetime import datetime
+            from zoneinfo import ZoneInfo
 
-            intraday_rows = await self.get_intraday_latest(
-                symbols,
-                interval=intraday_interval,
-                exchange=exchange,
+            from app.clients.marketstack.stock_mapper import (
+                filter_today_intraday_rows,
+                map_eod_quote,
+                overlay_intraday_prices,
+                pick_latest_intraday_rows,
             )
-            intraday_rows = filter_today_intraday_rows(intraday_rows or [])
+
+            ny = ZoneInfo("America/New_York")
+            today = datetime.now(ny).date().isoformat()
+
+            # Intraday Marketstack = IEX. Não passar exchange=XNAS/XNYS (zera a resposta).
+            interval_candidates = []
+            for candidate in (intraday_interval, "15min", "1hour"):
+                if candidate and candidate not in interval_candidates:
+                    interval_candidates.append(candidate)
+
+            intraday_rows: list[dict] = []
+            for interval in interval_candidates:
+                intraday_rows = await self.get_intraday_latest(
+                    symbols,
+                    interval=interval,
+                )
+                intraday_rows = filter_today_intraday_rows(intraday_rows or [])
+                if intraday_rows:
+                    break
+
+                intraday_rows = await self.get_intraday(
+                    symbols,
+                    interval=interval,
+                    date_from=today,
+                    date_to=today,
+                    sort="DESC",
+                    limit=100,
+                )
+                intraday_rows = filter_today_intraday_rows(intraday_rows or [])
+                if intraday_rows:
+                    break
+
+            if not intraday_rows and len(symbols) == 1:
+                for interval in interval_candidates:
+                    row = await self.get_ticker_intraday_latest(
+                        symbols[0],
+                        interval=interval,
+                    )
+                    if row:
+                        intraday_rows = filter_today_intraday_rows([row])
+                    if intraday_rows:
+                        break
+
+            intraday_rows = pick_latest_intraday_rows(intraday_rows)
             if intraday_rows:
                 if quotes:
                     return overlay_intraday_prices(quotes, intraday_rows)
-                return map_eod_quotes_with_change(intraday_rows, category=category)
+                mapped = [
+                    map_eod_quote(item, category=category)
+                    for item in intraday_rows
+                ]
+                return [quote for quote in mapped if quote is not None]
 
         return quotes
 

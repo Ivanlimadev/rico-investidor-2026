@@ -11,6 +11,9 @@ _BASE_PUBLIC_PATHS = {
     "/v1/auth/register",
     "/v1/auth/login",
     "/v1/auth/anonymous",
+    "/v1/auth/forgot-password",
+    "/v1/auth/reset-password",
+    "/v1/finances/webhook",
 }
 
 _DOC_PUBLIC_PATHS = {"/docs", "/openapi.json", "/redoc"}
@@ -46,6 +49,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if settings.docs_enabled:
             public_paths.update(_DOC_PUBLIC_PATHS)
         if path in public_paths:
+            return True
+        if path.startswith("/static/avatars/"):
             return True
         # Logos são assets cacheáveis — não exigem JWT (Image.network não envia Bearer).
         if path.endswith("/logo.png"):

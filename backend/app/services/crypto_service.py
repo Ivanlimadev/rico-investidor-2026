@@ -26,6 +26,7 @@ from app.domain.crypto.models import (
 )
 from app.domain.crypto.performance import calc_performance_stats
 from app.domain.crypto.presets import (
+    CRYPTO_CHART_PRESETS,
     CRYPTO_EXPLORE_GROUPS,
     DEFAULT_HEATMAP_LIMIT,
     FEATURED_CRYPTO_SYMBOLS,
@@ -57,6 +58,24 @@ class CryptoService:
         by_symbol = {item.symbol: item for item in quotes.items}
         return [by_symbol[symbol] for symbol in symbols if symbol in by_symbol]
 
+    async def _all_tickers(self) -> CryptoListResponse:
+        try:
+            return await self._client.get_all_usdt_tickers()
+        except UpstreamError:
+            return await self._coingecko.get_top_markets(limit=100)
+
+    async def _rates_for_symbols(self, symbols: list[str]) -> CryptoListResponse:
+        try:
+            return await self._client.get_crypto_rates(symbols)
+        except UpstreamError:
+            return await self._coingecko.get_quotes(symbols)
+
+    async def _available_catalog(self, *, search: str | None = None) -> CryptoAvailableResponse:
+        try:
+            return await self._client.get_crypto_available(search=search)
+        except UpstreamError:
+            return await self._coingecko.list_available(search=search)
+
     async def list_featured(self) -> CryptoListResponse:
         cache_key = "featured"
         cached = self._rates_cache.get(cache_key)
@@ -64,9 +83,13 @@ class CryptoService:
             return cached
 
         symbols = list(FEATURED_CRYPTO_SYMBOLS)
-        rates = await self._client.get_crypto_rates(symbols)
+        rates = await self._rates_for_symbols(symbols)
         items = self._order_quotes(symbols, rates)
-        result = CryptoListResponse(items=items, count=len(items), provider="binance")
+        result = CryptoListResponse(
+            items=items,
+            count=len(items),
+            provider=rates.provider,
+        )
         self._rates_cache.set(cache_key, result)
         return result
 
@@ -76,7 +99,7 @@ class CryptoService:
         if cached:
             return cached
 
-        result = await self._client.get_crypto_available(search=search)
+        result = await self._available_catalog(search=search)
         self._available_cache.set(cache_key, result)
         return result
 
@@ -91,12 +114,17 @@ class CryptoService:
         if cached:
             return cached
 
-        all_rates = await self._client.get_all_usdt_tickers()
+        all_rates = await self._all_tickers()
+        min_volume = (
+            MIN_MOVER_QUOTE_VOLUME_USDT
+            if all_rates.provider == "binance"
+            else 0.0
+        )
         eligible = [
             quote
             for quote in all_rates.items
             if quote.symbol not in MOVER_STABLECOINS
-            and (quote.volume or 0) >= MIN_MOVER_QUOTE_VOLUME_USDT
+            and (quote.volume or 0) >= min_volume
         ]
         gainers = sorted(
             [quote for quote in eligible if quote.change_percent > 0],
@@ -112,7 +140,7 @@ class CryptoService:
             gainers=gainers,
             losers=losers,
             limit=safe_limit,
-            provider="binance",
+            provider=all_rates.provider,
         )
         self._movers_cache.set(cache_key, result)
         return result
@@ -125,15 +153,24 @@ class CryptoService:
         if cached:
             return cached
 
-        all_rates = await self._client.get_all_usdt_tickers()
+        all_rates = await self._all_tickers()
+        min_volume = (
+            MIN_MOVER_QUOTE_VOLUME_USDT
+            if all_rates.provider == "binance"
+            else 0.0
+        )
         eligible = [
             quote
             for quote in all_rates.items
             if quote.symbol not in MOVER_STABLECOINS
-            and (quote.volume or 0) >= MIN_MOVER_QUOTE_VOLUME_USDT
+            and (quote.volume or 0) >= min_volume
         ]
         ranked = sorted(eligible, key=lambda quote: quote.volume or 0.0, reverse=True)[:safe_limit]
-        result = CryptoListResponse(items=ranked, count=len(ranked), provider="binance")
+        result = CryptoListResponse(
+            items=ranked,
+            count=len(ranked),
+            provider=all_rates.provider,
+        )
         self._heatmap_cache.set(cache_key, result)
         return result
 
@@ -161,7 +198,7 @@ class CryptoService:
         # Serve tanto para rankear por liquidez quanto para montar os itens da
         # página, evitando uma chamada batch extra que pode falhar com um par
         # inválido e derrubar a listagem inteira.
-        snapshot = await self._client.get_all_usdt_tickers()
+        snapshot = await self._all_tickers()
         by_base = {
             normalize_crypto_symbol(quote.symbol): quote for quote in snapshot.items
         }
@@ -192,7 +229,7 @@ class CryptoService:
                 page=safe_page,
                 total_pages=total_pages,
                 group=normalized_group,
-                provider="binance",
+                provider=snapshot.provider,
             )
 
         items = [by_base[normalize_crypto_symbol(coin)] for coin in page_coins]
@@ -204,14 +241,14 @@ class CryptoService:
             page=safe_page,
             total_pages=total_pages,
             group=normalized_group,
-            provider="binance",
+            provider=snapshot.provider,
         )
 
     async def get_rates_for_symbols(self, symbols: list[str]) -> CryptoListResponse:
         normalized = [normalize_crypto_symbol(symbol) for symbol in symbols if symbol.strip()]
         if not normalized:
             return CryptoListResponse(items=[], count=0, provider="binance")
-        return await self._client.get_crypto_rates(normalized)
+        return await self._rates_for_symbols(normalized)
 
     async def get_quote(self, symbol: str) -> CryptoQuote:
         normalized = normalize_crypto_symbol(symbol)
@@ -220,7 +257,7 @@ class CryptoService:
         if cached and cached.items:
             return cached.items[0]
 
-        result = await self._client.get_crypto_rates([normalized])
+        result = await self._rates_for_symbols([normalized])
         if not result.items:
             raise UpstreamError("Criptomoeda não encontrada", status_code=404)
 
@@ -240,7 +277,20 @@ class CryptoService:
         if cached:
             return cached
 
-        result = await self._client.get_crypto_history(normalized, limit=limit, interval=interval)
+        try:
+            result = await self._client.get_crypto_history(normalized, limit=limit, interval=interval)
+        except UpstreamError:
+            days = max(7, min(limit, 365))
+            candles = await self._coingecko.get_market_chart(normalized, days=days, interval=interval)
+            history = [
+                CryptoHistoryPoint(date=candle.date, value=candle.close) for candle in candles.candles
+            ]
+            result = CryptoHistoryResponse(
+                symbol=normalized,
+                history=history,
+                count=len(history),
+                provider="coingecko",
+            )
         self._history_cache.set(cache_key, result)
         return result
 
@@ -252,11 +302,20 @@ class CryptoService:
         limit: int = 252,
     ) -> CryptoCandlesResponse:
         normalized = normalize_crypto_symbol(symbol)
-        return await self._client.get_crypto_candles(normalized, interval=interval, limit=limit)
+        try:
+            return await self._client.get_crypto_candles(normalized, interval=interval, limit=limit)
+        except UpstreamError:
+            days = max(7, min(limit, 365))
+            return await self._coingecko.get_market_chart(normalized, days=days, interval=interval)
 
     async def get_candles_preset(self, symbol: str, *, preset: str = "1m") -> CryptoCandlesResponse:
         normalized = normalize_crypto_symbol(symbol)
-        return await self._client.get_crypto_candles_preset(normalized, preset=preset)
+        try:
+            return await self._client.get_crypto_candles_preset(normalized, preset=preset)
+        except UpstreamError:
+            interval, limit = CRYPTO_CHART_PRESETS.get(preset, ("1d", 30))
+            days = max(7, min(limit, 365))
+            return await self._coingecko.get_market_chart(normalized, days=days, interval=interval)
 
     async def get_order_book(self, symbol: str, *, limit: int = 10) -> CryptoOrderBook:
         normalized = normalize_crypto_symbol(symbol)

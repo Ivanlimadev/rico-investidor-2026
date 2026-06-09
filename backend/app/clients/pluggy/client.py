@@ -2,6 +2,7 @@ import httpx
 
 from app.config import settings
 from app.core.exceptions import NotConfiguredError, UpstreamError
+from app.core.http_client import get_http_client
 from app.core.upstream_errors import log_upstream_failure, upstream_public_message
 
 
@@ -43,14 +44,13 @@ class PluggyClient:
             headers["X-API-KEY"] = api_key
 
         try:
-            async with httpx.AsyncClient(timeout=45.0) as client:
-                response = await client.request(
-                    method,
-                    url,
-                    headers=headers or None,
-                    json=json,
-                    params=params,
-                )
+            response = await get_http_client().request(
+                method,
+                url,
+                headers=headers or None,
+                json=json,
+                params=params,
+            )
         except httpx.RequestError as exc:
             raise UpstreamError(
                 f"Falha ao conectar na Pluggy: {exc.__class__.__name__}",

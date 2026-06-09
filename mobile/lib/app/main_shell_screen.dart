@@ -1,5 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_bottom_nav_bar.dart';
+import 'package:rico_investidor/core/ads/banner_ad_widget.dart';
+import 'package:rico_investidor/core/ads/ad_subscription_plan.dart';
+import 'package:rico_investidor/core/utils/quote_refresh_timer.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/app/tab_root_navigator.dart';
 import 'package:rico_investidor/features/community/community_tab_screen.dart';
@@ -13,6 +18,7 @@ import 'package:rico_investidor/features/portfolio/portfolio_tab_screen.dart';
 import 'package:rico_investidor/features/search/search_tab_screen.dart';
 import 'package:rico_investidor/models/user_profile.dart';
 import 'package:rico_investidor/services/market_preference_storage.dart';
+import 'package:rico_investidor/services/portfolio_price_service.dart';
 import 'package:rico_investidor/state/portfolio_state.dart';
 
 enum AppTab {
@@ -35,6 +41,7 @@ class MainShellScreen extends StatefulWidget {
     required this.globalMarketRepository,
     required this.isDarkMode,
     required this.onToggleTheme,
+    this.onThemeModeChanged,
     required this.preferredMarket,
     required this.onChangePreferredMarket,
     required this.onLogin,
@@ -51,6 +58,7 @@ class MainShellScreen extends StatefulWidget {
   final GlobalMarketRepository globalMarketRepository;
   final bool isDarkMode;
   final VoidCallback onToggleTheme;
+  final ValueChanged<ThemeMode>? onThemeModeChanged;
   final MarketPreference preferredMarket;
   final VoidCallback onChangePreferredMarket;
   final VoidCallback onLogin;
@@ -71,6 +79,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
     AppTab.home,
     AppTab.portfolio,
     AppTab.search,
+    AppTab.finances,
     AppTab.menu,
   ];
 
@@ -79,8 +88,47 @@ class _MainShellScreenState extends State<MainShellScreen> {
     (_) => GlobalKey<NavigatorState>(),
   );
   final _homeScreenKey = GlobalKey<HomeScreenState>();
+  QuoteRefreshTimer? _portfolioPriceTimer;
+  final PortfolioPriceService _portfolioPriceService = PortfolioPriceService();
+  bool _portfolioPriceRefreshRunning = false;
 
   int get _index => _tab.index;
+
+  @override
+  void initState() {
+    super.initState();
+    _configurePortfolioPriceRefresh();
+  }
+
+  @override
+  void dispose() {
+    _portfolioPriceTimer?.stop();
+    super.dispose();
+  }
+
+  Future<void> _configurePortfolioPriceRefresh() async {
+    try {
+      final caps = await widget.globalMarketRepository.getCapabilities();
+      if (!caps.realtimeEnabled) return;
+      _portfolioPriceTimer = QuoteRefreshTimer(
+        onTick: _refreshPortfolioPrices,
+      )..start(refreshSeconds: caps.refreshSeconds ?? 60, enabled: true);
+    } catch (_) {}
+  }
+
+  Future<void> _refreshPortfolioPrices() async {
+    if (_portfolioPriceRefreshRunning || widget.portfolio.holdings.isEmpty) return;
+    _portfolioPriceRefreshRunning = true;
+    try {
+      final result = await _portfolioPriceService.refreshAllDetailed(widget.portfolio);
+      if (!mounted) return;
+      if (result.updated > 0) {
+        widget.onPortfolioChanged();
+      }
+    } finally {
+      _portfolioPriceRefreshRunning = false;
+    }
+  }
 
   void _resetHomeTab() {
     _navigatorKeys[AppTab.home.index].currentState?.popUntil((route) => route.isFirst);
@@ -142,6 +190,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
       onPortfolioChanged: widget.onPortfolioChanged,
       preferredMarket: widget.preferredMarket,
       onChangePreferredMarket: widget.onChangePreferredMarket,
+      subscriptionPlan: kAdsSubscriptionPlan,
       child: Scaffold(
         body: IndexedStack(
           index: _index,
@@ -158,6 +207,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
                 globalMarketRepository: widget.globalMarketRepository,
                 isDarkMode: widget.isDarkMode,
                 onToggleTheme: widget.onToggleTheme,
+                onThemeModeChanged: widget.onThemeModeChanged,
                 preferredMarket: widget.preferredMarket,
                 onChangePreferredMarket: widget.onChangePreferredMarket,
                 onLogin: widget.onLogin,
@@ -183,7 +233,14 @@ class _MainShellScreenState extends State<MainShellScreen> {
               ),
             ),
             _tabRoot(AppTab.community, const CommunityTabScreen()),
-            _tabRoot(AppTab.finances, const FinancesTabScreen()),
+            _tabRoot(
+              AppTab.finances,
+              FinancesTabScreen(
+                profile: widget.profile,
+                onLogin: widget.onLogin,
+                onRegister: widget.onRegister,
+              ),
+            ),
             _tabRoot(
               AppTab.menu,
               MenuTabScreen(
@@ -201,11 +258,16 @@ class _MainShellScreenState extends State<MainShellScreen> {
             ),
           ],
         ),
-        bottomNavigationBar: AppBottomNavBar(
-          selectedIndex:
-              _visibleTabs.indexOf(_tab).clamp(0, _visibleTabs.length - 1),
-          onDestinationSelected: (index) => _selectTab(_visibleTabs[index]),
-          destinations: const [
+        bottomNavigationBar: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_tab == AppTab.home || _tab == AppTab.portfolio)
+              RicoBannerAd(plan: kAdsSubscriptionPlan),
+            AppBottomNavBar(
+              selectedIndex:
+                  _visibleTabs.indexOf(_tab).clamp(0, _visibleTabs.length - 1),
+              onDestinationSelected: (index) => _selectTab(_visibleTabs[index]),
+              destinations: const [
             AppBottomNavItem(
               icon: Icons.home_outlined,
               selectedIcon: Icons.home,
@@ -222,9 +284,16 @@ class _MainShellScreenState extends State<MainShellScreen> {
               label: 'Buscar',
             ),
             AppBottomNavItem(
+              icon: Icons.account_balance_outlined,
+              selectedIcon: Icons.account_balance,
+              label: 'Finanças',
+            ),
+            AppBottomNavItem(
               icon: Icons.menu,
               selectedIcon: Icons.menu_open,
               label: 'Menu',
+            ),
+              ],
             ),
           ],
         ),

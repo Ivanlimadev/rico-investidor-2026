@@ -67,7 +67,10 @@ class _FeaturedUsStocksRowState extends State<FeaturedUsStocksRow> {
           if (!mounted) return;
           setState(() => _liveItems = items);
         },
-      )..start(refreshSeconds: caps.refreshSeconds ?? 60, enabled: true);
+      )..start(
+          refreshSeconds: caps.refreshSeconds ?? 60,
+          enabled: true,
+        );
     } catch (_) {}
   }
 

@@ -2,6 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
+import 'package:rico_investidor/core/ads/ad_manager.dart';
+import 'package:rico_investidor/core/ads/ad_subscription_plan.dart';
+import 'package:rico_investidor/core/ads/banner_ad_widget.dart';
+import 'package:rico_investidor/core/ads/feed_ad_widget.dart';
+import 'package:rico_investidor/models/subscription_plan.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/utils/quote_refresh_timer.dart';
 import 'package:rico_investidor/core/utils/us_market_capabilities_labels.dart';
@@ -39,11 +44,13 @@ class GlobalStockDetailScreen extends StatefulWidget {
     super.key,
     required this.symbol,
     required this.repository,
+    required this.plan,
     this.exchange,
   });
 
   final String symbol;
   final GlobalMarketRepository repository;
+  final SubscriptionPlan plan;
   final String? exchange;
 
   @override
@@ -65,6 +72,7 @@ class _GlobalStockDetailScreenState extends State<GlobalStockDetailScreen> {
     super.initState();
     _quoteRefreshTimer = QuoteRefreshTimer(onTick: _pollQuote);
     _future = _fetchDetail();
+    unawaited(adManager.preloadInterstitial());
   }
 
   @override
@@ -155,7 +163,14 @@ class _GlobalStockDetailScreenState extends State<GlobalStockDetailScreen> {
   Widget build(BuildContext context) {
     final onSurface = Theme.of(context).colorScheme.onSurface;
 
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        await adManager.showInterstitialIfReady(kAdsSubscriptionPlan);
+        if (context.mounted) Navigator.of(context).pop();
+      },
+      child: Scaffold(
       appBar: AppBar(
         title: Text(widget.symbol.toUpperCase()),
         actions: [
@@ -210,8 +225,13 @@ class _GlobalStockDetailScreenState extends State<GlobalStockDetailScreen> {
           final positive = quote.changePercent >= 0;
           final changeColor = positive ? AppColors.positive : AppColors.negative;
 
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+          final list = ListView(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              8,
+              20,
+              16,
+            ),
             children: [
               if (_capabilities != null) ...[
                 Wrap(
@@ -282,6 +302,7 @@ class _GlobalStockDetailScreenState extends State<GlobalStockDetailScreen> {
                   message: 'Alguns indicadores podem estar indisponíveis para este ativo.',
                 ),
               ],
+              RicoFeedAd(plan: kAdsSubscriptionPlan, compactInsets: true),
               const SizedBox(height: 16),
               GlobalStockQuoteChart(
                 candles: detail.candles,
@@ -317,7 +338,15 @@ class _GlobalStockDetailScreenState extends State<GlobalStockDetailScreen> {
               ],
             ],
           );
+
+          return Column(
+            children: [
+              Expanded(child: list),
+              RicoBannerAd(plan: kAdsSubscriptionPlan),
+            ],
+          );
         },
+      ),
       ),
     );
   }

@@ -75,18 +75,27 @@ class _StockHeatmapBlockState extends State<StockHeatmapBlock> {
 
   Future<void> _configureAutoRefresh() async {
     _refreshTimer?.stop();
-    var seconds = widget.autoRefreshSeconds;
-    if ((seconds == null || seconds <= 0) && widget.resolveRefreshSeconds != null) {
-      seconds = await widget.resolveRefreshSeconds!();
-    }
-    if (seconds == null || seconds <= 0) return;
-    _refreshTimer = QuoteRefreshTimer(
+    try {
+      var seconds = widget.autoRefreshSeconds;
+      if ((seconds == null || seconds <= 0) && widget.resolveRefreshSeconds != null) {
+        seconds = await widget.resolveRefreshSeconds!();
+      }
+      if (seconds == null || seconds <= 0) return;
+      _refreshTimer = QuoteRefreshTimer(
       onTick: () async {
         if (!mounted) return;
         setState(() => _future = _load());
         await _future;
       },
-    )..start(refreshSeconds: seconds, enabled: true);
+    )..start(
+        refreshSeconds: seconds,
+        enabled: true,
+        minSeconds: seconds >= 600 ? 600 : 30,
+        maxSeconds: seconds >= 600 ? 3600 : 600,
+      );
+    } catch (error) {
+      debugPrint('StockHeatmapBlock refresh config: $error');
+    }
   }
 
   Future<QuoteListResponse?> _load() async {
@@ -99,7 +108,7 @@ class _StockHeatmapBlockState extends State<StockHeatmapBlock> {
       return response;
     } catch (error) {
       debugPrint('StockHeatmapBlock: $error');
-      rethrow;
+      return null;
     }
   }
 
@@ -171,10 +180,30 @@ class _StockHeatmapBlockState extends State<StockHeatmapBlock> {
         if (heatmap == null || heatmap.items.isEmpty) {
           return Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: OutlinedButton.icon(
-              onPressed: _retry,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Recarregar mapa de calor'),
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Mapa de calor sem cotações',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'A API não retornou ativos. Confira se o backend está rodando e se a Marketstack responde em /health.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 10),
+                    OutlinedButton.icon(
+                      onPressed: _retry,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Tentar novamente'),
+                    ),
+                  ],
+                ),
+              ),
             ),
           );
         }

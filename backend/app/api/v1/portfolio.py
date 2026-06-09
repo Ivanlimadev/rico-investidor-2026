@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 
 from app.core.auth_deps import get_auth_user, require_registered_user
 from app.domain.portfolio.models import (
@@ -6,6 +6,8 @@ from app.domain.portfolio.models import (
     PortfolioHoldingUpdateRequest,
     PortfolioHoldingsListResponse,
     PortfolioSyncRequest,
+    TransactionCreateRequest,
+    TransactionListResponse,
 )
 from app.services.portfolio_service import PortfolioService, portfolio_service
 
@@ -67,3 +69,34 @@ async def sync_holdings(
 ):
     user = require_registered_user(request)
     return service.sync_holdings(user.id, body)
+
+
+@router.get("/transactions", response_model=TransactionListResponse)
+async def list_transactions(
+    request: Request,
+    symbol: str | None = Query(default=None),
+    service: PortfolioService = Depends(get_portfolio_service),
+) -> TransactionListResponse:
+    user = require_registered_user(request)
+    return service.list_transactions(user.id, symbol=symbol.upper() if symbol else None)
+
+
+@router.post("/transactions", response_model=PortfolioHoldingsListResponse)
+async def add_transaction(
+    body: TransactionCreateRequest,
+    request: Request,
+    service: PortfolioService = Depends(get_portfolio_service),
+) -> PortfolioHoldingsListResponse:
+    user = require_registered_user(request)
+    service.add_transaction(user.id, body)
+    return service.list_holdings(user.id)
+
+
+@router.delete("/transactions/{transaction_id}", response_model=PortfolioHoldingsListResponse)
+async def delete_transaction(
+    transaction_id: str,
+    request: Request,
+    service: PortfolioService = Depends(get_portfolio_service),
+) -> PortfolioHoldingsListResponse:
+    user = require_registered_user(request)
+    return service.delete_transaction(user.id, transaction_id)

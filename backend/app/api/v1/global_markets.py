@@ -127,6 +127,16 @@ async def compare_global_stocks(
     return await global_market_service.compare_stocks(tickers)
 
 
+@router.get("/quotes")
+async def batch_global_quotes(
+    symbols: str = Query(..., min_length=1, max_length=512, description="Tickers separados por vírgula"),
+    exchange: str | None = Query(default=None, min_length=3, max_length=8),
+):
+    """Cotações US em lote — cache curto de preço, ideal para carteira."""
+    tickers = [part.strip() for part in symbols.split(",") if part.strip()]
+    return await global_market_service.get_quotes_batch(tickers, exchange=exchange)
+
+
 @router.get("/{symbol}/logo.png")
 async def get_global_stock_logo_png(symbol: str):
     """Logo PNG de ações americanas — proxy cacheado."""

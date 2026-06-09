@@ -42,6 +42,7 @@ class DividendPeriodChart extends StatelessWidget {
           clipBehavior: Clip.none,
           children: [
             BarChart(
+              duration: Duration.zero,
               BarChartData(
                 alignment: BarChartAlignment.spaceAround,
                 maxY: chartMax,

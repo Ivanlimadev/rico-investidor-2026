@@ -1,8 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:rico_investidor/core/config/legal_urls.dart';
+import 'package:rico_investidor/core/network/api_exception.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/features/auth/data/auth_repository.dart';
+import 'package:rico_investidor/features/legal/legal_document_screen.dart';
+import 'package:rico_investidor/features/settings/change_password_screen.dart';
+import 'package:rico_investidor/features/settings/help_support_screen.dart';
+import 'package:rico_investidor/features/settings/preferences_screen.dart';
+// HIDDEN: assinatura — import kept for paywall
+// import 'package:rico_investidor/features/subscription/paywall_screen.dart';
+import 'package:rico_investidor/l10n/app_strings.dart';
 import 'package:rico_investidor/models/subscription_plan.dart';
 import 'package:rico_investidor/models/user_profile.dart';
+import 'package:rico_investidor/services/profile_photo_service.dart';
 
 typedef ProfileChanged = void Function(UserProfile profile);
 typedef LogoutCallback = Future<void> Function();
@@ -15,6 +25,7 @@ class AccountMenuItems extends StatelessWidget {
     required this.onLogin,
     required this.onRegister,
     required this.onLogout,
+    this.onThemeModeChanged,
     this.dense = false,
   });
 
@@ -23,40 +34,35 @@ class AccountMenuItems extends StatelessWidget {
   final VoidCallback onLogin;
   final VoidCallback onRegister;
   final LogoutCallback onLogout;
+  final ValueChanged<ThemeMode>? onThemeModeChanged;
   final bool dense;
-
-  Future<void> _showComingSoon(BuildContext context, String feature) async {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$feature — em breve')),
-    );
-  }
 
   Future<void> _editName(BuildContext context) async {
     final controller = TextEditingController(text: profile.displayName);
     final result = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Editar nome'),
+        title: const Text(AppStrings.editNameTitle),
         content: TextField(
           controller: controller,
           autofocus: true,
           textCapitalization: TextCapitalization.words,
           decoration: const InputDecoration(
-            labelText: 'Nome exibido',
-            hintText: 'Como aparece no app',
+            labelText: AppStrings.displayNameLabel,
+            hintText: AppStrings.displayNameHint,
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancelar'),
+            child: const Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () {
               final name = controller.text.trim();
               if (name.isNotEmpty) Navigator.pop(context, name);
             },
-            child: const Text('Salvar'),
+            child: const Text(AppStrings.save),
           ),
         ],
       ),
@@ -69,7 +75,31 @@ class AccountMenuItems extends StatelessWidget {
     } catch (_) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Não foi possível atualizar o nome')),
+        const SnackBar(content: Text(AppStrings.couldNotUpdateName)),
+      );
+    }
+  }
+
+  Future<void> _pickPhoto(BuildContext context) async {
+    final picked = await profilePhotoService.pickFromGallery();
+    if (picked == null || !context.mounted) return;
+
+    try {
+      final updated = await authRepository.uploadProfilePhoto(picked.path);
+      if (!context.mounted) return;
+      onProfileChanged(updated);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(AppStrings.photoUpdated)),
+      );
+    } on ApiException catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(AppStrings.couldNotUploadPhoto)),
       );
     }
   }
@@ -78,16 +108,16 @@ class AccountMenuItems extends StatelessWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Sair da conta'),
-        content: const Text('Você continuará usando o app como visitante neste dispositivo.'),
+        title: const Text(AppStrings.signOutTitle),
+        content: const Text(AppStrings.signOutMessage),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
+            child: const Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Sair'),
+            child: const Text(AppStrings.signOutButton),
           ),
         ],
       ),
@@ -96,15 +126,89 @@ class AccountMenuItems extends StatelessWidget {
       await onLogout();
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Você saiu da conta')),
+        const SnackBar(content: Text(AppStrings.signedOut)),
       );
     }
   }
 
+  Future<void> _confirmDeleteAccount(BuildContext context) async {
+    final passwordController = TextEditingController();
+    try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text(AppStrings.deleteAccountTitle),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(AppStrings.deleteAccountMessage),
+              const SizedBox(height: 16),
+              TextField(
+                controller: passwordController,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: AppStrings.passwordLabel,
+                  hintText: AppStrings.confirmPasswordHint,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text(AppStrings.cancel),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.error,
+              ),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text(AppStrings.deleteButton),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !context.mounted) return;
+
+      await authRepository.deleteAccount(password: passwordController.text);
+      if (!context.mounted) return;
+      onProfileChanged(
+        profile.copyWith(
+          displayName: 'Investidor',
+          clearPhoto: true,
+          email: null,
+          isAnonymous: true,
+        ),
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(AppStrings.accountDeleted)),
+      );
+    } on ApiException catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(AppStrings.couldNotDeleteAccount)),
+      );
+    } finally {
+      passwordController.dispose();
+    }
+  }
+
+  void _openLegal(BuildContext context, {required String title, required String url}) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => LegalDocumentScreen(title: title, url: url),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final plan = profile.plan;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -112,22 +216,22 @@ class AccountMenuItems extends StatelessWidget {
           ListTile(
             dense: dense,
             leading: const Icon(Icons.email_outlined),
-            title: const Text('E-mail'),
+            title: const Text(AppStrings.emailMenuTitle),
             subtitle: Text(profile.email!),
           ),
         if (!profile.isRegistered) ...[
           ListTile(
             dense: dense,
             leading: const Icon(Icons.login),
-            title: const Text('Entrar'),
-            subtitle: const Text('Acesse sua conta existente'),
+            title: const Text(AppStrings.signInMenuTitle),
+            subtitle: const Text(AppStrings.signInMenuSubtitle),
             onTap: onLogin,
           ),
           ListTile(
             dense: dense,
             leading: const Icon(Icons.person_add_outlined),
-            title: const Text('Criar conta'),
-            subtitle: const Text('Cadastre-se com e-mail e senha'),
+            title: const Text(AppStrings.createAccountMenuTitle),
+            subtitle: const Text(AppStrings.createAccountMenuSubtitle),
             onTap: onRegister,
           ),
           const Divider(height: 8),
@@ -135,57 +239,116 @@ class AccountMenuItems extends StatelessWidget {
         ListTile(
           dense: dense,
           leading: const Icon(Icons.photo_camera_outlined),
-          title: const Text('Adicionar foto'),
+          title: const Text(AppStrings.addPhoto),
           subtitle: profile.hasPhoto
-              ? const Text('Alterar foto do perfil')
-              : const Text('Nenhuma foto definida'),
-          onTap: () => _showComingSoon(context, 'Foto do perfil'),
+              ? const Text(AppStrings.changeProfilePhoto)
+              : const Text(AppStrings.noPhotoSet),
+          onTap: () => _pickPhoto(context),
         ),
         ListTile(
           dense: dense,
           leading: const Icon(Icons.badge_outlined),
-          title: const Text('Editar nome'),
+          title: const Text(AppStrings.editName),
           subtitle: Text(profile.displayName),
           onTap: () => _editName(context),
         ),
-        ListTile(
-          dense: dense,
-          leading: Icon(plan.isPro ? Icons.workspace_premium : Icons.card_membership_outlined),
-          title: const Text('Plano atual'),
-          subtitle: Text('${plan.label} · ${plan.description}'),
-          trailing: _PlanBadge(plan: plan),
-        ),
-        ListTile(
-          dense: dense,
-          leading: const Icon(Icons.star_outline),
-          title: Text(plan.isPro ? 'Gerenciar assinatura' : 'Assinar Rico Pro'),
-          subtitle: Text(
-            plan.isPro
-                ? 'Renovação, fatura e cancelamento'
-                : 'Desbloqueie alertas, carteiras e mais',
-          ),
-          onTap: () => _showComingSoon(context, 'Assinatura'),
-        ),
-        const Divider(height: 8),
+        // HIDDEN: assinatura — plano / assinar Rico Pro
+        // ListTile(
+        //   dense: dense,
+        //   leading: Icon(plan.isPro ? Icons.workspace_premium : Icons.card_membership_outlined),
+        //   title: const Text(AppStrings.currentPlan),
+        //   subtitle: Text('${plan.label} · ${plan.description}'),
+        //   trailing: _PlanBadge(plan: plan),
+        // ),
+        // ListTile(
+        //   dense: dense,
+        //   leading: const Icon(Icons.star_outline),
+        //   title: Text(plan.isPro ? AppStrings.manageSubscription : AppStrings.subscribeRicoPro),
+        //   subtitle: Text(
+        //     plan.isPro
+        //         ? AppStrings.subscriptionManageSubtitle
+        //         : AppStrings.subscriptionUpgradeSubtitle,
+        //   ),
+        //   onTap: () async {
+        //     final upgraded = await openPaywallScreen(context);
+        //     if (upgraded == true && context.mounted) {
+        //       onProfileChanged(profile.copyWith(plan: SubscriptionPlan.pro));
+        //     }
+        //   },
+        // ),
+        // const Divider(height: 8),
         ListTile(
           dense: dense,
           leading: const Icon(Icons.tune_outlined),
-          title: const Text('Preferências'),
-          subtitle: const Text('Notificações, privacidade e idioma'),
-          onTap: () => _showComingSoon(context, 'Preferências'),
+          title: const Text(AppStrings.preferences),
+          subtitle: const Text(AppStrings.preferencesSubtitle),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => PreferencesScreen(onThemeModeChanged: onThemeModeChanged),
+              ),
+            );
+          },
         ),
         ListTile(
           dense: dense,
           leading: const Icon(Icons.help_outline),
-          title: const Text('Ajuda e suporte'),
-          onTap: () => _showComingSoon(context, 'Ajuda'),
+          title: const Text(AppStrings.helpAndSupport),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const HelpSupportScreen(),
+              ),
+            );
+          },
+        ),
+        ListTile(
+          dense: dense,
+          leading: const Icon(Icons.privacy_tip_outlined),
+          title: const Text(AppStrings.privacy),
+          onTap: () => _openLegal(
+            context,
+            title: 'Privacy Policy',
+            url: LegalUrls.privacyPolicy,
+          ),
+        ),
+        ListTile(
+          dense: dense,
+          leading: const Icon(Icons.description_outlined),
+          title: const Text(AppStrings.termsOfUse),
+          onTap: () => _openLegal(
+            context,
+            title: 'Terms of Service',
+            url: LegalUrls.termsOfService,
+          ),
         ),
         if (profile.isRegistered) ...[
           const Divider(height: 8),
           ListTile(
             dense: dense,
+            leading: const Icon(Icons.lock_outline),
+            title: const Text(AppStrings.changePassword),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const ChangePasswordScreen(),
+                ),
+              );
+            },
+          ),
+          ListTile(
+            dense: dense,
+            leading: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
+            title: Text(
+              AppStrings.deleteAccountTitle,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+            onTap: () => _confirmDeleteAccount(context),
+          ),
+          ListTile(
+            dense: dense,
             leading: const Icon(Icons.logout),
-            title: const Text('Sair da conta'),
+            title: const Text(AppStrings.signOutTitle),
             onTap: () => _confirmLogout(context),
           ),
         ],
@@ -194,6 +357,7 @@ class AccountMenuItems extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _PlanBadge extends StatelessWidget {
   const _PlanBadge({required this.plan});
 

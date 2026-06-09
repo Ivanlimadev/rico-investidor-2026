@@ -177,6 +177,7 @@ class _UsMarketListScreenState extends State<UsMarketListScreen> {
             symbol: asset.symbol,
             repository: widget.repository,
             exchange: asset.exchangeMic,
+            plan: AppShellScope.of(context).subscriptionPlan,
           ),
         ),
       );
@@ -316,7 +317,7 @@ class _UsMarketListScreenState extends State<UsMarketListScreen> {
               onTap: _openDetail,
               resolveRefreshSeconds: () async {
                 final caps = await widget.repository.getCapabilities();
-                return caps.realtimeEnabled ? (caps.refreshSeconds ?? 60) : null;
+                return caps.realtimeEnabled ? (caps.bulkRefreshSeconds ?? 1800) : null;
               },
             ),
           ),

@@ -1,5 +1,7 @@
 import 'package:rico_investidor/core/network/api_client.dart';
+import 'package:rico_investidor/core/network/repository_timeouts.dart';
 import 'package:rico_investidor/core/utils/market_category_storage.dart';
+import 'package:rico_investidor/features/portfolio/models/portfolio_transaction.dart';
 import 'package:rico_investidor/models/portfolio_holding.dart';
 
 class PortfolioHoldingsResponse {
@@ -26,6 +28,7 @@ class PortfolioApiClient {
     final response = await _client.getJson(
       '/v1/portfolio/holdings',
       fromJson: PortfolioHoldingsResponse.fromJson,
+      timeout: kMarketApiTimeout,
     );
     return response.items;
   }
@@ -56,6 +59,65 @@ class PortfolioApiClient {
       fromJson: PortfolioHoldingsResponse.fromJson,
     );
     return response.items;
+  }
+
+  Future<List<PortfolioTransaction>> listTransactions({String? symbol}) async {
+    final query = <String, String>{};
+    if (symbol != null && symbol.trim().isNotEmpty) {
+      query['symbol'] = symbol.trim().toUpperCase();
+    }
+    final response = await _client.getJson(
+      '/v1/portfolio/transactions',
+      query: query.isEmpty ? null : query,
+      fromJson: PortfolioTransactionListResponse.fromJson,
+    );
+    return response.items;
+  }
+
+  Future<List<PortfolioHolding>> addTransaction({
+    required String symbol,
+    required String name,
+    required String transactionType,
+    required DateTime date,
+    required double quantity,
+    required double pricePerUnit,
+    required double fees,
+    String? broker,
+    required String currency,
+    String? category,
+  }) async {
+    final response = await _client.postJson(
+      '/v1/portfolio/transactions',
+      body: {
+        'symbol': symbol.toUpperCase(),
+        'name': name,
+        'transaction_type': transactionType,
+        'date': _formatDate(date),
+        'quantity': quantity,
+        'price_per_unit': pricePerUnit,
+        'fees': fees,
+        if (broker != null && broker.trim().isNotEmpty) 'broker': broker.trim(),
+        'currency': currency,
+        'category': ?category,
+      },
+      fromJson: PortfolioHoldingsResponse.fromJson,
+    );
+    return response.items;
+  }
+
+  Future<List<PortfolioHolding>> deleteTransaction(String transactionId) async {
+    final response = await _client.deleteJson(
+      '/v1/portfolio/transactions/$transactionId',
+      fromJson: PortfolioHoldingsResponse.fromJson,
+    );
+    return response.items;
+  }
+
+  static String _formatDate(DateTime date) {
+    final y = date.year.toString().padLeft(4, '0');
+    final m = date.month.toString().padLeft(2, '0');
+    final d = date.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
   }
 
   static Map<String, dynamic> _holdingPayload(PortfolioHolding holding) => {

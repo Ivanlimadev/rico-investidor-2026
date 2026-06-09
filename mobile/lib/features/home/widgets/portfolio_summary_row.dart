@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
 import 'package:rico_investidor/features/portfolio/widgets/portfolio_balance_hero.dart';
+import 'package:rico_investidor/l10n/app_strings.dart';
 import 'package:rico_investidor/services/market_preference_storage.dart';
 import 'package:rico_investidor/state/portfolio_state.dart';
 
@@ -43,12 +44,12 @@ class PortfolioSummaryRow extends StatelessWidget {
 
     final dividendsCard = _SummaryCard(
       onTap: onDividendsTap,
-      label: 'Dividendos no mês',
+      label: AppStrings.monthlyDividends,
       amount: formatUsd(summary.monthlyDividends),
-      subtitle: 'Toque para ver ativos, datas e valores estimados',
+      subtitle: AppStrings.dividendsTapHint,
       changeLabel: '${summary.isDividendsUp ? '+' : ''}'
           '${summary.dividendsVsLastMonthPercent.toStringAsFixed(1)}% '
-          'vs mês anterior',
+          '${AppStrings.vsLastMonth}',
       isPositive: summary.isDividendsUp,
     );
 
@@ -74,7 +75,7 @@ class PortfolioSummaryRow extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    'Sincronizando carteira…',
+                    AppStrings.syncingPortfolio,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context).colorScheme.primary,
                           fontWeight: FontWeight.w600,
@@ -85,7 +86,7 @@ class PortfolioSummaryRow extends StatelessWidget {
                     child: Text(
                       syncMessage!,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: syncMessage!.contains('Sem conexão')
+                            color: syncMessage!.contains('No connection')
                                 ? Theme.of(context).colorScheme.error
                                 : AppColors.positive,
                             fontWeight: FontWeight.w600,

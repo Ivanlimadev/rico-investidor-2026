@@ -1,4 +1,5 @@
 import 'package:rico_investidor/core/network/api_client.dart';
+import 'package:rico_investidor/core/network/repository_timeouts.dart';
 import 'package:rico_investidor/features/global_markets/models/global_market_models.dart';
 import 'package:rico_investidor/features/quotes/models/stock_compare.dart';
 import 'package:rico_investidor/features/quotes/models/market_quote_dto.dart';
@@ -14,6 +15,7 @@ class GlobalMarketApiClient {
     return _client.getJson(
       '/v1/global-markets',
       fromJson: QuoteListResponse.fromJson,
+      timeout: kMarketApiTimeout,
     );
   }
 
@@ -25,6 +27,7 @@ class GlobalMarketApiClient {
         'exchange': exchange,
       },
       fromJson: QuoteListResponse.fromJson,
+      timeout: kMarketApiTimeout,
     );
   }
 
@@ -106,6 +109,7 @@ class GlobalMarketApiClient {
     return _client.getJson(
       '/v1/global-markets/countries/$normalized/hub',
       fromJson: CountryHubResponseDto.fromJson,
+      timeout: kMarketApiTimeout,
     );
   }
 
@@ -127,6 +131,25 @@ class GlobalMarketApiClient {
       '/v1/global-markets/us/market',
       query: query,
       fromJson: ExchangeMarketListResponseDto.fromJson,
+      timeout: kMarketApiTimeout,
+    );
+  }
+
+  Future<QuoteListResponse> getQuotesBatch(List<String> symbols, {String? exchange}) {
+    if (symbols.isEmpty) {
+      return Future.value(const QuoteListResponse(items: [], count: 0));
+    }
+    final query = <String, String>{
+      'symbols': symbols.map((s) => s.toUpperCase()).join(','),
+    };
+    if (exchange != null && exchange.isNotEmpty) {
+      query['exchange'] = exchange;
+    }
+    return _client.getJson(
+      '/v1/global-markets/quotes',
+      query: query,
+      fromJson: QuoteListResponse.fromJson,
+      timeout: kMarketApiTimeout,
     );
   }
 
@@ -206,6 +229,7 @@ class GlobalMarketApiClient {
     return _client.getJson(
       '/v1/global-markets/capabilities',
       fromJson: GlobalMarketCapabilitiesDto.fromJson,
+      timeout: kRepositoryFetchTimeout,
     );
   }
 

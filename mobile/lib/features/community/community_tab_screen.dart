@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/app/main_shell_screen.dart';
+import 'package:rico_investidor/l10n/app_strings.dart';
 
 class CommunityTabScreen extends StatelessWidget {
   const CommunityTabScreen({super.key});
@@ -9,28 +10,28 @@ class CommunityTabScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Comunidade'),
+        title: const Text(AppStrings.communityTitle),
         actions: const [ShellHomeButton()],
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, kBottomNavContentPadding),
         children: [
-          _ComingSoonCard(
+          const _ComingSoonCard(
             icon: Icons.forum_outlined,
-            title: 'Discussões',
-            subtitle: 'Troque ideias sobre FIIs, ações e estratégias com outros investidores.',
+            title: AppStrings.communityDiscussions,
+            subtitle: AppStrings.communityDiscussionsSubtitle,
           ),
           const SizedBox(height: 12),
-          _ComingSoonCard(
+          const _ComingSoonCard(
             icon: Icons.campaign_outlined,
-            title: 'Feed da comunidade',
-            subtitle: 'Acompanhe movimentos, análises e novidades do mercado.',
+            title: AppStrings.communityFeed,
+            subtitle: AppStrings.communityFeedSubtitle,
           ),
           const SizedBox(height: 12),
-          _ComingSoonCard(
+          const _ComingSoonCard(
             icon: Icons.group_add_outlined,
-            title: 'Seguir investidores',
-            subtitle: 'Veja carteiras públicas e aprenda com perfis experientes.',
+            title: AppStrings.followInvestors,
+            subtitle: AppStrings.followInvestorsSubtitle,
           ),
         ],
       ),
@@ -77,7 +78,7 @@ class _ComingSoonCard extends StatelessWidget {
                         child: Text(title, style: Theme.of(context).textTheme.titleSmall),
                       ),
                       Chip(
-                        label: const Text('Em breve'),
+                        label: const Text(AppStrings.comingSoon),
                         visualDensity: VisualDensity.compact,
                         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),

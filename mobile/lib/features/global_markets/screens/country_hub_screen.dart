@@ -181,7 +181,7 @@ class _CountryHubScreenState extends State<CountryHubScreen> {
                       onTap: _openAsset,
                       resolveRefreshSeconds: () async {
                         final caps = await widget.repository.getCapabilities();
-                        return caps.realtimeEnabled ? (caps.refreshSeconds ?? 60) : null;
+                        return caps.realtimeEnabled ? (caps.bulkRefreshSeconds ?? 1800) : null;
                       },
                     ),
                   ),

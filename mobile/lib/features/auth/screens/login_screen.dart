@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/core/network/api_exception.dart';
 import 'package:rico_investidor/features/auth/data/auth_repository.dart';
+import 'package:rico_investidor/features/auth/screens/forgot_password_screen.dart';
 import 'package:rico_investidor/features/auth/screens/register_screen.dart';
+import 'package:rico_investidor/l10n/app_strings.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({
@@ -57,7 +59,7 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (_) {
       if (!mounted) return;
       setState(() {
-        _error = 'Não foi possível entrar. Tente novamente.';
+        _error = AppStrings.loginFailed;
         _loading = false;
       });
     }
@@ -74,7 +76,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Entrar')),
+      appBar: AppBar(title: const Text(AppStrings.loginTitle)),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
@@ -85,9 +87,7 @@ class _LoginScreenState extends State<LoginScreen> {
               children: [
                 if (widget.sessionExpired) ...[
                   MaterialBanner(
-                    content: const Text(
-                      'Sua sessão expirou. Entre novamente para continuar com sua conta.',
-                    ),
+                    content: const Text(AppStrings.sessionExpiredBanner),
                     leading: Icon(
                       Icons.info_outline,
                       color: Theme.of(context).colorScheme.primary,
@@ -100,7 +100,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 16),
                 ],
                 Text(
-                  'Use seu e-mail e senha para acessar sua conta.',
+                  AppStrings.loginSubtitle,
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                         color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
                       ),
@@ -112,14 +112,14 @@ class _LoginScreenState extends State<LoginScreen> {
                   autocorrect: false,
                   textInputAction: TextInputAction.next,
                   decoration: const InputDecoration(
-                    labelText: 'E-mail',
-                    hintText: 'seu@email.com',
+                    labelText: AppStrings.emailLabel,
+                    hintText: AppStrings.emailHint,
                     prefixIcon: Icon(Icons.email_outlined),
                   ),
                   validator: (value) {
                     final email = value?.trim() ?? '';
                     if (!email.contains('@') || !email.contains('.')) {
-                      return 'Informe um e-mail válido';
+                      return AppStrings.enterValidEmail;
                     }
                     return null;
                   },
@@ -131,7 +131,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   textInputAction: TextInputAction.done,
                   onFieldSubmitted: (_) => _submit(),
                   decoration: InputDecoration(
-                    labelText: 'Senha',
+                    labelText: AppStrings.passwordLabel,
                     prefixIcon: const Icon(Icons.lock_outline),
                     suffixIcon: IconButton(
                       onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
@@ -139,7 +139,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   validator: (value) {
-                    if ((value ?? '').isEmpty) return 'Informe sua senha';
+                    if ((value ?? '').isEmpty) return AppStrings.enterPassword;
                     return null;
                   },
                 ),
@@ -159,12 +159,26 @@ class _LoginScreenState extends State<LoginScreen> {
                           height: 22,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('Entrar'),
+                      : const Text(AppStrings.signInButton),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: _loading
+                        ? null
+                        : () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => const ForgotPasswordScreen(),
+                              ),
+                            ),
+                    child: const Text(AppStrings.forgotPassword),
+                  ),
+                ),
+                const SizedBox(height: 4),
                 TextButton(
                   onPressed: _loading ? null : _openRegister,
-                  child: const Text('Criar conta'),
+                  child: const Text(AppStrings.createAccount),
                 ),
               ],
             ),

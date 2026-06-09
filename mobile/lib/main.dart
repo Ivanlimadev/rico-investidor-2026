@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/rico_investidor_app.dart';
+import 'package:rico_investidor/core/ads/ads_bootstrap.dart';
 import 'package:rico_investidor/core/auth/auth_session.dart';
 import 'package:rico_investidor/core/config/api_config.dart';
 
@@ -19,6 +22,9 @@ Future<void> main() async {
   } catch (_) {
     // Auth falhou — app ainda abre; telas mostram erro de rede.
   }
+
+  // AdMob must finish before any BannerAd/NativeAd.load() runs.
+  await AdsBootstrap.ensureInitialized();
 
   runApp(const RicoInvestidorApp());
 }

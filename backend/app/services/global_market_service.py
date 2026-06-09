@@ -83,26 +83,29 @@ class GlobalMarketService:
         self._client = client or MarketstackClient()
         self._fmp = fmp_client or FmpClient()
         caps = marketstack_capabilities()
-        quote_ttl = (
+        price_ttl = (
             settings.marketstack_realtime_cache_ttl_seconds
             if caps.realtime_enabled
             else settings.quote_cache_ttl_seconds
         )
-        long_ttl = quote_ttl * 24
-        self._featured_cache: StaleTtlCache[MarketQuoteBatchResponse] = StaleTtlCache(quote_ttl)
-        heatmap_ttl = max(quote_ttl * 2, 600)
-        self._heatmap_cache: StaleTtlCache[MarketQuoteBatchResponse] = StaleTtlCache(heatmap_ttl)
-        self._explore_cache: StaleTtlCache[GlobalStockExploreResponse] = StaleTtlCache(quote_ttl)
-        self._candles_cache: StaleTtlCache[GlobalStockCandlesResponse] = StaleTtlCache(quote_ttl * 2)
-        self._intraday_cache: StaleTtlCache[GlobalStockIntradayCandlesResponse] = StaleTtlCache(quote_ttl)
+        aux_ttl = max(600, settings.marketstack_aux_cache_ttl_seconds)
+        static_ttl = max(aux_ttl, settings.marketstack_static_cache_ttl_seconds)
+        long_ttl = static_ttl * 24
+        self._single_quote_cache: StaleTtlCache[MarketQuote] = StaleTtlCache(price_ttl)
+        self._batch_quote_cache: StaleTtlCache[MarketQuoteBatchResponse] = StaleTtlCache(price_ttl)
+        self._featured_cache: StaleTtlCache[MarketQuoteBatchResponse] = StaleTtlCache(aux_ttl)
+        self._heatmap_cache: StaleTtlCache[MarketQuoteBatchResponse] = StaleTtlCache(aux_ttl)
+        self._explore_cache: StaleTtlCache[GlobalStockExploreResponse] = StaleTtlCache(aux_ttl)
+        self._candles_cache: StaleTtlCache[GlobalStockCandlesResponse] = StaleTtlCache(static_ttl)
+        self._intraday_cache: StaleTtlCache[GlobalStockIntradayCandlesResponse] = StaleTtlCache(price_ttl)
         self._exchanges_cache: TtlCache[WorldExchangesResponse] = TtlCache(long_ttl)
-        self._exchange_market_cache: StaleTtlCache[ExchangeMarketListResponse] = StaleTtlCache(quote_ttl)
-        self._us_market_cache: StaleTtlCache[ExchangeMarketListResponse] = StaleTtlCache(quote_ttl * 6)
-        self._country_market_cache: StaleTtlCache[ExchangeMarketListResponse] = StaleTtlCache(quote_ttl * 6)
-        self._country_hub_cache: StaleTtlCache[CountryHubResponse] = StaleTtlCache(quote_ttl)
+        self._exchange_market_cache: StaleTtlCache[ExchangeMarketListResponse] = StaleTtlCache(aux_ttl)
+        self._us_market_cache: StaleTtlCache[ExchangeMarketListResponse] = StaleTtlCache(static_ttl)
+        self._country_market_cache: StaleTtlCache[ExchangeMarketListResponse] = StaleTtlCache(static_ttl)
+        self._country_hub_cache: StaleTtlCache[CountryHubResponse] = StaleTtlCache(aux_ttl)
         self._exchange_totals_cache: TtlCache[int] = TtlCache(long_ttl)
-        self._detail_cache: StaleTtlCache[GlobalStockDetailResponse] = StaleTtlCache(quote_ttl * 2)
-        self._compare_cache: StaleTtlCache[StockCompareResponse] = StaleTtlCache(quote_ttl * 2)
+        self._detail_cache: StaleTtlCache[GlobalStockDetailResponse] = StaleTtlCache(static_ttl)
+        self._compare_cache: StaleTtlCache[StockCompareResponse] = StaleTtlCache(aux_ttl)
         # Proteção do plano gratuito FMP (250/dia): memória → disco → cache negativo
         # → teto diário persistente. Logos não dependem disto (endpoint público).
         self._fmp_profile_cache: TtlCache[dict] = TtlCache(settings.fmp_profile_cache_ttl_seconds)
@@ -144,13 +147,20 @@ class GlobalMarketService:
             "intraday_interval": caps.intraday_interval or settings.marketstack_intraday_interval,
         }
 
-    def _refresh_seconds(self) -> int:
+    def _price_cache_ttl(self) -> int:
         caps = marketstack_capabilities()
         return quote_cache_ttl_seconds(
             realtime_enabled=caps.realtime_enabled,
             base_realtime=settings.marketstack_realtime_cache_ttl_seconds,
             base_eod=settings.quote_cache_ttl_seconds,
         )
+
+    @staticmethod
+    def _bulk_cache_ttl() -> int:
+        return max(600, settings.marketstack_aux_cache_ttl_seconds)
+
+    def _refresh_seconds(self) -> int:
+        return self._price_cache_ttl()
 
     async def _overlay_live_intraday_prices(
         self,
@@ -173,7 +183,6 @@ class GlobalMarketService:
             self._client.get_intraday_latest(
                 symbols,
                 interval=caps.intraday_interval or settings.marketstack_intraday_interval,
-                exchange=exchange,
             ),
             default=[],
         )
@@ -216,6 +225,7 @@ class GlobalMarketService:
             monthly_request_budget=caps.monthly_request_budget,
             intraday_interval=caps.intraday_interval,
             refresh_seconds=refresh,
+            bulk_refresh_seconds=self._bulk_cache_ttl(),
             api_configured=self._client.configured,
             enabled_country_codes=list(ENABLED_MARKET_COUNTRY_CODES),
             global_markets_expanded=False,
@@ -389,7 +399,14 @@ class GlobalMarketService:
             if items:
                 self._heatmap_cache.set(cache_key, result)
             return result
-        except Exception:
+        except Exception as exc:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "us_heatmap failed exchange=%s: %s",
+                normalized_exchange,
+                exc,
+            )
             stale = self._heatmap_cache.get_last_good(cache_key)
             if stale is not None:
                 return stale
@@ -640,13 +657,50 @@ class GlobalMarketService:
             total += await self._exchange_ticker_total(mic)
         return total
 
+    async def _resolve_live_us_quote(self, quote: MarketQuote, symbol: str) -> MarketQuote:
+        from app.domain.global_markets.quote_reconcile import (
+            apply_fmp_live_quote,
+            quote_looks_stale_during_session,
+        )
+
+        if not quote_looks_stale_during_session(quote):
+            return quote
+
+        fmp_row = await self._safe_upstream(self._fmp.get_stock_quote(symbol), default=None)
+        if fmp_row and self._fmp_budget.allow():
+            self._fmp_budget.record()
+            refreshed = apply_fmp_live_quote(quote, fmp_row)
+            if not quote_looks_stale_during_session(refreshed):
+                return refreshed
+
+        retry = await self._safe_upstream(
+            self._client.map_quotes_with_change(
+                [symbol.upper().strip()],
+                category="stocks",
+                **self._quote_kwargs(),
+            ),
+            default=[],
+        )
+        if retry:
+            candidate = self._with_logo(retry[0])
+            if not quote_looks_stale_during_session(candidate):
+                return candidate
+
+        return quote
+
     async def get_quote(self, symbol: str, *, exchange: str | None = None) -> MarketQuote:
         from app.domain.global_markets.quote_reconcile import (
+            quote_looks_stale_during_session,
             reconcile_quote_with_candles,
             should_reconcile_quotes_to_eod,
         )
 
         normalized = symbol.upper().strip()
+        cache_key = f"quote:{normalized}:{exchange or ''}"
+        cached = self._single_quote_cache.get(cache_key)
+        if cached and not quote_looks_stale_during_session(cached):
+            return cached
+
         attempts: list[str | None] = []
         if exchange:
             attempts.append(exchange.upper())
@@ -681,7 +735,77 @@ class GlobalMarketService:
             except UpstreamError:
                 pass
 
-        return self._with_logo(quote)
+        result = await self._resolve_live_us_quote(self._with_logo(quote), normalized)
+        if not quote_looks_stale_during_session(result):
+            self._single_quote_cache.set(cache_key, result)
+        return result
+
+    async def get_quotes_batch(
+        self,
+        symbols: list[str],
+        *,
+        exchange: str | None = None,
+    ) -> MarketQuoteBatchResponse:
+        """Cotações em lote — 1 round-trip Marketstack para símbolos sem cache de preço."""
+        from app.domain.global_markets.quote_reconcile import quote_looks_stale_during_session
+
+        normalized = []
+        seen: set[str] = set()
+        for raw in symbols:
+            symbol = raw.upper().strip()
+            if not symbol or symbol in seen:
+                continue
+            seen.add(symbol)
+            normalized.append(symbol)
+
+        if not normalized:
+            return MarketQuoteBatchResponse(items=[], count=0, provider="marketstack")
+
+        cache_key = f"batch:{','.join(sorted(normalized))}:{exchange or ''}"
+        cached_batch = self._batch_quote_cache.get(cache_key)
+        if cached_batch is not None and not any(
+            quote_looks_stale_during_session(item) for item in cached_batch.items
+        ):
+            return cached_batch
+
+        items: list[MarketQuote] = []
+        missing: list[str] = []
+        for symbol in normalized:
+            key = f"quote:{symbol}:{exchange or ''}"
+            cached = self._single_quote_cache.get(key)
+            if cached is not None and not quote_looks_stale_during_session(cached):
+                items.append(cached)
+            else:
+                missing.append(symbol)
+
+        if missing:
+            quotes = await self._client.map_quotes_with_change(
+                missing,
+                category="stocks",
+                exchange=exchange.upper() if exchange else None,
+                **self._quote_kwargs(),
+            )
+            by_symbol = {quote.symbol.upper(): quote for quote in quotes}
+            for symbol in missing:
+                quote = by_symbol.get(symbol)
+                if quote is None:
+                    continue
+                result = self._with_logo(quote)
+                self._single_quote_cache.set(f"quote:{symbol}:{exchange or ''}", result)
+                items.append(result)
+
+        refreshed_items: list[MarketQuote] = []
+        for item in self._order_quotes(normalized, items):
+            refreshed_items.append(await self._resolve_live_us_quote(item, item.symbol))
+
+        result = MarketQuoteBatchResponse(
+            items=refreshed_items,
+            count=len(refreshed_items),
+            provider="marketstack",
+        )
+        if refreshed_items:
+            self._batch_quote_cache.set(cache_key, result)
+        return result
 
     async def get_candles(
         self,
@@ -773,9 +897,9 @@ class GlobalMarketService:
                 [normalize_marketstack_symbol(normalized)],
                 interval=interval,
                 date_from=today,
-                exchange=resolved_exchange,
+                date_to=today,
                 limit=safe_limit,
-                sort="ASC",
+                sort="DESC",
             ),
             default=[],
         )

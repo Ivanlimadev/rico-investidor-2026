@@ -4,8 +4,18 @@ import httpx
 
 from app.config import settings
 from app.core.cache import TtlCache
+from app.core.http_client import get_http_client
 from app.core.exceptions import UpstreamError
-from app.domain.crypto.models import CryptoFundamentals, CryptoMacroSnapshot
+from app.clients.binance.crypto_mapper import normalize_crypto_symbol
+from app.clients.coingecko.market_mapper import map_market_chart, map_markets_response
+from app.domain.crypto.models import (
+    CryptoAvailableResponse,
+    CryptoCandlesResponse,
+    CryptoFundamentals,
+    CryptoListResponse,
+    CryptoMacroSnapshot,
+)
+from app.domain.crypto.presets import COINGECKO_COIN_IDS, CRYPTO_NAMES
 
 
 class CoinGeckoClient:
@@ -19,12 +29,13 @@ class CoinGeckoClient:
         self._global_cache: TtlCache[CryptoMacroSnapshot] = TtlCache(
             settings.crypto_macro_cache_ttl_seconds
         )
+        self._markets_cache: TtlCache[CryptoListResponse] = TtlCache(settings.quote_cache_ttl_seconds)
+        self._candles_cache: TtlCache[CryptoCandlesResponse] = TtlCache(settings.quote_cache_ttl_seconds * 2)
 
     async def _get(self, path: str, *, params: dict | None = None) -> object:
         url = f"{self._base_url}/{path.lstrip('/')}"
         try:
-            async with httpx.AsyncClient(timeout=25.0) as client:
-                response = await client.get(url, params=params)
+            response = await get_http_client().get(url, params=params)
         except httpx.RequestError as exc:
             raise UpstreamError(
                 f"Falha ao conectar no CoinGecko: {exc.__class__.__name__}",
@@ -42,6 +53,89 @@ class CoinGeckoClient:
             )
 
         return response.json()
+
+    async def get_quotes(self, symbols: list[str]) -> CryptoListResponse:
+        normalized = [normalize_crypto_symbol(symbol) for symbol in symbols if symbol.strip()]
+        if not normalized:
+            return CryptoListResponse(items=[], count=0, provider="coingecko")
+
+        cache_key = f"quotes:{','.join(sorted(normalized))}"
+        cached = self._markets_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        data = await self._get(
+            "/coins/markets",
+            params={
+                "vs_currency": "usd",
+                "symbols": ",".join(symbol.lower() for symbol in normalized),
+                "sparkline": "false",
+                "price_change_percentage": "24h",
+            },
+        )
+        result = map_markets_response(data)
+        if result.items:
+            self._markets_cache.set(cache_key, result)
+        return result
+
+    async def get_top_markets(self, *, limit: int = 100, page: int = 1) -> CryptoListResponse:
+        safe_limit = max(1, min(limit, 250))
+        safe_page = max(1, page)
+        cache_key = f"top:{safe_limit}:{safe_page}"
+        cached = self._markets_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        data = await self._get(
+            "/coins/markets",
+            params={
+                "vs_currency": "usd",
+                "order": "volume_desc",
+                "per_page": str(safe_limit),
+                "page": str(safe_page),
+                "sparkline": "false",
+                "price_change_percentage": "24h",
+            },
+        )
+        result = map_markets_response(data)
+        if result.items:
+            self._markets_cache.set(cache_key, result)
+        return result
+
+    async def list_available(self, *, search: str | None = None, limit: int = 250) -> CryptoAvailableResponse:
+        markets = await self.get_top_markets(limit=limit)
+        coins = [quote.symbol for quote in markets.items]
+        if search:
+            query = search.strip().lower()
+            coins = [
+                coin
+                for coin in coins
+                if query in coin.lower() or query in CRYPTO_NAMES.get(coin, "").lower()
+            ]
+        return CryptoAvailableResponse(coins=coins, count=len(coins), provider="coingecko")
+
+    async def get_market_chart(
+        self,
+        symbol: str,
+        *,
+        days: int = 30,
+        interval: str = "1d",
+    ) -> CryptoCandlesResponse:
+        normalized = normalize_crypto_symbol(symbol)
+        coin_id = COINGECKO_COIN_IDS.get(normalized, normalized.lower())
+        cache_key = f"chart:{coin_id}:{days}:{interval}"
+        cached = self._candles_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        data = await self._get(
+            f"/coins/{coin_id}/market_chart",
+            params={"vs_currency": "usd", "days": str(max(1, min(days, 365)))},
+        )
+        result = map_market_chart(normalized, data, interval=interval)
+        if result.candles:
+            self._candles_cache.set(cache_key, result)
+        return result
 
     async def get_fundamentals(self, symbol: str) -> CryptoFundamentals:
         normalized = symbol.strip().lower()
@@ -115,8 +209,7 @@ async def fetch_fear_greed() -> tuple[int | None, str | None]:
     """Fear & Greed Index — alternative.me (público)."""
     url = "https://api.alternative.me/fng/"
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.get(url, params={"limit": 1})
+        response = await get_http_client().get(url, params={"limit": 1})
         if response.status_code >= 400:
             return None, None
         payload = response.json()

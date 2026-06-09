@@ -144,6 +144,7 @@ class _ExchangeMarketScreenState extends State<ExchangeMarketScreen> {
             symbol: asset.symbol,
             repository: widget.repository,
             exchange: asset.exchangeMic ?? widget.exchangeMic,
+            plan: AppShellScope.of(context).subscriptionPlan,
           ),
         ),
       );

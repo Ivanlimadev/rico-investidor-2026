@@ -17,6 +17,7 @@ class StoredUser:
     name: str
     password_hash: str
     is_anonymous: bool = False
+    photo_url: str | None = None
 
 
 class UserStore:
@@ -30,6 +31,7 @@ class UserStore:
             name=row.name,
             password_hash=row.password_hash,
             is_anonymous=row.is_anonymous,
+            photo_url=row.photo_url,
         )
 
     def get_by_id(self, user_id: str) -> StoredUser | None:
@@ -87,6 +89,34 @@ class UserStore:
                     status_code=400,
                 ) from exc
         return user
+
+    def update_password(self, user_id: str, password_hash: str) -> StoredUser:
+        with self._session_factory() as session:
+            row = session.get(UserRow, user_id)
+            if row is None:
+                raise AppError("Usuário não encontrado", status_code=404)
+            row.password_hash = password_hash
+            session.commit()
+            session.refresh(row)
+            return self._to_user(row)
+
+    def delete_user(self, user_id: str) -> None:
+        with self._session_factory() as session:
+            row = session.get(UserRow, user_id)
+            if row is None:
+                raise AppError("Usuário não encontrado", status_code=404)
+            session.delete(row)
+            session.commit()
+
+    def update_photo_url(self, user_id: str, photo_url: str) -> StoredUser:
+        with self._session_factory() as session:
+            row = session.get(UserRow, user_id)
+            if row is None:
+                raise AppError("Usuário não encontrado", status_code=404)
+            row.photo_url = photo_url
+            session.commit()
+            session.refresh(row)
+            return self._to_user(row)
 
     def update_name(self, user_id: str, name: str) -> StoredUser:
         cleaned = name.strip()

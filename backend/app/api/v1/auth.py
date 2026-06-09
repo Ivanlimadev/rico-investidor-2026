@@ -1,9 +1,14 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, File, Request, UploadFile
 
 from app.domain.auth.models import (
     AnonymousAuthRequest,
+    ChangePasswordRequest,
+    DeleteAccountRequest,
+    ForgotPasswordRequest,
     LoginRequest,
+    MessageResponse,
     RegisterRequest,
+    ResetPasswordRequest,
     TokenResponse,
     UpdateProfileRequest,
     UserResponse,
@@ -48,3 +53,58 @@ async def update_me(
 ):
     auth_user = get_auth_user(request)
     return service.update_profile(auth_user.id, name=body.name)
+
+
+@router.post("/me/photo", response_model=UserResponse)
+async def upload_me_photo(
+    request: Request,
+    file: UploadFile = File(...),
+    service: AuthService = Depends(get_auth_service),
+):
+    auth_user = get_auth_user(request)
+    content = await file.read()
+    return service.upload_photo(
+        auth_user.id,
+        content=content,
+        content_type=file.content_type or "",
+    )
+
+
+@router.post("/forgot-password", response_model=MessageResponse)
+async def forgot_password(
+    body: ForgotPasswordRequest,
+    service: AuthService = Depends(get_auth_service),
+):
+    return service.forgot_password(email=body.email)
+
+
+@router.post("/reset-password", response_model=MessageResponse)
+async def reset_password(
+    body: ResetPasswordRequest,
+    service: AuthService = Depends(get_auth_service),
+):
+    return service.reset_password(token=body.token, new_password=body.new_password)
+
+
+@router.post("/change-password", response_model=MessageResponse)
+async def change_password(
+    body: ChangePasswordRequest,
+    request: Request,
+    service: AuthService = Depends(get_auth_service),
+):
+    auth_user = get_auth_user(request)
+    return service.change_password(
+        auth_user.id,
+        current_password=body.current_password,
+        new_password=body.new_password,
+    )
+
+
+@router.delete("/me", response_model=MessageResponse)
+async def delete_me(
+    body: DeleteAccountRequest,
+    request: Request,
+    service: AuthService = Depends(get_auth_service),
+):
+    auth_user = get_auth_user(request)
+    return service.delete_account(auth_user.id, password=body.password)

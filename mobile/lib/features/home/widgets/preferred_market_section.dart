@@ -111,8 +111,13 @@ class _PreferredMarketSectionState extends State<PreferredMarketSection> {
             mapAsset: (quote) => quote.toUsAssetItem(),
             onTap: _openAsset,
             resolveRefreshSeconds: () async {
-              final caps = await widget.globalMarketRepository.getCapabilities();
-              return caps.realtimeEnabled ? (caps.refreshSeconds ?? 60) : null;
+              try {
+                final caps = await widget.globalMarketRepository.getCapabilities();
+                return caps.realtimeEnabled ? (caps.bulkRefreshSeconds ?? 1800) : null;
+              } catch (_) {
+                final fallback = widget.globalMarketRepository.bulkQuoteRefreshDuration.inSeconds;
+                return fallback > 0 ? fallback : 1800;
+              }
             },
           ),
         ],

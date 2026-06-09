@@ -2,7 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.config import settings
-from app.main import app
+from app.main import create_app
 from app.services.auth_service import AuthService
 from app.services.user_store import UserStore
 
@@ -11,20 +11,30 @@ from app.services.user_store import UserStore
 def auth_env(tmp_path, monkeypatch):
     secret = "test-secret-key-for-jwt-auth-32chars"
     users_path = tmp_path / "users.json"
+    db_path = tmp_path / "test.db"
     monkeypatch.setattr(settings, "auth_secret", secret)
     monkeypatch.setattr(settings, "auth_users_path", users_path)
     monkeypatch.setattr(settings, "auth_token_ttl_seconds", 3600)
-    return {"secret": secret, "users_path": users_path}
+    monkeypatch.setattr(settings, "auth_rate_limit_per_minute", 10_000)
+    monkeypatch.setattr(settings, "rate_limit_per_minute", 10_000)
+    monkeypatch.setattr(settings, "database_url", f"sqlite:///{db_path}")
+    from app.db.session import _engine_for_url
+
+    _engine_for_url.cache_clear()
+    from app.db.init_db import init_database
+
+    init_database()
+    return {"secret": secret, "users_path": users_path, "database_url": settings.database_url}
 
 
 @pytest.fixture
 def client(auth_env):
-    return TestClient(app)
+    return TestClient(create_app())
 
 
 def test_auth_disabled_allows_public_api(monkeypatch):
     monkeypatch.setattr(settings, "auth_secret", "")
-    with TestClient(app) as test_client:
+    with TestClient(create_app()) as test_client:
         response = test_client.get("/v1/meta/providers")
     assert response.status_code == 200
 

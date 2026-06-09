@@ -3,7 +3,6 @@ import 'package:rico_investidor/features/crypto/data/crypto_api_client.dart';
 import 'package:rico_investidor/features/global_markets/data/global_market_api_client.dart';
 import 'package:rico_investidor/models/holding_currency.dart';
 import 'package:rico_investidor/models/market_category.dart';
-import 'package:rico_investidor/models/portfolio_holding.dart';
 import 'package:rico_investidor/state/portfolio_state.dart';
 
 class PortfolioPriceRefreshResult {
@@ -45,14 +44,26 @@ class PortfolioPriceService {
       );
     }
 
-    var updated = 0;
+    final usSymbols = <String>[];
+    final cryptoSymbols = <String>[];
     for (final holding in portfolio.holdings) {
       final category = portfolio.categoryForHolding(holding);
       if (category == MarketCategory.cripto) {
-        if (await _refreshCryptoHolding(portfolio, holding.symbol)) updated++;
-      } else if (await _refreshUsHolding(portfolio, holding.symbol)) {
-        updated++;
+        cryptoSymbols.add(holding.symbol);
+      } else {
+        usSymbols.add(holding.symbol);
       }
+    }
+
+    var updated = 0;
+    if (usSymbols.isNotEmpty) {
+      updated += await _refreshUsHoldingsBatch(portfolio, usSymbols);
+    }
+    if (cryptoSymbols.isNotEmpty) {
+      final cryptoResults = await Future.wait(
+        cryptoSymbols.map((symbol) => _refreshCryptoHolding(portfolio, symbol)),
+      );
+      updated += cryptoResults.where((ok) => ok).length;
     }
 
     return PortfolioPriceRefreshResult(
@@ -82,17 +93,23 @@ class PortfolioPriceService {
     return portfolio.holdings.where((holding) => holding.currentPrice > 0).length;
   }
 
-  Future<bool> _refreshUsHolding(PortfolioState portfolio, String symbol) async {
+  Future<int> _refreshUsHoldingsBatch(PortfolioState portfolio, List<String> symbols) async {
     try {
-      final quote = await _globalMarketApi.getQuote(symbol);
-      return _patchHolding(
-        portfolio,
-        symbol,
-        price: quote.price,
-        changePercent: quote.changePercent,
-      );
+      final response = await _globalMarketApi.getQuotesBatch(symbols);
+      var updated = 0;
+      for (final quote in response.items) {
+        if (_patchHolding(
+          portfolio,
+          quote.symbol,
+          price: quote.price,
+          changePercent: quote.changePercent,
+        )) {
+          updated++;
+        }
+      }
+      return updated;
     } catch (_) {
-      return false;
+      return 0;
     }
   }
 
@@ -120,6 +137,9 @@ class PortfolioPriceService {
     for (var i = 0; i < portfolio.holdings.length; i++) {
       final holding = portfolio.holdings[i];
       if (holding.symbol.toUpperCase() != key || price <= 0) continue;
+      final priceChanged = (holding.currentPrice - price).abs() > 0.0001;
+      final changeChanged = (holding.changePercent - changePercent).abs() > 0.0001;
+      if (!priceChanged && !changeChanged) return false;
       final category = portfolio.categoryForHolding(holding);
       portfolio.holdings[i] = holding.copyWith(
         currentPrice: price,

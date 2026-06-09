@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/core/search/asset_search_config.dart';
 import 'package:rico_investidor/core/search/unified_asset_search.dart';
+import 'package:rico_investidor/core/utils/market_category_storage.dart';
 import 'package:rico_investidor/core/widgets/asset_country_flag.dart';
 import 'package:rico_investidor/core/utils/asset_magic_number.dart';
 import 'package:rico_investidor/core/utils/parse_decimal.dart';
@@ -36,13 +37,22 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
   final _searchController = TextEditingController();
   final _unifiedSearch = UnifiedAssetSearchRunner();
   final _quantityController = TextEditingController(text: '1');
-  final _averagePriceController = TextEditingController();
+  final _priceController = TextEditingController();
+  final _feesController = TextEditingController(text: '0');
+  final _brokerController = TextEditingController();
+  final _dateController = TextEditingController();
   AssetItem? _selected;
+  String _transactionType = 'buy';
+  DateTime _selectedDate = DateTime.now();
   UnifiedAssetSearchSnapshot _searchSnapshot = const UnifiedAssetSearchSnapshot.idle();
 
   @override
   void initState() {
     super.initState();
+    _dateController.text = _formatDate(_selectedDate);
+    _quantityController.addListener(_onFormChanged);
+    _priceController.addListener(_onFormChanged);
+    _feesController.addListener(_onFormChanged);
     final initial = widget.initialAsset;
     if (initial != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -57,8 +67,57 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
     _unifiedSearch.dispose();
     _searchController.dispose();
     _quantityController.dispose();
-    _averagePriceController.dispose();
+    _priceController.dispose();
+    _feesController.dispose();
+    _brokerController.dispose();
+    _dateController.dispose();
     super.dispose();
+  }
+
+  void _onFormChanged() {
+    if (mounted) setState(() {});
+  }
+
+  String _formatDate(DateTime date) {
+    final d = date.day.toString().padLeft(2, '0');
+    final m = date.month.toString().padLeft(2, '0');
+    return '$d/$m/${date.year}';
+  }
+
+  HoldingCurrency get _currency {
+    if (_selected?.category != null) {
+      return holdingCurrencyForCategory(_selected!.category);
+    }
+    return HoldingCurrency.usd;
+  }
+
+  String get _pricePerUnitLabel {
+    return switch (_currency) {
+      HoldingCurrency.usd => 'Price per unit (US\$)',
+      HoldingCurrency.brl => 'Price per unit (R\$)',
+    };
+  }
+
+  double? get _previewTotal {
+    final quantity = parseDecimalInput(_quantityController.text);
+    final price = parseDecimalInput(_priceController.text);
+    final fees = parseDecimalInput(_feesController.text) ?? 0;
+    if (quantity == null || price == null || quantity <= 0 || price <= 0) return null;
+    return (quantity * price) + fees;
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now(),
+    );
+    if (picked == null || !mounted) return;
+    setState(() {
+      _selectedDate = picked;
+      _dateController.text = _formatDate(picked);
+    });
   }
 
   void _onSearchChanged(String value) {
@@ -95,8 +154,8 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
       _selected = resolved;
       _searchController.text = '${resolved.symbol} — ${resolved.name}';
       _searchSnapshot = const UnifiedAssetSearchSnapshot.idle();
-      if (_averagePriceController.text.isEmpty && resolved.price > 0) {
-        _averagePriceController.text = resolved.price.toStringAsFixed(2);
+      if (_priceController.text.isEmpty && resolved.price > 0) {
+        _priceController.text = resolved.price.toStringAsFixed(2);
       }
     });
   }
@@ -104,53 +163,88 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
   Future<void> _save() async {
     if (_selected == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Busque e selecione um ativo')),
+        const SnackBar(content: Text('Search and select an asset')),
       );
       return;
     }
 
     final quantity = parseDecimalInput(_quantityController.text);
-    final averagePrice = parseDecimalInput(_averagePriceController.text);
+    final pricePerUnit = parseDecimalInput(_priceController.text);
+    final fees = parseDecimalInput(_feesController.text) ?? 0;
     if (quantity == null || quantity <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Informe uma quantidade válida')),
+        const SnackBar(content: Text('Enter a valid quantity')),
       );
       return;
     }
-    if (averagePrice == null || averagePrice <= 0) {
+    if (pricePerUnit == null || pricePerUnit <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Informe um preço médio válido')),
+        const SnackBar(content: Text('Enter a valid price')),
       );
       return;
     }
 
-    var livePrice = _selected!.price;
-    var liveChange = _selected!.changePercent;
-    try {
-      final quote = await globalMarketRepository.refreshQuote(_selected!.symbol);
-      if (quote.price > 0) {
-        livePrice = quote.price;
-        liveChange = quote.changePercent;
-      }
-    } catch (_) {}
-
-    widget.portfolio.addHolding(
-      symbol: _selected!.symbol,
-      name: _selected!.name,
-      quantity: quantity,
-      averagePrice: averagePrice,
-      currentPrice: livePrice > 0 ? livePrice : null,
-      changePercent: livePrice > 0 ? liveChange : null,
-      category: _selected!.category,
-    );
+    final currency = _currency;
+    final category = marketCategoryToStorage(_selected!.category);
 
     if (portfolioRepository.canSync) {
       try {
-        final synced = await portfolioRepository.syncLocalHoldings(widget.portfolio.holdings);
+        var livePrice = _selected!.price;
+        var liveChange = _selected!.changePercent;
+        try {
+          final quote = await globalMarketRepository.refreshQuote(_selected!.symbol);
+          if (quote.price > 0) {
+            livePrice = quote.price;
+            liveChange = quote.changePercent;
+          }
+        } catch (_) {}
+
+        final holdings = await portfolioRepository.addTransaction(
+          symbol: _selected!.symbol,
+          name: _selected!.name,
+          transactionType: _transactionType,
+          date: _selectedDate,
+          quantity: quantity,
+          pricePerUnit: pricePerUnit,
+          fees: fees,
+          broker: _brokerController.text.trim().isEmpty ? null : _brokerController.text.trim(),
+          currency: currency.code,
+          category: category,
+        );
+
         widget.portfolio.holdings
           ..clear()
-          ..addAll(synced);
-      } catch (_) {}
+          ..addAll(holdings);
+
+        if (livePrice > 0) {
+          for (var i = 0; i < widget.portfolio.holdings.length; i++) {
+            final holding = widget.portfolio.holdings[i];
+            if (holding.symbol.toUpperCase() == _selected!.symbol.toUpperCase()) {
+              widget.portfolio.holdings[i] = holding.copyWith(
+                currentPrice: livePrice,
+                changePercent: liveChange,
+              );
+              break;
+            }
+          }
+        }
+      } catch (_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not save transaction. Try again.')),
+        );
+        return;
+      }
+    } else {
+      widget.portfolio.addHolding(
+        symbol: _selected!.symbol,
+        name: _selected!.name,
+        quantity: quantity,
+        averagePrice: pricePerUnit,
+        currentPrice: _selected!.price > 0 ? _selected!.price : null,
+        changePercent: _selected!.price > 0 ? _selected!.changePercent : null,
+        category: _selected!.category,
+      );
     }
 
     if (!mounted) return;
@@ -169,12 +263,14 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final previewTotal = _previewTotal;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Adicionar ativo')),
+      appBar: AppBar(title: const Text('Add asset')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
         children: [
-          Text('Buscar ativo', style: Theme.of(context).textTheme.titleMedium),
+          Text('Search asset', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           TextField(
             controller: _searchController,
@@ -251,31 +347,84 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
               ),
             ],
             const SizedBox(height: 20),
-            Text('Posição na carteira', style: Theme.of(context).textTheme.titleMedium),
+            Text('Position details', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 12),
+            SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(value: 'buy', label: Text('Buy')),
+                ButtonSegment(value: 'sell', label: Text('Sell')),
+              ],
+              selected: {_transactionType},
+              onSelectionChanged: (value) {
+                setState(() => _transactionType = value.first);
+              },
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _dateController,
+              readOnly: true,
+              decoration: const InputDecoration(
+                labelText: 'Date',
+                border: OutlineInputBorder(),
+                suffixIcon: Icon(Icons.calendar_today_outlined),
+              ),
+              onTap: _pickDate,
+            ),
             const SizedBox(height: 12),
             TextField(
               controller: _quantityController,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               decoration: const InputDecoration(
-                labelText: 'Quantidade',
+                labelText: 'Quantity',
                 border: OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),
             TextField(
-              controller: _averagePriceController,
+              controller: _priceController,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               decoration: InputDecoration(
-                labelText: (_selected?.category != null
-                        ? holdingCurrencyForCategory(_selected!.category)
-                        : HoldingCurrency.brl)
-                    .averagePriceLabel,
+                labelText: _pricePerUnitLabel,
                 border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),
+            TextField(
+              controller: _feesController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Fees / brokerage (optional)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _brokerController,
+              decoration: const InputDecoration(
+                labelText: 'Broker (optional, e.g. Fidelity, Schwab)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            if (previewTotal != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  'Total: ${_currency.format(previewTotal)}',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
             Text(
-              'Os proventos serão estimados com base no histórico de pagamentos do ativo.',
+              'Dividends will be estimated based on the asset\'s payment history.',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
                   ),
@@ -283,13 +432,13 @@ class _AddAssetScreenState extends State<AddAssetScreen> {
             const SizedBox(height: 28),
             FilledButton(
               onPressed: _save,
-              child: const Text('Salvar na carteira'),
+              child: const Text('Save transaction'),
             ),
             const SizedBox(height: 10),
             OutlinedButton.icon(
               onPressed: _openAssetProfile,
               icon: const Icon(Icons.open_in_new_rounded, size: 18),
-              label: const Text('Ver perfil completo do ativo'),
+              label: const Text('View full asset profile'),
             ),
           ],
         ],

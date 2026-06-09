@@ -1,3 +1,7 @@
+from datetime import date as DateType
+from datetime import datetime
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -45,3 +49,37 @@ class PortfolioHoldingsListResponse(BaseModel):
 
 class PortfolioSyncRequest(BaseModel):
     items: list[PortfolioHoldingCreateRequest] = Field(default_factory=list, max_length=200)
+
+
+class TransactionCreateRequest(BaseModel):
+    symbol: str = Field(min_length=1, max_length=32)
+    name: str = Field(min_length=1, max_length=120)
+    transaction_type: Literal["buy", "sell"]
+    date: DateType
+    quantity: float = Field(gt=0)
+    price_per_unit: float = Field(gt=0)
+    fees: float = Field(default=0.0, ge=0)
+    broker: str | None = Field(default=None, max_length=80)
+    currency: str = Field(default="usd", min_length=2, max_length=8)
+    category: str | None = Field(default=None, max_length=32)
+
+
+class TransactionResponse(BaseModel):
+    id: str
+    symbol: str
+    name: str
+    transaction_type: str
+    date: DateType
+    quantity: float
+    price_per_unit: float
+    fees: float
+    broker: str | None
+    total_cost: float
+    currency: str
+    category: str | None
+    created_at: datetime
+
+
+class TransactionListResponse(BaseModel):
+    items: list[TransactionResponse]
+    count: int

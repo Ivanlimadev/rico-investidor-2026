@@ -1,5 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/app_shell_scope.dart';
+import 'package:rico_investidor/core/ads/ad_manager.dart';
+import 'package:rico_investidor/core/ads/ad_subscription_plan.dart';
+import 'package:rico_investidor/core/ads/banner_ad_widget.dart';
+import 'package:rico_investidor/core/ads/feed_ad_widget.dart';
+import 'package:rico_investidor/models/subscription_plan.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/core/widgets/asset_card_header.dart';
 import 'package:rico_investidor/core/widgets/asset_quick_actions.dart';
@@ -13,16 +20,17 @@ import 'package:rico_investidor/core/utils/asset_candle_mappers.dart';
 import 'package:rico_investidor/core/widgets/what_if_investment_card.dart';
 import 'package:rico_investidor/features/crypto/widgets/crypto_performance_row.dart';
 import 'package:rico_investidor/models/asset_item.dart';
-import 'package:rico_investidor/models/market_category.dart';
 
 class CryptoDetailScreen extends StatefulWidget {
   const CryptoDetailScreen({
     super.key,
     required this.symbol,
+    required this.plan,
     this.repository,
   });
 
   final String symbol;
+  final SubscriptionPlan plan;
   final CryptoRepository? repository;
 
   @override
@@ -42,6 +50,7 @@ class _CryptoDetailScreenState extends State<CryptoDetailScreen> {
   @override
   void initState() {
     super.initState();
+    unawaited(adManager.preloadInterstitial());
     _loadFuture = _repository.getDetail(widget.symbol).then((detail) {
       if (mounted) {
         setState(() => _actionAsset = detail.quote.toAssetItem());
@@ -84,15 +93,22 @@ class _CryptoDetailScreenState extends State<CryptoDetailScreen> {
   Widget build(BuildContext context) {
     final normalized = normalizeCryptoSymbol(widget.symbol);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(normalized),
-        actions: [
-          const ShellHomeButton(),
-          if (_actionAsset != null) ...AssetQuickActions.appBarActions(context, _actionAsset!),
-        ],
-      ),
-      body: FutureBuilder<CryptoDetailDto>(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        await adManager.showInterstitialIfReady(kAdsSubscriptionPlan);
+        if (context.mounted) Navigator.of(context).pop();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(normalized),
+          actions: [
+            const ShellHomeButton(),
+            if (_actionAsset != null) ...AssetQuickActions.appBarActions(context, _actionAsset!),
+          ],
+        ),
+        body: FutureBuilder<CryptoDetailDto>(
         future: _loadFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -121,8 +137,13 @@ class _CryptoDetailScreenState extends State<CryptoDetailScreen> {
           final changeColor = isPositive ? AppColors.positive : AppColors.negative;
           final showBrazilianQuotes = cryptoShowsBrazilianQuotes(context);
 
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+          final list = ListView(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              8,
+              20,
+              16,
+            ),
             children: [
               AssetCardHeader(
                 symbol: quote.symbol,
@@ -192,6 +213,7 @@ class _CryptoDetailScreenState extends State<CryptoDetailScreen> {
                   brl: profile.brl,
                   showBrazilianQuotes: showBrazilianQuotes,
                 ),
+                RicoFeedAd(plan: kAdsSubscriptionPlan, compactInsets: true),
               ],
               const SizedBox(height: 16),
               CryptoChartCard(
@@ -201,7 +223,15 @@ class _CryptoDetailScreenState extends State<CryptoDetailScreen> {
               ),
             ],
           );
+
+          return Column(
+            children: [
+              Expanded(child: list),
+              RicoBannerAd(plan: kAdsSubscriptionPlan),
+            ],
+          );
         },
+        ),
       ),
     );
   }

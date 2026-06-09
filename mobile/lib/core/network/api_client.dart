@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:rico_investidor/core/auth/auth_session.dart';
@@ -109,20 +110,93 @@ class ApiClient {
     );
   }
 
+  Future<T> postMultipart<T>(
+    String path, {
+    required String fileField,
+    required String filePath,
+    required T Function(Map<String, dynamic>) fromJson,
+    String? filename,
+  }) async {
+    return _executeMultipart(
+      path: path,
+      fromJson: fromJson,
+      build: () async {
+        final request = http.MultipartRequest('POST', uri(path));
+        final headers = _headers();
+        request.headers.addAll(headers);
+        request.files.add(
+          await http.MultipartFile.fromPath(
+            fileField,
+            filePath,
+            filename: filename ?? filePath.split(Platform.pathSeparator).last,
+          ),
+        );
+        return request;
+      },
+    );
+  }
+
   Future<T> deleteJson<T>(
     String path, {
+    Map<String, dynamic>? body,
     required T Function(Map<String, dynamic>) fromJson,
   }) async {
     return _execute(
       path: path,
       fromJson: fromJson,
-      send: () => _client.delete(uri(path), headers: _headers()),
+      send: () => _client.delete(
+        uri(path),
+        headers: _headers(json: body != null),
+        body: body == null ? null : jsonEncode(body),
+      ),
     );
   }
 
   Future<bool> checkHealth() async {
-    final response = await _client.get(uri('/health'), headers: _headers()).timeout(_timeout);
+    final response = await _client
+        .get(uri('/health'), headers: _headers())
+        .timeout(const Duration(seconds: 5));
     return response.statusCode == 200;
+  }
+
+  Future<T> _executeMultipart<T>({
+    required String path,
+    required T Function(Map<String, dynamic>) fromJson,
+    required Future<http.MultipartRequest> Function() build,
+    bool unauthorizedRetried = false,
+    bool rateLimitRetried = false,
+  }) async {
+    final request = await build();
+    final streamed = await request.send().timeout(_timeout);
+    final response = await http.Response.fromStream(streamed);
+
+    if (response.statusCode == 401 && !unauthorizedRetried && _shouldRetryUnauthorized(path)) {
+      try {
+        await _onUnauthorized();
+      } on SessionExpiredException {
+        rethrow;
+      }
+      return _executeMultipart(
+        path: path,
+        fromJson: fromJson,
+        build: build,
+        unauthorizedRetried: true,
+        rateLimitRetried: rateLimitRetried,
+      );
+    }
+
+    if (response.statusCode == 429 && !rateLimitRetried) {
+      await Future<void>.delayed(_rateLimitRetryDelay);
+      return _executeMultipart(
+        path: path,
+        fromJson: fromJson,
+        build: build,
+        unauthorizedRetried: unauthorizedRetried,
+        rateLimitRetried: true,
+      );
+    }
+
+    return _parse(response, fromJson);
   }
 
   Future<T> _execute<T>({

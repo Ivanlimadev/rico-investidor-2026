@@ -17,6 +17,7 @@ from app.clients.binance.crypto_mapper import (
 from app.domain.crypto.presets import CRYPTO_NAMES, CRYPTO_CHART_PRESETS, DISPLAY_CURRENCY, VALID_KLINE_INTERVALS
 from app.config import settings
 from app.core.cache import TtlCache
+from app.core.http_client import get_http_client
 from app.core.exceptions import UpstreamError
 from app.core.upstream_errors import log_upstream_failure, upstream_public_message
 from app.domain.crypto.models import (
@@ -43,41 +44,74 @@ def _is_spot_usdt_symbol(item: dict) -> bool:
     return bool(item.get("symbol"))
 
 
+_FALLBACK_BINANCE_BASE_URLS: tuple[str, ...] = (
+    "https://data-api.binance.vision",
+    "https://api.binance.com",
+    "https://api1.binance.com",
+)
+
+
 class BinanceClient:
     """Cliente público da Binance Spot (sem API key)."""
 
     def __init__(self, base_url: str | None = None) -> None:
-        self._base_url = (base_url or settings.binance_base_url).rstrip("/")
+        primary = (base_url or settings.binance_base_url).rstrip("/")
+        bases: list[str] = []
+        for candidate in (primary, *_FALLBACK_BINANCE_BASE_URLS):
+            normalized = candidate.rstrip("/")
+            if normalized and normalized not in bases:
+                bases.append(normalized)
+        self._base_urls = bases
+        self._base_url = bases[0]
         ttl = settings.quote_cache_ttl_seconds * 4
         self._usdt_pairs_cache: TtlCache[list[str]] = TtlCache(ttl)
         self._all_tickers_cache: TtlCache[CryptoListResponse] = TtlCache(settings.quote_cache_ttl_seconds)
 
     async def _get(self, path: str, *, params: dict | None = None) -> object:
-        url = f"{self._base_url}/{path.lstrip('/')}"
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(url, params=params)
-        except httpx.RequestError as exc:
-            raise UpstreamError(
-                f"Falha ao conectar na Binance: {exc.__class__.__name__}",
-                status_code=502,
-            ) from exc
+        last_error: UpstreamError | None = None
+        for base_url in self._base_urls:
+            url = f"{base_url}/{path.lstrip('/')}"
+            try:
+                response = await get_http_client().get(url, params=params)
+            except httpx.RequestError as exc:
+                last_error = UpstreamError(
+                    f"Falha ao conectar na Binance: {exc.__class__.__name__}",
+                    status_code=502,
+                )
+                continue
 
-        if response.status_code == 400:
-            raise UpstreamError("Par de criptomoeda inválido na Binance", status_code=404)
-        if response.status_code >= 400:
-            log_upstream_failure(
-                provider="Binance",
-                status_code=response.status_code,
-                url=url,
-                body_snippet=response.text,
-            )
-            raise UpstreamError(
-                upstream_public_message("Binance", response.status_code),
-                status_code=502,
-            )
+            if response.status_code == 400:
+                raise UpstreamError("Par de criptomoeda inválido na Binance", status_code=404)
+            if response.status_code in {403, 451} or response.status_code >= 500:
+                log_upstream_failure(
+                    provider="Binance",
+                    status_code=response.status_code,
+                    url=url,
+                    body_snippet=response.text,
+                )
+                last_error = UpstreamError(
+                    upstream_public_message("Binance", response.status_code),
+                    status_code=502,
+                )
+                continue
+            if response.status_code >= 400:
+                log_upstream_failure(
+                    provider="Binance",
+                    status_code=response.status_code,
+                    url=url,
+                    body_snippet=response.text,
+                )
+                raise UpstreamError(
+                    upstream_public_message("Binance", response.status_code),
+                    status_code=502,
+                )
 
-        return response.json()
+            self._base_url = base_url
+            return response.json()
+
+        if last_error is not None:
+            raise last_error
+        raise UpstreamError("Falha ao consultar Binance", status_code=502)
 
     async def _resolve_pair(self, coin: str) -> str:
         normalized = normalize_crypto_symbol(coin)

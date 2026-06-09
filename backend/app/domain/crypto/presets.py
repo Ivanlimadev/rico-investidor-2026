@@ -23,6 +23,41 @@ FEATURED_CRYPTO_SYMBOLS: tuple[str, ...] = (
     "SHIB",
 )
 
+# IDs CoinGecko para gráficos/histórico quando a Binance estiver indisponível (451).
+COINGECKO_COIN_IDS: dict[str, str] = {
+    "BTC": "bitcoin",
+    "ETH": "ethereum",
+    "SOL": "solana",
+    "BNB": "binancecoin",
+    "XRP": "ripple",
+    "ADA": "cardano",
+    "DOGE": "dogecoin",
+    "DOT": "polkadot",
+    "AVAX": "avalanche-2",
+    "LINK": "chainlink",
+    "MATIC": "matic-network",
+    "POL": "polygon-ecosystem-token",
+    "LTC": "litecoin",
+    "UNI": "uniswap",
+    "ATOM": "cosmos",
+    "NEAR": "near",
+    "APT": "aptos",
+    "SUI": "sui",
+    "PEPE": "pepe",
+    "SHIB": "shiba-inu",
+    "AAVE": "aave",
+    "ARB": "arbitrum",
+    "OP": "optimism",
+    "INJ": "injective-protocol",
+    "TRX": "tron",
+    "BCH": "bitcoin-cash",
+    "XLM": "stellar",
+    "ETC": "ethereum-classic",
+    "HBAR": "hedera-hashgraph",
+    "FIL": "filecoin",
+    "ICP": "internet-computer",
+}
+
 CRYPTO_NAMES: dict[str, str] = {
     "BTC": "Bitcoin",
     "ETH": "Ethereum",

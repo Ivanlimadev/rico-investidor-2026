@@ -6,6 +6,7 @@ from app.api.v1.global_markets import router as global_markets_router
 from app.api.v1.home import router as home_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.meta import router as meta_router
+from app.api.v1.finances import router as finances_router
 from app.api.v1.open_finance import router as open_finance_router
 from app.api.v1.portfolio import router as portfolio_router
 from app.api.v1.related import router as related_router
@@ -21,6 +22,7 @@ router.include_router(dividends_router)
 router.include_router(related_router)
 router.include_router(open_finance_router)
 router.include_router(portfolio_router)
+router.include_router(finances_router)
 
 
 @router.get("/meta/providers")

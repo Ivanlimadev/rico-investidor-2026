@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:rico_investidor/app/main_shell_screen.dart';
+import 'package:rico_investidor/models/subscription_plan.dart';
 import 'package:rico_investidor/services/market_preference_storage.dart';
 import 'package:rico_investidor/state/portfolio_state.dart';
 
@@ -13,6 +14,7 @@ class AppShellScope extends InheritedWidget {
     required this.onPortfolioChanged,
     required this.preferredMarket,
     required this.onChangePreferredMarket,
+    required this.subscriptionPlan,
     required super.child,
   });
 
@@ -23,6 +25,7 @@ class AppShellScope extends InheritedWidget {
   final VoidCallback onPortfolioChanged;
   final MarketPreference preferredMarket;
   final VoidCallback onChangePreferredMarket;
+  final SubscriptionPlan subscriptionPlan;
 
   static AppShellScope of(BuildContext context) {
     final scope = context.dependOnInheritedWidgetOfExactType<AppShellScope>();
@@ -38,7 +41,8 @@ class AppShellScope extends InheritedWidget {
   bool updateShouldNotify(AppShellScope oldWidget) {
     return currentTab != oldWidget.currentTab ||
         portfolio != oldWidget.portfolio ||
-        preferredMarket.code != oldWidget.preferredMarket.code;
+        preferredMarket.code != oldWidget.preferredMarket.code ||
+        subscriptionPlan != oldWidget.subscriptionPlan;
   }
 }
 

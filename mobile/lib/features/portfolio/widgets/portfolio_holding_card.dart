@@ -10,12 +10,14 @@ class PortfolioHoldingCard extends StatelessWidget {
     required this.holding,
     this.onTap,
     this.onDelete,
+    this.onViewHistory,
     this.showDayChange = false,
   });
 
   final PortfolioHolding holding;
   final VoidCallback? onTap;
   final VoidCallback? onDelete;
+  final VoidCallback? onViewHistory;
   final bool showDayChange;
 
   static const _logoSize = 32.0;
@@ -44,10 +46,11 @@ class PortfolioHoldingCard extends StatelessWidget {
             trailing: _HeaderTrailing(
               marketValue: currency.format(holding.marketValue),
               dayChange: showDayChange && holding.changePercent != 0
-                  ? '${holding.changePercent >= 0 ? '+' : ''}${holding.changePercent.toStringAsFixed(2)}% hoje'
+                  ? '${holding.changePercent >= 0 ? '+' : ''}${holding.changePercent.toStringAsFixed(2)}% today'
                   : null,
               dayColor: dayColor,
               onDelete: onDelete,
+              onViewHistory: onViewHistory,
             ),
           ),
           const SizedBox(height: 8),
@@ -96,12 +99,14 @@ class _HeaderTrailing extends StatelessWidget {
     required this.dayColor,
     this.dayChange,
     this.onDelete,
+    this.onViewHistory,
   });
 
   final String marketValue;
   final String? dayChange;
   final Color dayColor;
   final VoidCallback? onDelete;
+  final VoidCallback? onViewHistory;
 
   @override
   Widget build(BuildContext context) {
@@ -113,7 +118,7 @@ class _HeaderTrailing extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Text(
-              'Posição',
+              'Position',
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55),
                     fontSize: 10,
@@ -143,10 +148,23 @@ class _HeaderTrailing extends StatelessWidget {
               ),
           ],
         ),
+        if (onViewHistory != null)
+          IconButton(
+            onPressed: onViewHistory,
+            tooltip: 'Transaction history',
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            icon: Icon(
+              Icons.history_outlined,
+              size: 18,
+              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.78),
+            ),
+          ),
         if (onDelete != null)
           IconButton(
             onPressed: onDelete,
-            tooltip: 'Remover ativo',
+            tooltip: 'Remove asset',
             visualDensity: VisualDensity.compact,
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),

@@ -11,6 +11,7 @@ void openSettingsScreen(
   required VoidCallback onLogin,
   required VoidCallback onRegister,
   required LogoutCallback onLogout,
+  ValueChanged<ThemeMode>? onThemeModeChanged,
 }) {
   Navigator.of(context).push(
     MaterialPageRoute<void>(
@@ -20,6 +21,7 @@ void openSettingsScreen(
         onLogin: onLogin,
         onRegister: onRegister,
         onLogout: onLogout,
+        onThemeModeChanged: onThemeModeChanged,
       ),
     ),
   );
@@ -33,6 +35,7 @@ class SettingsScreen extends StatefulWidget {
     required this.onLogin,
     required this.onRegister,
     required this.onLogout,
+    this.onThemeModeChanged,
   });
 
   final UserProfile profile;
@@ -40,6 +43,7 @@ class SettingsScreen extends StatefulWidget {
   final VoidCallback onLogin;
   final VoidCallback onRegister;
   final LogoutCallback onLogout;
+  final ValueChanged<ThemeMode>? onThemeModeChanged;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -85,6 +89,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onLogin: widget.onLogin,
             onRegister: widget.onRegister,
             onLogout: widget.onLogout,
+            onThemeModeChanged: widget.onThemeModeChanged,
           ),
           const SizedBox(height: 24),
         ],

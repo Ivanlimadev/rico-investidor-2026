@@ -67,6 +67,83 @@ def reconcile_quotes_from_eod_rows(
     return reconciled
 
 
+def quote_looks_stale_during_session(quote: MarketQuote, *, now: datetime | None = None) -> bool:
+    """Detecta fechamento anterior exibido como preço ao vivo no pregão."""
+    session = us_market_session(now=now)
+    if not (session["is_open"] or session["status"] in {"premarket", "afterhours"}):
+        return False
+
+    price = quote.price
+    if price <= 0:
+        return False
+
+    low = quote.low
+    if low is not None and low > 0 and low < price * 0.985:
+        return True
+
+    previous = quote.previous_close
+    if previous is not None and previous > 0:
+        if abs(price - previous) < 0.02 and quote.change_percent < -0.25:
+            return True
+        if price > previous and quote.change_percent < -0.5:
+            return True
+
+    return False
+
+
+def apply_fmp_live_quote(quote: MarketQuote, fmp_row: dict) -> MarketQuote:
+    """Sobrepõe preço/variação com cotação ao vivo da FMP."""
+    price = _safe_float(fmp_row.get("price"))
+    if price is None or price <= 0:
+        return quote
+
+    previous = _safe_float(
+        fmp_row.get("previousClose")
+        or fmp_row.get("previous_close")
+        or fmp_row.get("prevClose")
+    )
+    change_pct = _safe_float(
+        fmp_row.get("changesPercentage")
+        or fmp_row.get("changePercentage")
+        or fmp_row.get("changes_percent")
+    )
+
+    updates: dict = {
+        "price": price,
+        "provider": "marketstack+fmp",
+    }
+    if previous is not None and previous > 0:
+        updates["previous_close"] = previous
+        updates["change_percent"] = (
+            round(change_pct, 4)
+            if change_pct is not None
+            else round(_change_percent(price, previous), 4)
+        )
+    elif change_pct is not None:
+        updates["change_percent"] = round(change_pct, 4)
+
+    for fmp_key, quote_key in (
+        ("dayLow", "low"),
+        ("dayHigh", "high"),
+        ("open", "open"),
+        ("volume", "volume"),
+    ):
+        value = _safe_float(fmp_row.get(fmp_key))
+        if value is not None:
+            updates[quote_key] = value
+
+    return quote.model_copy(update=updates)
+
+
+def _safe_float(value: object) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def reconcile_quote_with_candles(quote: MarketQuote, candles: list[GlobalStockCandle]) -> MarketQuote:
     """Alinha cotação exibida ao último candle EOD (preço e variação do dia)."""
     sorted_candles = _valid_candles(candles)

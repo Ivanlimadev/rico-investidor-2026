@@ -50,7 +50,7 @@ class UsMarketHubScreen extends StatelessWidget {
               ),
               resolveRefreshSeconds: () async {
                 final caps = await globalMarketRepository.getCapabilities();
-                return caps.realtimeEnabled ? (caps.refreshSeconds ?? 60) : null;
+                return caps.realtimeEnabled ? (caps.bulkRefreshSeconds ?? 1800) : null;
               },
             ),
           ),
