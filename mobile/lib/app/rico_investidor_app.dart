@@ -152,10 +152,14 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
         remote,
         searchService: assetSearchService,
       );
+      // Preços do servidor ficam velhos — forçar refresh ao vivo após carregar.
+      final withoutStaleQuotes = repaired
+          .map((h) => h.copyWith(currentPrice: 0, changePercent: 0))
+          .toList();
       setState(() {
         _portfolio = PortfolioState(
           searchService: assetSearchService,
-          holdings: repaired,
+          holdings: withoutStaleQuotes,
           dividends: _portfolio.dividends,
           usdBrlRate: _portfolio.usdBrlRate,
         );
@@ -164,6 +168,7 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
         holdings: _portfolio.holdings,
         dividends: _portfolio.dividends,
       );
+      unawaited(_refreshPortfolioPrices(showErrorOnFailure: false));
       return true;
     } catch (_) {
       return false;
@@ -326,7 +331,7 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
     if (!mounted) return;
 
     _rebuildPortfolioUi();
-    if (dividendsSynced || priceResult.updated > 0) {
+    if (dividendsSynced || priceResult.updated > 0 || priceResult.isSuccess) {
       await _portfolioStorage.save(
         holdings: _portfolio.holdings,
         dividends: _portfolio.dividends,
@@ -564,8 +569,14 @@ class _RicoInvestidorAppState extends State<RicoInvestidorApp> {
         ),
       );
     }
-    if ((_portfolio.patrimonioTotalUsd - before).abs() > 0.009 || ok) {
-      _rebuildPortfolioUi();
+    _rebuildPortfolioUi();
+    if (ok) {
+      unawaited(
+        _portfolioStorage.save(
+          holdings: _portfolio.holdings,
+          dividends: _portfolio.dividends,
+        ),
+      );
     }
   }
 

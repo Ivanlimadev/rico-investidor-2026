@@ -6,6 +6,8 @@ import 'package:rico_investidor/core/utils/password_requirements.dart';
 import 'package:rico_investidor/features/auth/data/auth_repository.dart';
 import 'package:rico_investidor/features/auth/screens/login_screen.dart';
 import 'package:rico_investidor/features/auth/widgets/password_requirement_checklist.dart';
+import 'package:rico_investidor/core/widgets/investment_disclaimer.dart';
+import 'package:rico_investidor/features/legal/legal_content.dart';
 import 'package:rico_investidor/features/legal/legal_document_screen.dart';
 import 'package:rico_investidor/l10n/app_strings.dart';
 
@@ -34,17 +36,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _acceptedTerms = false;
   String? _error;
   late final TapGestureRecognizer _termsRecognizer;
+  late final TapGestureRecognizer _privacyRecognizer;
 
   @override
   void initState() {
     super.initState();
     _passwordController.addListener(() => setState(() {}));
     _termsRecognizer = TapGestureRecognizer()..onTap = _openTerms;
+    _privacyRecognizer = TapGestureRecognizer()..onTap = _openPrivacy;
   }
 
   @override
   void dispose() {
     _termsRecognizer.dispose();
+    _privacyRecognizer.dispose();
     _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
@@ -56,8 +61,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => const LegalDocumentScreen(
-          title: 'Terms of Service',
+          title: LegalContent.termsTitle,
           url: LegalUrls.termsOfService,
+        ),
+      ),
+    );
+  }
+
+  void _openPrivacy() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const LegalDocumentScreen(
+          title: LegalContent.privacyTitle,
+          url: LegalUrls.privacyPolicy,
         ),
       ),
     );
@@ -213,19 +229,31 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     text: TextSpan(
                       style: Theme.of(context).textTheme.bodyMedium,
                       children: [
-                        const TextSpan(text: AppStrings.acceptTermsPrefix),
+                        const TextSpan(text: 'Li e aceito os '),
                         TextSpan(
-                          text: AppStrings.termsOfServiceLink,
+                          text: 'Termos de Uso',
                           style: TextStyle(
                             color: Theme.of(context).colorScheme.primary,
                             decoration: TextDecoration.underline,
                           ),
                           recognizer: _termsRecognizer,
                         ),
+                        const TextSpan(text: ' e a '),
+                        TextSpan(
+                          text: 'Política de Privacidade',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.primary,
+                            decoration: TextDecoration.underline,
+                          ),
+                          recognizer: _privacyRecognizer,
+                        ),
+                        const TextSpan(text: '.'),
                       ],
                     ),
                   ),
                 ),
+                const SizedBox(height: 12),
+                const InvestmentDisclaimer(compact: true),
                 if (_error != null) ...[
                   const SizedBox(height: 16),
                   Text(

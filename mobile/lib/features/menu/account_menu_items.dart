@@ -3,7 +3,9 @@ import 'package:rico_investidor/core/config/legal_urls.dart';
 import 'package:rico_investidor/core/network/api_exception.dart';
 import 'package:rico_investidor/core/theme/app_colors.dart';
 import 'package:rico_investidor/features/auth/data/auth_repository.dart';
+import 'package:rico_investidor/features/legal/about_screen.dart';
 import 'package:rico_investidor/features/legal/legal_document_screen.dart';
+import 'package:rico_investidor/features/legal/legal_content.dart';
 import 'package:rico_investidor/features/settings/change_password_screen.dart';
 import 'package:rico_investidor/features/settings/help_support_screen.dart';
 import 'package:rico_investidor/features/settings/preferences_screen.dart';
@@ -132,6 +134,31 @@ class AccountMenuItems extends StatelessWidget {
   }
 
   Future<void> _confirmDeleteAccount(BuildContext context) async {
+    final farewell = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Que pena que você vai…'),
+        content: const Text(
+          'Sua carteira, alertas e dados de conta serão removidos permanentemente. '
+          'Esperamos que volte quando quiser acompanhar seus investimentos de novo.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Ficar no app'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(
+              'Continuar exclusão',
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (farewell != true || !context.mounted) return;
+
     final passwordController = TextEditingController();
     try {
       final confirmed = await showDialog<bool>(
@@ -142,7 +169,9 @@ class AccountMenuItems extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text(AppStrings.deleteAccountMessage),
+              const Text(
+                'Esta ação é irreversível. Carteira, transações, alertas e finanças vinculadas serão apagados.',
+              ),
               const SizedBox(height: 16),
               TextField(
                 controller: passwordController,
@@ -173,6 +202,8 @@ class AccountMenuItems extends StatelessWidget {
 
       await authRepository.deleteAccount(password: passwordController.text);
       if (!context.mounted) return;
+      await onLogout();
+      if (!context.mounted) return;
       onProfileChanged(
         profile.copyWith(
           displayName: 'Investidor',
@@ -182,7 +213,9 @@ class AccountMenuItems extends StatelessWidget {
         ),
       );
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(AppStrings.accountDeleted)),
+        const SnackBar(
+          content: Text('Conta excluída. Esperamos vê-lo de volta em breve.'),
+        ),
       );
     } on ApiException catch (e) {
       if (!context.mounted) return;
@@ -304,11 +337,21 @@ class AccountMenuItems extends StatelessWidget {
         ),
         ListTile(
           dense: dense,
+          leading: const Icon(Icons.info_outline),
+          title: const Text('Sobre nós'),
+          onTap: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const AboutScreen()),
+            );
+          },
+        ),
+        ListTile(
+          dense: dense,
           leading: const Icon(Icons.privacy_tip_outlined),
           title: const Text(AppStrings.privacy),
           onTap: () => _openLegal(
             context,
-            title: 'Privacy Policy',
+            title: LegalContent.privacyTitle,
             url: LegalUrls.privacyPolicy,
           ),
         ),
@@ -318,7 +361,7 @@ class AccountMenuItems extends StatelessWidget {
           title: const Text(AppStrings.termsOfUse),
           onTap: () => _openLegal(
             context,
-            title: 'Terms of Service',
+            title: LegalContent.termsTitle,
             url: LegalUrls.termsOfService,
           ),
         ),

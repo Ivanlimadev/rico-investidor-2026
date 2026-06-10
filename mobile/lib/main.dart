@@ -5,6 +5,7 @@ import 'package:rico_investidor/app/rico_investidor_app.dart';
 import 'package:rico_investidor/core/ads/ads_bootstrap.dart';
 import 'package:rico_investidor/core/auth/auth_session.dart';
 import 'package:rico_investidor/core/config/api_config.dart';
+import 'package:rico_investidor/services/notification_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,6 +26,7 @@ Future<void> main() async {
 
   // AdMob must finish before any BannerAd/NativeAd.load() runs.
   await AdsBootstrap.ensureInitialized();
+  unawaited(notificationService.initialize());
 
   runApp(const RicoInvestidorApp());
 }

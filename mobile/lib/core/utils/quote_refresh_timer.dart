@@ -9,6 +9,7 @@ class QuoteRefreshTimer {
   final QuoteRefreshCallback onTick;
 
   Timer? _timer;
+  bool _running = false;
   int _failures = 0;
   int _baseSeconds = 60;
   int _minSeconds = 30;
@@ -31,6 +32,8 @@ class QuoteRefreshTimer {
   }
 
   Future<void> _tick() async {
+    if (_running) return;
+    _running = true;
     try {
       await onTick();
       _failures = 0;
@@ -40,6 +43,8 @@ class QuoteRefreshTimer {
         final slowed = (_baseSeconds * 2).clamp(_minSeconds, _maxSeconds);
         start(refreshSeconds: slowed, enabled: true, minSeconds: _minSeconds, maxSeconds: _maxSeconds);
       }
+    } finally {
+      _running = false;
     }
   }
 

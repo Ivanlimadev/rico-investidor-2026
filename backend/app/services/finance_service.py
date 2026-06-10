@@ -687,5 +687,26 @@ class FinanceService:
         bills.sort(key=lambda item: item.amount, reverse=True)
         return bills[:12]
 
+    def purge_user_data(self, user_id: str) -> None:
+        """Remove all finance/Plaid data for a user (account deletion)."""
+        with self._open_session() as session:
+            items = session.scalars(
+                select(PlaidItemRow).where(PlaidItemRow.user_id == user_id)
+            ).all()
+            for item in items:
+                try:
+                    access_token = decrypt_secret(item.access_token_enc)
+                    if plaid_is_configured():
+                        self._plaid.remove_item(access_token)
+                except Exception:
+                    logger.warning("Plaid item/remove failed for user %s", user_id, exc_info=True)
+
+            session.execute(delete(FinanceTransactionRow).where(FinanceTransactionRow.user_id == user_id))
+            session.execute(delete(FinanceBudgetRow).where(FinanceBudgetRow.user_id == user_id))
+            session.execute(delete(FinanceRecurringRow).where(FinanceRecurringRow.user_id == user_id))
+            session.execute(delete(PlaidAccountRow).where(PlaidAccountRow.user_id == user_id))
+            session.execute(delete(PlaidItemRow).where(PlaidItemRow.user_id == user_id))
+            session.commit()
+
 
 finance_service = FinanceService()

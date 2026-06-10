@@ -1,6 +1,8 @@
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Header, Query, Request
 
+from app.config import settings
 from app.core.auth_deps import require_registered_user
+from app.core.exceptions import AppError
 from app.domain.auth.models import MessageResponse
 from app.domain.finances.models import (
     ExchangeTokenRequest,
@@ -49,8 +51,21 @@ async def exchange_token(
 async def plaid_webhook(
     payload: dict,
     service: FinanceService = Depends(get_finance_service),
+    webhook_secret: str | None = Header(default=None, alias="X-Rico-Webhook-Secret"),
 ):
+    expected = settings.plaid_webhook_secret.strip()
+    if settings.is_production and not expected:
+        raise AppError("Webhook não configurado", status_code=503)
+    if expected:
+        if not webhook_secret or not secrets_compare(webhook_secret, expected):
+            raise AppError("Webhook não autorizado", status_code=401)
     return service.handle_webhook(payload)
+
+
+def secrets_compare(provided: str, expected: str) -> bool:
+    import secrets
+
+    return secrets.compare_digest(provided.strip(), expected.strip())
 
 
 @router.get("/accounts", response_model=PlaidAccountsListResponse)

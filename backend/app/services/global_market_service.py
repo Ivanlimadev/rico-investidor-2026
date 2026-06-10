@@ -746,9 +746,7 @@ class GlobalMarketService:
         *,
         exchange: str | None = None,
     ) -> MarketQuoteBatchResponse:
-        """Cotações em lote — 1 round-trip Marketstack para símbolos sem cache de preço."""
-        from app.domain.global_markets.quote_reconcile import quote_looks_stale_during_session
-
+        """Cotações em lote — mesmo pipeline de get_quote (carteira = detalhe do ativo)."""
         normalized = []
         seen: set[str] = set()
         for raw in symbols:
@@ -761,51 +759,22 @@ class GlobalMarketService:
         if not normalized:
             return MarketQuoteBatchResponse(items=[], count=0, provider="marketstack")
 
-        cache_key = f"batch:{','.join(sorted(normalized))}:{exchange or ''}"
-        cached_batch = self._batch_quote_cache.get(cache_key)
-        if cached_batch is not None and not any(
-            quote_looks_stale_during_session(item) for item in cached_batch.items
-        ):
-            return cached_batch
+        results = await asyncio.gather(
+            *[self.get_quote(symbol, exchange=exchange) for symbol in normalized],
+            return_exceptions=True,
+        )
 
         items: list[MarketQuote] = []
-        missing: list[str] = []
-        for symbol in normalized:
-            key = f"quote:{symbol}:{exchange or ''}"
-            cached = self._single_quote_cache.get(key)
-            if cached is not None and not quote_looks_stale_during_session(cached):
-                items.append(cached)
-            else:
-                missing.append(symbol)
-
-        if missing:
-            quotes = await self._client.map_quotes_with_change(
-                missing,
-                category="stocks",
-                exchange=exchange.upper() if exchange else None,
-                **self._quote_kwargs(),
-            )
-            by_symbol = {quote.symbol.upper(): quote for quote in quotes}
-            for symbol in missing:
-                quote = by_symbol.get(symbol)
-                if quote is None:
-                    continue
-                result = self._with_logo(quote)
-                self._single_quote_cache.set(f"quote:{symbol}:{exchange or ''}", result)
+        for result in results:
+            if isinstance(result, MarketQuote):
                 items.append(result)
 
-        refreshed_items: list[MarketQuote] = []
-        for item in self._order_quotes(normalized, items):
-            refreshed_items.append(await self._resolve_live_us_quote(item, item.symbol))
-
-        result = MarketQuoteBatchResponse(
-            items=refreshed_items,
-            count=len(refreshed_items),
+        ordered = self._order_quotes(normalized, items)
+        return MarketQuoteBatchResponse(
+            items=ordered,
+            count=len(ordered),
             provider="marketstack",
         )
-        if refreshed_items:
-            self._batch_quote_cache.set(cache_key, result)
-        return result
 
     async def get_candles(
         self,

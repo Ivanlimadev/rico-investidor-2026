@@ -210,3 +210,23 @@ class FinanceRecurringRow(Base):
         default=lambda: datetime.now(UTC),
         nullable=False,
     )
+
+
+class PriceAlertRow(Base):
+    __tablename__ = "price_alerts"
+    __table_args__ = (UniqueConstraint("user_id", "symbol", "direction", name="uq_alert_user_symbol_dir"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    category: Mapped[str] = mapped_column(String(32), default="stocks")
+    direction: Mapped[str] = mapped_column(String(8))
+    target_price: Mapped[float] = mapped_column(Float)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+    )

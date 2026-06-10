@@ -77,6 +77,15 @@ async def crypto_heatmap(limit: int = Query(default=18, ge=1, le=24)):
     return await crypto_service.get_heatmap(limit=limit)
 
 
+@router.get("/quotes")
+async def get_crypto_quotes_batch(
+    symbols: str = Query(..., min_length=1, max_length=500),
+):
+    """Cotações em lote — uma requisição para vários símbolos."""
+    normalized = [part.strip().upper() for part in symbols.split(",") if part.strip()]
+    return await crypto_service.get_rates_for_symbols(normalized)
+
+
 @router.get("/{symbol}/profile")
 async def get_crypto_profile(symbol: str):
     """Perfil investidor: cotação, variações 7d/30d/1a, fundamentos e BRL."""

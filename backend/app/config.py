@@ -78,6 +78,8 @@ class Settings(BaseSettings):
     plaid_env: str = "sandbox"
     plaid_products: str = "transactions"
     plaid_country_codes: str = "US"
+    # Segredo compartilhado para validar webhooks Plaid (header X-Rico-Webhook-Secret).
+    plaid_webhook_secret: str = ""
     open_finance_api_key: str = ""
     open_finance_store_path: Path = _BACKEND_ROOT / "data" / "open_finance_links.json"
     app_env: str = "development"

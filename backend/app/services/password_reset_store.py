@@ -67,3 +67,10 @@ class PasswordResetStore:
             user_id = row.user_id
             session.commit()
             return user_id
+
+    def purge_user_tokens(self, user_id: str) -> None:
+        with self._session_factory() as session:
+            session.execute(
+                delete(PasswordResetTokenRow).where(PasswordResetTokenRow.user_id == user_id)
+            )
+            session.commit()

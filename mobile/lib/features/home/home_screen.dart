@@ -15,8 +15,8 @@ import 'package:rico_investidor/features/home/widgets/preferred_market_section.d
 import 'package:rico_investidor/features/dividends/screens/portfolio_month_dividends_screen.dart';
 import 'package:rico_investidor/core/auth/auth_session.dart';
 import 'package:rico_investidor/services/portfolio_dividend_service.dart';
-import 'package:rico_investidor/features/home/data/preferred_market_preloader.dart';
 import 'package:rico_investidor/services/portfolio_price_service.dart';
+import 'package:rico_investidor/features/home/data/preferred_market_preloader.dart';
 import 'package:rico_investidor/services/portfolio_storage.dart';
 import 'package:rico_investidor/features/portfolio/portfolio_screen.dart';
 import 'package:rico_investidor/features/menu/account_menu_items.dart';
@@ -81,6 +81,7 @@ class HomeScreenState extends State<HomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       refreshMarketQuotes();
       unawaited(_syncPortfolioOnHomeOpen());
+      unawaited(_refreshPortfolioPricesOnHome());
     });
   }
 
@@ -88,6 +89,13 @@ class HomeScreenState extends State<HomeScreen> {
     preferredMarketPreloader.invalidate();
     _globalMarketRepository.invalidateHeatmapCache();
     setState(() => _marketDataGeneration++);
+  }
+
+  Future<void> _refreshPortfolioPricesOnHome() async {
+    if (widget.portfolio.holdings.isEmpty) return;
+    await PortfolioPriceService().refreshAllDetailed(widget.portfolio);
+    if (!mounted) return;
+    widget.onPortfolioChanged();
   }
 
   Future<void> _syncPortfolioOnHomeOpen() async {
@@ -102,8 +110,6 @@ class HomeScreenState extends State<HomeScreen> {
       await authSession.ensureAuthenticated();
     } catch (_) {}
 
-    final priceResult = await PortfolioPriceService().refreshAllDetailed(widget.portfolio);
-
     var dividendsOk = false;
     try {
       final divResult = await portfolioDividendService.syncPortfolioDividends(widget.portfolio);
@@ -113,7 +119,7 @@ class HomeScreenState extends State<HomeScreen> {
     if (!mounted) return;
 
     widget.onPortfolioChanged();
-    if (priceResult.updated > 0 || dividendsOk) {
+    if (dividendsOk) {
       await PortfolioStorage().save(
         holdings: widget.portfolio.holdings,
         dividends: widget.portfolio.dividends,
@@ -122,13 +128,7 @@ class HomeScreenState extends State<HomeScreen> {
 
     setState(() {
       _syncingPortfolio = false;
-      if (!priceResult.isSuccess && !(priceResult.updated > 0 || dividendsOk)) {
-        _syncMessage = widget.portfolio.holdings.isNotEmpty
-            ? AppStrings.stalePricesMessage
-            : AppStrings.noBackendConnection;
-      } else {
-        _syncMessage = null;
-      }
+      _syncMessage = null;
     });
   }
 

@@ -46,6 +46,14 @@ class _PortfolioTabScreenState extends State<PortfolioTabScreen> {
   late final PortfolioPriceService _priceService = PortfolioPriceService();
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_refreshPrices());
+    });
+  }
+
+  @override
   void dispose() {
     _scrollController.dispose();
     super.dispose();

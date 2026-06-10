@@ -1,15 +1,15 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/core/ads/ad_manager.dart';
 import 'package:rico_investidor/core/ads/ad_subscription_plan.dart';
 import 'package:rico_investidor/core/ads/banner_ad_widget.dart';
 import 'package:rico_investidor/core/ads/feed_ad_widget.dart';
 import 'package:rico_investidor/models/subscription_plan.dart';
-import 'package:rico_investidor/core/theme/app_colors.dart';
-import 'package:rico_investidor/core/widgets/asset_card_header.dart';
+import 'package:rico_investidor/core/widgets/asset_price_alert_button.dart';
 import 'package:rico_investidor/core/widgets/asset_quick_actions.dart';
+import 'package:rico_investidor/core/widgets/investment_disclaimer.dart';
+import 'package:rico_investidor/features/crypto/widgets/crypto_hero_quote_card.dart';
 import 'package:rico_investidor/features/crypto/data/crypto_price_stream.dart';
 import 'package:rico_investidor/features/crypto/data/crypto_repository.dart';
 import 'package:rico_investidor/features/crypto/models/crypto_models.dart';
@@ -104,7 +104,7 @@ class _CryptoDetailScreenState extends State<CryptoDetailScreen> {
         appBar: AppBar(
           title: Text(normalized),
           actions: [
-            const ShellHomeButton(),
+            if (_actionAsset != null) AssetPriceAlertButton(asset: _actionAsset!),
             if (_actionAsset != null) ...AssetQuickActions.appBarActions(context, _actionAsset!),
           ],
         ),
@@ -133,8 +133,6 @@ class _CryptoDetailScreenState extends State<CryptoDetailScreen> {
           final profile = detail.profile;
           final displayPrice = _livePrice ?? quote.price;
           final change = quote.changePercent;
-          final isPositive = change >= 0;
-          final changeColor = isPositive ? AppColors.positive : AppColors.negative;
           final showBrazilianQuotes = cryptoShowsBrazilianQuotes(context);
 
           final list = ListView(
@@ -145,54 +143,26 @@ class _CryptoDetailScreenState extends State<CryptoDetailScreen> {
               16,
             ),
             children: [
-              AssetCardHeader(
+              CryptoHeroQuoteCard(
                 symbol: quote.symbol,
                 name: quote.name,
                 logoUrl: quote.imageUrl,
-                trailing: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      formatCryptoPrice(displayPrice, currency: quote.currency),
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                    if (showBrazilianQuotes && profile?.brl.price != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        formatCryptoPrice(profile!.brl.price!, currency: 'BRL'),
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.65),
-                            ),
-                      ),
-                    ],
-                  ],
-                ),
+                price: displayPrice,
+                currency: quote.currency,
+                changePercent: change,
+                brlPrice: profile?.brl.price,
+                showBrazilianQuotes: showBrazilianQuotes,
+                streamLive: _streamLive,
+                marketCap: quote.marketCap ?? profile?.fundamentals.marketCap,
               ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Text(
-                    '${isPositive ? '+' : ''}${change.toStringAsFixed(2)}% em 24h',
-                    style: TextStyle(color: changeColor, fontWeight: FontWeight.w600, fontSize: 15),
-                  ),
-                  if (_streamLive) ...[
-                    const SizedBox(width: 10),
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: const BoxDecoration(color: AppColors.positive, shape: BoxShape.circle),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Ao vivo',
-                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                            color: AppColors.positive,
-                            fontWeight: FontWeight.w600,
-                          ),
-                    ),
-                  ],
-                ],
+              const SizedBox(height: 12),
+              CryptoChartCard(
+                symbol: quote.symbol,
+                repository: _repository,
+                initialCandles: detail.candles,
               ),
+              const SizedBox(height: 12),
+              const InvestmentDisclaimer(compact: true),
               if (displayPrice > 0) ...[
                 const SizedBox(height: 12),
                 WhatIfInvestmentCard(
@@ -215,12 +185,6 @@ class _CryptoDetailScreenState extends State<CryptoDetailScreen> {
                 ),
                 RicoFeedAd(plan: kAdsSubscriptionPlan, compactInsets: true),
               ],
-              const SizedBox(height: 16),
-              CryptoChartCard(
-                symbol: quote.symbol,
-                repository: _repository,
-                initialCandles: detail.candles,
-              ),
             ],
           );
 

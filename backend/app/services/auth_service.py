@@ -7,6 +7,8 @@ from app.core.jwt_auth import create_access_token
 from app.config import settings
 from app.domain.auth.models import MessageResponse, TokenResponse, UserResponse
 from app.services.email_service import EmailService
+from app.services.alert_service import AlertService, alert_service
+from app.services.finance_service import FinanceService, finance_service
 from app.services.password_reset_store import PasswordResetStore
 from app.services.user_store import StoredUser, UserStore
 
@@ -46,10 +48,14 @@ class AuthService:
         store: UserStore | None = None,
         reset_store: PasswordResetStore | None = None,
         email_service: EmailService | None = None,
+        finance: FinanceService | None = None,
+        alerts: AlertService | None = None,
     ) -> None:
         self._store = store or UserStore()
         self._reset_store = reset_store or PasswordResetStore()
         self._email = email_service or EmailService()
+        self._finance = finance or finance_service
+        self._alerts = alerts or alert_service
 
     def register(self, *, email: str, password: str, name: str) -> TokenResponse:
         user = self._store.create_user(
@@ -138,13 +144,20 @@ class AuthService:
         user = self._store.get_by_id(user_id)
         if user is None:
             raise AppError("Usuário não encontrado", status_code=404)
-        if user.is_anonymous:
-            self._store.delete_user(user_id)
-            return MessageResponse(message="Account deleted.")
-        if not password or not verify_password(password, user.password_hash):
-            raise AppError("Senha incorreta", status_code=400)
+        if not user.is_anonymous:
+            if not password or not verify_password(password, user.password_hash):
+                raise AppError("Senha incorreta", status_code=400)
+        self._purge_user_assets(user_id)
         self._store.delete_user(user_id)
         return MessageResponse(message="Account deleted.")
+
+    def _purge_user_assets(self, user_id: str) -> None:
+        self._finance.purge_user_data(user_id)
+        self._alerts.purge_user_alerts(user_id)
+        self._reset_store.purge_user_tokens(user_id)
+        avatar = _AVATARS_DIR / f"{user_id}.jpg"
+        if avatar.is_file():
+            avatar.unlink(missing_ok=True)
 
     def _token_for(self, user: StoredUser) -> TokenResponse:
         token, expires_in = create_access_token(user.id, user.email)

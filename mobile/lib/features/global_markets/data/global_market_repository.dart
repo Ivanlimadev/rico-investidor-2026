@@ -94,6 +94,21 @@ class GlobalMarketRepository {
     return _api.getQuote(symbol, exchange: exchange);
   }
 
+  /// Mesma lógica do detalhe lite: cotação + candles EOD reconciliados.
+  Future<MarketQuoteDto> resolvedQuoteForPortfolio(String symbol, {String? exchange}) async {
+    final quote = await _api.getQuote(symbol, exchange: exchange);
+    try {
+      final candles = await _api.getCandles(
+        symbol,
+        exchange: exchange ?? quote.exchange,
+        limit: 12,
+      );
+      return UsQuoteEnrichment.reconcileQuote(quote, candles.candles);
+    } catch (_) {
+      return quote;
+    }
+  }
+
   Future<List<AssetItem>> listFeaturedUsAssets() {
     final cached = _featuredCache.get();
     if (cached != null) return Future.value(cached);

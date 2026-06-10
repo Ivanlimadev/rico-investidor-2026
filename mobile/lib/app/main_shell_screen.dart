@@ -107,24 +107,24 @@ class _MainShellScreenState extends State<MainShellScreen> {
   }
 
   Future<void> _configurePortfolioPriceRefresh() async {
+    var refreshSeconds = 60;
     try {
       final caps = await widget.globalMarketRepository.getCapabilities();
-      if (!caps.realtimeEnabled) return;
-      _portfolioPriceTimer = QuoteRefreshTimer(
-        onTick: _refreshPortfolioPrices,
-      )..start(refreshSeconds: caps.refreshSeconds ?? 60, enabled: true);
+      refreshSeconds = caps.refreshSeconds ?? 60;
     } catch (_) {}
+    _portfolioPriceTimer = QuoteRefreshTimer(
+      onTick: _refreshPortfolioPrices,
+    )..start(refreshSeconds: refreshSeconds, enabled: true);
+    unawaited(_refreshPortfolioPrices());
   }
 
   Future<void> _refreshPortfolioPrices() async {
     if (_portfolioPriceRefreshRunning || widget.portfolio.holdings.isEmpty) return;
     _portfolioPriceRefreshRunning = true;
     try {
-      final result = await _portfolioPriceService.refreshAllDetailed(widget.portfolio);
+      await _portfolioPriceService.refreshAllDetailed(widget.portfolio);
       if (!mounted) return;
-      if (result.updated > 0) {
-        widget.onPortfolioChanged();
-      }
+      widget.onPortfolioChanged();
     } finally {
       _portfolioPriceRefreshRunning = false;
     }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:rico_investidor/services/notification_service.dart';
 import 'package:rico_investidor/services/user_preferences_storage.dart';
 
 class PreferencesScreen extends StatefulWidget {
@@ -96,11 +97,14 @@ class _PreferencesScreenState extends State<PreferencesScreen> {
             ),
           ),
           SwitchListTile(
-            title: const Text('Push notifications'),
-            subtitle: const Text('Alerts, price updates and portfolio reminders'),
+            title: const Text('Notificações'),
+            subtitle: const Text('Lembretes de dividendos e alertas de preço no dispositivo'),
             value: preferences.notificationsEnabled,
-            onChanged: (value) {
-              _update(preferences.copyWith(notificationsEnabled: value));
+            onChanged: (value) async {
+              if (value) {
+                await notificationService.requestPermission();
+              }
+              await _update(preferences.copyWith(notificationsEnabled: value));
             },
           ),
         ],

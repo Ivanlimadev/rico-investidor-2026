@@ -17,6 +17,19 @@ class CryptoApiClient {
 
   static const _timeout = kMarketApiTimeout;
 
+  Future<CryptoListResponseDto> getQuotesBatch(List<String> symbols) {
+    if (symbols.isEmpty) {
+      return Future.value(const CryptoListResponseDto(items: [], count: 0));
+    }
+    final normalized = symbols.map(normalizeCryptoSymbol).toSet().join(',');
+    return _client.getJson(
+      '/v1/crypto/quotes',
+      query: {'symbols': normalized},
+      fromJson: CryptoListResponseDto.fromJson,
+      timeout: _timeout,
+    );
+  }
+
   Future<CryptoQuoteDto> getQuote(String symbol) {
     final normalized = normalizeCryptoSymbol(symbol);
     return _client.getJson(

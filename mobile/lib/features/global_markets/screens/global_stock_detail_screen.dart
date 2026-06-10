@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:rico_investidor/app/app_shell_scope.dart';
 import 'package:rico_investidor/core/ads/ad_manager.dart';
 import 'package:rico_investidor/core/ads/ad_subscription_plan.dart';
 import 'package:rico_investidor/core/ads/banner_ad_widget.dart';
@@ -15,7 +14,9 @@ import 'package:rico_investidor/core/widgets/us_market_session_chip.dart';
 import 'package:rico_investidor/core/utils/currency_format.dart';
 import 'package:rico_investidor/core/widgets/asset_card_header.dart';
 import 'package:rico_investidor/core/widgets/asset_logo.dart';
+import 'package:rico_investidor/core/widgets/asset_price_alert_button.dart';
 import 'package:rico_investidor/core/widgets/asset_quick_actions.dart';
+import 'package:rico_investidor/core/widgets/investment_disclaimer.dart';
 import 'package:rico_investidor/core/utils/asset_magic_number.dart';
 import 'package:rico_investidor/core/utils/dividend_payment_mappers.dart';
 import 'package:rico_investidor/core/widgets/asset_magic_number_card.dart';
@@ -174,7 +175,7 @@ class _GlobalStockDetailScreenState extends State<GlobalStockDetailScreen> {
       appBar: AppBar(
         title: Text(widget.symbol.toUpperCase()),
         actions: [
-          const ShellHomeButton(),
+          if (_actionAsset != null) AssetPriceAlertButton(asset: _actionAsset!),
           if (_actionAsset != null) ...AssetQuickActions.appBarActions(context, _actionAsset!),
           IconButton(
             tooltip: 'Comparar',
@@ -256,6 +257,8 @@ class _GlobalStockDetailScreenState extends State<GlobalStockDetailScreen> {
                 onSurface: onSurface,
                 quoteLive: _quoteLive,
               ),
+              const SizedBox(height: 12),
+              const InvestmentDisclaimer(compact: true),
               if (detail.dividends.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 LastDividendCard.global(

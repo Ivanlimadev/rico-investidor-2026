@@ -1,6 +1,6 @@
 import 'package:rico_investidor/core/auth/auth_session.dart';
 import 'package:rico_investidor/features/crypto/data/crypto_api_client.dart';
-import 'package:rico_investidor/features/global_markets/data/global_market_api_client.dart';
+import 'package:rico_investidor/features/global_markets/data/global_market_repository.dart';
 import 'package:rico_investidor/models/holding_currency.dart';
 import 'package:rico_investidor/models/market_category.dart';
 import 'package:rico_investidor/state/portfolio_state.dart';
@@ -21,12 +21,12 @@ class PortfolioPriceRefreshResult {
 
 class PortfolioPriceService {
   PortfolioPriceService({
-    GlobalMarketApiClient? globalMarketApi,
+    GlobalMarketRepository? marketRepository,
     CryptoApiClient? cryptoApi,
-  })  : _globalMarketApi = globalMarketApi ?? GlobalMarketApiClient(),
+  })  : _globalMarketRepository = marketRepository ?? globalMarketRepository,
         _cryptoApi = cryptoApi ?? CryptoApiClient();
 
-  final GlobalMarketApiClient _globalMarketApi;
+  final GlobalMarketRepository _globalMarketRepository;
   final CryptoApiClient _cryptoApi;
 
   Future<PortfolioPriceRefreshResult> refreshAllDetailed(PortfolioState portfolio) async {
@@ -57,13 +57,10 @@ class PortfolioPriceService {
 
     var updated = 0;
     if (usSymbols.isNotEmpty) {
-      updated += await _refreshUsHoldingsBatch(portfolio, usSymbols);
+      updated += await _refreshUsHoldings(portfolio, usSymbols);
     }
     if (cryptoSymbols.isNotEmpty) {
-      final cryptoResults = await Future.wait(
-        cryptoSymbols.map((symbol) => _refreshCryptoHolding(portfolio, symbol)),
-      );
-      updated += cryptoResults.where((ok) => ok).length;
+      updated += await _refreshCryptoHoldingsBatch(portfolio, cryptoSymbols);
     }
 
     return PortfolioPriceRefreshResult(
@@ -93,9 +90,33 @@ class PortfolioPriceService {
     return portfolio.holdings.where((holding) => holding.currentPrice > 0).length;
   }
 
-  Future<int> _refreshUsHoldingsBatch(PortfolioState portfolio, List<String> symbols) async {
+  Future<int> _refreshUsHoldings(PortfolioState portfolio, List<String> symbols) async {
+    final results = await Future.wait(
+      symbols.map((symbol) => _refreshUsHolding(portfolio, symbol)),
+    );
+    return results.where((ok) => ok).length;
+  }
+
+  Future<bool> _refreshUsHolding(PortfolioState portfolio, String symbol) async {
     try {
-      final response = await _globalMarketApi.getQuotesBatch(symbols);
+      final quote = await _globalMarketRepository.resolvedQuoteForPortfolio(symbol);
+      return _patchHolding(
+        portfolio,
+        quote.symbol,
+        price: quote.price,
+        changePercent: quote.changePercent,
+      );
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<int> _refreshCryptoHoldingsBatch(
+    PortfolioState portfolio,
+    List<String> symbols,
+  ) async {
+    try {
+      final response = await _cryptoApi.getQuotesBatch(symbols);
       var updated = 0;
       for (final quote in response.items) {
         if (_patchHolding(
@@ -110,20 +131,6 @@ class PortfolioPriceService {
       return updated;
     } catch (_) {
       return 0;
-    }
-  }
-
-  Future<bool> _refreshCryptoHolding(PortfolioState portfolio, String symbol) async {
-    try {
-      final quote = await _cryptoApi.getQuote(symbol);
-      return _patchHolding(
-        portfolio,
-        symbol,
-        price: quote.price,
-        changePercent: quote.changePercent,
-      );
-    } catch (_) {
-      return false;
     }
   }
 

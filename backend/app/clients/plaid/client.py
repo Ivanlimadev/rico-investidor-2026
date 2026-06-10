@@ -8,6 +8,7 @@ from plaid.model.country_code import CountryCode
 from plaid.model.accounts_get_request import AccountsGetRequest
 from plaid.model.institutions_get_by_id_request import InstitutionsGetByIdRequest
 from plaid.model.item_get_request import ItemGetRequest
+from plaid.model.item_remove_request import ItemRemoveRequest
 from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
 from plaid.model.link_token_create_request import LinkTokenCreateRequest
 from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
@@ -97,6 +98,11 @@ class PlaidGateway:
         request = AccountsGetRequest(access_token=access_token)
         response = client.accounts_get(request)
         return response.to_dict()
+
+    def remove_item(self, access_token: str) -> None:
+        client = get_plaid_client()
+        request = ItemRemoveRequest(access_token=access_token)
+        client.item_remove(request)
 
     def fetch_institution(self, institution_id: str) -> dict:
         client = get_plaid_client()
